@@ -17,8 +17,7 @@ adscan() {
     echo '
              |\033[1;33m   __|   __|    \     \ | \033[0m
    _` |   _` |\033[1;33m \__ \  (      _ \   .  | \033[0m
- \__,_| \__,_|\033[1;33m ____/ \___| _/  _\ _|\_| \033[0m
-                                        
+ \__,_| \__,_|\033[1;33m ____/ \___| _/  _\ _|\_| \033[0m                                      
 '  
 
     if [ $# -eq 0 ]; then
@@ -57,7 +56,6 @@ testcreds() {
   |               |  \033[1;33m   __|  _ \  __|  _ \    __| \033[0m
    _|   -_) (_-<   _|\033[1;33m  (       /  _|   |  | \__ \ \033[0m
  \__| \___| ___/ \__|\033[1;33m \___| _|_\ ___| ___/  ____/ \033[0m
-                                                  
 '                                               
     
     if [ $# -eq 0 ]; then
@@ -73,7 +71,7 @@ testcreds() {
     fi
         
     echo -e "\033[1;33m[!] Trying credentials on SMB / WinRM / MSSQL / RDP / SSH with NetExec\033[0m"
-    nxc smb $(echo "$nxc_auth") | grep --color=never +
+    nxc smb $(echo "$nxc_auth") | grep --color=never +  | highlight red "(Pwn3d!)"  
     nxc smb $(echo "$nxc_auth") --local-auth | grep --color=never +  | highlight red "(Pwn3d!)"  
     nxc winrm $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
     nxc winrm $(echo "$nxc_auth") --local-auth | grep --color=never + | highlight red "(Pwn3d!)"
@@ -81,7 +79,9 @@ testcreds() {
     nxc mssql $(echo "$nxc_auth") --local-auth | grep --color=never + | highlight red "(Pwn3d!)"
     nxc rdp $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
     nxc rdp $(echo "$nxc_auth") --local-auth | grep --color=never +  | highlight red "(Pwn3d!)"
-    nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+    if [[ "$auth" == "password" ]]; then
+        nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+    fi
 }
 
 # ENUMDOMAIN
@@ -339,16 +339,16 @@ get_auth() {
           ;;
         --password|-p)
           local password="$2"
-          local auth="password"
+          auth="password"
           shift
           ;;
         --hash|-H)
           local hashes="$2"
-          local auth="hashes"
+          auth="hashes"
           shift
           ;;
         --kerb|-k)
-          local auth="kerb"
+          auth="kerb"
           shift
           ;;
         *)
