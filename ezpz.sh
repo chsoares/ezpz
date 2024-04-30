@@ -2,7 +2,7 @@
 # Scripts to run a bunch of tools sequentially and automate a lot of the mindless, repetitive process of enumeration.
 # Heavy lifting done mostly by NetExec, Impacket and SQLMap when applicable. 
 # Copyright (C) 2024 chsoares
-# Permission to copy and modify is granted under the GNU General Public License
+# Permission to copy and modify is granted under the MIT License
 # Last revised 4/2024
 
 
