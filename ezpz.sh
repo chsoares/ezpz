@@ -2,8 +2,8 @@
 # Scripts to run a bunch of tools sequentially and automate a lot of the mindless, repetitive process of enumeration.
 # Heavy lifting done mostly by NetExec, Impacket and SQLMap when applicable. 
 # Copyright (C) 2024 chsoares
-# Permission to copy and modify is granted under the MIT License
-# Last revised 4/2024
+# Permission to copy and modify is granted under the GNU General Public License
+# Last revised 3/2024
 
 
 # ADSCAN
@@ -49,7 +49,11 @@ adscan() {
     domain=$(cat nxc.tmp | grep DC | grep -oP "\(name:.*\)" | cut -d ' ' -f 2 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
     dc_hostname=$(cat nxc.tmp | grep DC | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
     dc_ip=$(cat nxc.tmp | grep DC | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-    echo '\033[0;34m[*] Adding DC to /etc/hosts \033[0m'
+    echo '\033[1;36m[*] Adding DC to /etc/hosts. Clean up hosts file beforehand? [y/N] \033[0m'
+    read -s -q confirm
+    if [[ $confirm =~ ^[Yy]$ ]]; then    
+      head -n 5 /etc/hosts > /etc/tmp && mv /etc/tmp /etc/hosts
+    fi
     echo "$dc_ip    $domain $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
     rm nxc.tmp
     echo "\033[1;31m[*] Done. \033[0m"
@@ -151,20 +155,21 @@ enumdomain() {
     nxc ldap $(echo "$nxc_auth") --password-not-required | grep --color=never -o "User:.*"
     
     echo "\033[1;33m[!] Enumerating AS-REProastable users with Impacket \033[0m"
-    GetNPUsers.py "$imp_auth" | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
-    GetNPUsers.py "$imp_auth" -request -outputfile asrep.hash 1>/dev/null
+    GetNPUsers.py $(echo "$imp_auth") | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
+    GetNPUsers.py $(echo "$imp_auth") -request -outputfile asrep.hash 1>/dev/null
     echo '\033[0;34m[*] Saving hashes (if any) to ./asrep.hash \033[0m'
     
     echo "\033[1;33m[!] Enumerating Kerberoastable users with Impacket \033[0m"
-    GetUserSPNs.py "$imp_auth" | grep --color=never "\S" | tail -n +4 | awk {'print $2 " - "$1'}
-    GetUserSPNs.py "$imp_auth" -request -outputfile kerb.hash 1>/dev/null
+    GetUserSPNs.py $(echo "$imp_auth") | grep --color=never "\S" | tail -n +4 | awk {'print $2 " ||| "$1'} | column -s "|||" -t
+    GetUserSPNs.py $(echo "$imp_auth") -request -outputfile kerb.hash 1>/dev/null
     echo '\033[0;34m[*] Saving hashes (if any) to ./kerb.hash \033[0m'
     
     echo "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then    
       echo "\033[1;33m[!] Ingesting AD data \033[0m"
-      nxc ldap $(echo "$nxc_auth") --bloodhound --collection All | grep "\/.*zip" > path.tmp
+      echo "\033[0;34m[*] Collection set to \'DC Only\'. Please run a more thorough collection separately if you wish."
+      bloodhound-python -u $user -p $password -ns $dc_ip -d $domain -c dconly --zip | grep -oE [0-9]*_bloodhound\.zip > path.tmp
       mv $(cat path.tmp) ./${domain}_bloodhound.zip
       echo "\033[0;34m[*] Saving data to ./${domain}_bloodhound.zip"
       rm path.tmp
@@ -397,7 +402,7 @@ get_auth() {
     while [ $# -gt 0 ]; do
       case "$1" in
         --target|-t)
-          local target="$2"
+          target="$2"
           shift
           ;;
         --user|-u)
@@ -405,12 +410,12 @@ get_auth() {
           shift
           ;;
         --password|-p)
-          local password="$2"
+          password="$2"
           auth="password"
           shift
           ;;
         --hash|-H)
-          local hashes="$2"
+          hashes="$2"
           auth="hashes"
           shift
           ;;
@@ -426,21 +431,27 @@ get_auth() {
       shift
     done
     
+    export dc_ip=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 1)
+    export domain=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 2)
+    export hostname=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 3)
+    export fqdn=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 4)
+    
+    
     case $auth in
       password)
         nxc_auth="$target -u $user -p $password"
-        imp_auth="$target/$user:$password"
+        imp_auth="$domain/$user:$password -dc-ip $dc_ip"
         ;;
       hashes)
         nxc_auth="$target -u $user -H $hashes"
-        imp_auth="$target/$user -hashes :$hashes"
+        imp_auth="$domain/$user -hashes :$hashes -dc-ip $dc_ip"
         ;;
       kerb)
         nxc_auth="$target -u $user --use-kcache"
-        imp_auth="$target/$user -k"
+        imp_auth="$domain/$user -k -dc-ip $dc_ip"
         ;;
       *)
         nxc_auth="$target -u '' -p ''"
-        imp_auth="$target/"
+        imp_auth="$domain/ -dc-ip $dc_ip"
     esac
 }
