@@ -486,8 +486,8 @@ get_auth() {
       shift
     done
     
-    export dc_ip=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 1)
-    export domain=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 2)
+    export dc_ip=$(cat /etc/hosts | grep -i -m 1 'dc' | tr -s " " | cut -d " " -f 1)
+    export domain=$(cat /etc/hosts | grep -i -m 1 'dc' | tr -s " " | cut -d " " -f 2)
     export hostname=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 3)
     export fqdn=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 4)
     
