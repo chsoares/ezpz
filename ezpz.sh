@@ -46,15 +46,27 @@ adscan() {
     echo '\033[1;33m[!] Running NetExec on enumerated hosts \033[0m'
     nxc smb targets.list | tee nxc.tmp
     
-    domain=$(cat nxc.tmp | grep DC | grep -oP "\(name:.*\)" | cut -d ' ' -f 2 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
-    dc_hostname=$(cat nxc.tmp | grep DC | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
-    dc_ip=$(cat nxc.tmp | grep DC | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-    echo '\033[1;36m[*] Adding DC to /etc/hosts. Clean up hosts file beforehand? [y/N] \033[0m'
+    local hosts_count=$(cat nxc.tmp | head -n -1 | wc -l)
+    
+    echo '\033[1;36m[?] Add hosts to /etc/hosts? [y/N] \033[0m'
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then    
       head -n 5 /etc/hosts > /etc/tmp && mv /etc/tmp /etc/hosts
-    fi
-    echo "$dc_ip    $domain $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
+      for i in {1..$hosts_count}; do
+        is_dc=$(cat nxc.tmp | sed -n "${i}p" | grep -i DC | wc -l)
+        if [[ is_dc -eq 1 ]]; then
+          domain=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 2 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
+          dc_hostname=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
+          dc_ip=$(cat nxc.tmp | sed -n "${i}p" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
+          echo "$dc_ip    $dc_hostname $domain $dc_hostname.$domain" | tee -a /etc/hosts
+        else          
+          dc_hostname=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
+          dc_ip=$(cat nxc.tmp | sed -n "${i}p" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
+          echo "$dc_ip    $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
+        fi  
+      done        
+    fi   
+    
     rm nxc.tmp
     echo "\033[1;31m[*] Done. \033[0m"
 }
@@ -169,7 +181,7 @@ enumdomain() {
     if [[ $confirm =~ ^[Yy]$ ]]; then    
       echo "\033[1;33m[!] Ingesting AD data \033[0m"
       echo "\033[0;34m[*] Collection set to \'DC Only\'. Please run a more thorough collection separately if you wish."
-      bloodhound-python -u $user -p $password -ns $dc_ip -d $domain -c dconly --zip | grep -oE [0-9]*_bloodhound\.zip > path.tmp
+      bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c dconly --zip | grep -oE [0-9]*_bloodhound\.zip > path.tmp
       mv $(cat path.tmp) ./${domain}_bloodhound.zip
       echo "\033[0;34m[*] Saving data to ./${domain}_bloodhound.zip"
       rm path.tmp
@@ -202,17 +214,7 @@ enumuser() {
     #echo "nxc = $nxc_auth"
     #echo "imp = $imp_auth"
     #end debug
-                                                  
-    echo "\033[1;33m[!] Enumerating $user's shares with NetExec \033[0m"
-    nxc smb $(echo "$nxc_auth") --shares | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- | tee ${user}_shares.tmp
-    cat ${user}_shares.tmp | awk -F 'READ' '{print $1}' > ${user}_sharenames.tmp
-    while read line
-      do 
-        echo "\033[0;34m[*] Spidering $line share for .txt/.xml/.ini/.config files \033[0m"
-        nxc smb $(echo "$nxc_auth") --spider $line --regex ".txt|.xml|.config|.cnf|.conf|.ini" | grep -v "\[.\]" | tr -s " " | cut -d " " -f 5-
-      done < ${user}_sharenames.tmp
-    rm *.tmp
-    
+                                                   
     echo "\033[1;33m[!] Enumerating $user's groups with NetExec \033[0m"
     nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" | tail -n +4 | tr -s " " | cut -d " " -f 5-
     
@@ -227,7 +229,60 @@ enumuser() {
     echo "\033[1;31m[*] Done. \033[0m"
 }
     
-#!/bin/zsh
+# ENUMSHARES
+# Follows the same idea of enumdomain, really. It runs a bunch of NetExec and Impacket scripts to enumerate user readable shares.
+#------------------------------------------------------------------------------------
+# #Usage: enumshares [-t target] -u user [-p password] [-H hash] [-k]
+enumshares() {
+    echo '   
+                         \033[1;33m   __|  |  |    \    _ \  __|   __| \033[0m
+   -_)    \   |  |   ` \ \033[1;33m \__ \  __ |   _ \     /  _|  \__ \ \033[0m
+ \___| _| _| \_,_| _|_|_|\033[1;33m ____/ _| _| _/  _\ _|_\ ___| ____/ \033[0m
+'    
+       
+    if [ $# -eq 0 ]; then
+        echo "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: \033[0m $0 [-t target] -u user [-p password] [-H hash] [-k]"
+        return 1
+    fi 
+    
+    cat /etc/hosts | tail -n +6 | tr -s ' ' | cut -d ' ' -f 2 > hostnames.tmp
+    if [[ $1 == '-t' ]]; then
+        echo "$2" > hostnames.tmp
+        shift 2
+    fi          
+                                                   
+    while read target; do
+        echo "\033[1;33m[!] Enumerating $2's shares on $target \033[0m"
+        nxc smb $target $@ --shares | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- | tee ${target}_${user}_shares.tmp
+        cat ${target}_${user}_shares.tmp | awk -F 'READ' '{print $1}' > ${target}_${user}_sharenames.tmp
+        while read share; do
+            echo "\033[1;36m[?] Spider "$share" share for interesting files? [y/N]\033[0m"
+            read -s -q confirm
+            if [[ $confirm =~ ^[Yy]$ ]]; then 
+                echo "\033[0;34m[*] Searching for .txt/.xml/.ini/.config/.ps1 files \033[0m"
+                nxc smb $target $@ --spider "$share" --regex ".txt|.xml|.config|.cnf|.conf|.ini|.ps1" | grep -v "\[.\]" | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee ${share}_files.tmp
+                
+                echo "\033[1;36m[?] Download files? [y/N]\033[0m"
+                read -s -q confirm
+                if [[ $confirm =~ ^[Yy]$ ]]; then 
+                    dir_path=$(echo ${target}${2}${share} | tr -cd '[:alnum:]')
+                    echo "\033[0;34m[*] Saving files to ./$dir_path \033[0m"
+                    mkdir $dir_path > /dev/null 2>&1
+                    while read files; do
+                        share_path=$(echo $files | cut -d '/' -f -4)
+                        file_path=$(echo $files | cut -d '/' -f 5- | sed 's/\//\\/g')
+                        file_name=$(echo ${file_path##*\\})
+                        smbclient $share_path -U "$domain\\$2%$4" -c "get $file_path ./$dir_path/$file_name" > /dev/null 2>&1
+                    done < ${share}_files.tmp
+                fi
+                
+            fi
+        done < ${target}_${user}_sharenames.tmp
+    done < hostnames.tmp
+    rm *.tmp
+    echo "\033[1;31m[*] Done. \033[0m"
+}    
 
 # PINGMAP
 # Runs fping on the network to make a list of live hosts. 
@@ -454,4 +509,5 @@ get_auth() {
         nxc_auth="$target -u '' -p ''"
         imp_auth="$domain/ -dc-ip $dc_ip"
     esac
+    blood_auth=$(echo $nxc_auth | grep -oE "\-u.*")
 }
