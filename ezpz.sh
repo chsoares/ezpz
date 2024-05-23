@@ -2,8 +2,8 @@
 # Scripts to run a bunch of tools sequentially and automate a lot of the mindless, repetitive process of enumeration.
 # Heavy lifting done mostly by NetExec, Impacket and SQLMap when applicable. 
 # Copyright (C) 2024 chsoares
-# Permission to copy and modify is granted under the GNU General Public License
-# Last revised 3/2024
+# Permission to copy and modify is granted under the MIT license
+# Last revised 5/2024
 
 
 # ADSCAN
@@ -58,8 +58,9 @@ adscan() {
           domain=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 2 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
           dc_hostname=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
           dc_ip=$(cat nxc.tmp | sed -n "${i}p" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-          echo "$dc_ip    $dc_hostname $domain $dc_hostname.$domain" | tee -a /etc/hosts
+          echo "$dc_ip    $dc_hostname $dc_hostname.$domain $domain" | tee -a /etc/hosts
         else          
+          domain=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 2 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
           dc_hostname=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
           dc_ip=$(cat nxc.tmp | sed -n "${i}p" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
           echo "$dc_ip    $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
@@ -487,9 +488,9 @@ get_auth() {
     done
     
     export dc_ip=$(cat /etc/hosts | grep -i -m 1 'dc' | tr -s " " | cut -d " " -f 1)
-    export domain=$(cat /etc/hosts | grep -i -m 1 'dc' | tr -s " " | cut -d " " -f 2)
-    export hostname=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 3)
-    export fqdn=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 4)
+    export domain=$(cat /etc/hosts | grep -i -m 1 'dc' | tr -s " " | cut -d " " -f 4)
+    export hostname=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 2)
+    export fqdn=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 3)
     
     
     case $auth in
