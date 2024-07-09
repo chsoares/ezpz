@@ -357,7 +357,7 @@ pingmap() {
     echo "\033[1;36m[?] Take screenshot of hosts' web pages? [y/N] \033[0m"
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
-      python3 ~/scripts/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
+      python3 /opt/ezpz/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
       mkdir gowitness && cd gowitness    
       echo "\033[1;33m[!] Screenshotting pages with GoWitness \033[0m"
       gowitness nmap -f ../scan_xml/scan.xml -t 8 -N > /dev/null 2>&1
