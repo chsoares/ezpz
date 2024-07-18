@@ -5,6 +5,97 @@
 # Permission to copy and modify is granted under the MIT license
 # Last revised 5/2024
 
+# NETSCAN
+# Runs fping on the network to make a list of live hosts. 
+# The list then gets passed onto nmap to scan the machines further for open ports and services. 
+#------------------------------------------------------------------------------------
+# Usage: netscan [-F] 172.0.0.1/24
+netscan() {
+    echo '
+              |  \033[1;33m   __|   __|    \     \ | \033[0m
+    \    -_)   _|\033[1;33m \__ \  (      _ \   .  | \033[0m
+ _| _| \___| \__|\033[1;33m ____/ \___| _/  _\ _|\_|  \033[0m                                      
+'
+
+    if [ $# -eq 0 ]; then
+        echo "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: $0 [-F] <IP/CIDR Range>"
+        return 1
+    fi
+
+    while [ $# -gt 1 ]; do
+      case "$1" in
+        --fast|-F)
+          local fast=1
+          ;;
+        --*|-*)
+          echo "\033[1;31m[!] Parameter '$1' not recognized. \033[0m"
+          echo "Usage: $0 [-F] <IP/CIDR Range>"
+          return 1
+          ;;
+      esac 
+      shift     
+    done
+    
+        local cidr_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\/([1-9]|[1-2][0-9]|3[0-2])$'
+        local ip_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$'
+        
+    if ! [[ $@ =~ $cidr_pattern ]] && ! [[ $@ =~ $ip_pattern ]] ; then
+        echo "\033[1;31m[!] \"$@\" is not a valid IP or CIDR range. \033[0m"
+        echo "Usage: $0 <IP/CIDR Range>"
+        return 1
+    fi
+    
+    if [[ $@ =~ $cidr_pattern ]] ; then
+      echo "\033[1;33m[!] Running fping on the $1 network\033[0m"  
+      fping -agq "$1" | tee targets.list
+      echo '\033[0;34m[*] Saving enumerated hosts to ./targets.list \033[0m'
+    else
+      echo "$@" > targets.list
+    fi
+    
+    if [[ -z $(grep '[^[:space:]]' targets.list) ]] ; then
+        echo "\033[1;31m[!] Empty results. Maybe you got the syntax wrong? \033[0m"
+        echo "Usage: $0 [-F] <CIDR Range>"
+        return 1
+    else
+        #echo ""
+    fi    
+    
+    mkdir scan_xml 2>/dev/null
+    if [[ fast -eq 1 ]]; then
+      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -F --open" on enumerated hosts\033[0m'    
+      while read item
+        do
+          echo "\033[0;36m[*] Scanning $item...\033[0m"
+          nmap -T4 -Pn -sV -F --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'          
+          #echo ""
+        done < targets.list
+    else
+      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -p- --open" on enumerated hosts\033[0m'    
+      while read item
+        do
+          echo "\033[0;36m[*] Scanning $item...\033[0m"
+          nmap -T4 -Pn -sV -p- --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'
+          #echo ""
+        done < targets.list
+    fi
+    echo "\033[1;36m[?] Take screenshot of hosts' web pages? [y/N] \033[0m"
+    read -s -q confirm
+    if [[ $confirm =~ ^[Yy]$ ]]; then
+      python3 /opt/ezpz/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
+      mkdir gowitness && cd gowitness    
+      echo "\033[1;33m[!] Screenshotting pages with GoWitness \033[0m"
+      gowitness nmap -f ../scan_xml/scan.xml -t 8 -N > /dev/null 2>&1
+      echo '\033[0;34m[*] Serving GoWitness report on http://localhost:7171. Press CTRL+C to exit.'
+      gowitness server > /dev/null 2>&1
+    fi
+        
+    echo "\033[1;31m[*] Done. \033[0m"
+}
+
+
+
 
 # ADSCAN
 # Runs fping on the network to find live hosts and outputs their IPs to targets.list. 
@@ -152,6 +243,15 @@ enumdomain() {
     echo "\033[1;33m[!] Enumerating user descriptions with NetExec \033[0m"
     nxc ldap $(echo "$nxc_auth") -M user-desc | grep --color=never -o "User:.*"
     
+    echo "\033[1;33m[!] Searching for PKI Enrollment Services with NetExec \033[0m"
+    nxc ldap $(echo "$nxc_auth") -M adcs | grep ADCS | tr -s " " | cut -d ' ' -f 6-
+    
+    echo "\033[1;33m[!] Enumerating trust relationships with NetExec \033[0m"
+    nxc ldap $(echo "$nxc_auth") -M enum_trusts | grep ENUM_TRUSTS | tr -s " " | cut -d ' ' -f 6-
+    
+    echo "\033[1;33m[!] Enumerating MachineAccountQuota \033[0m"
+    nxc ldap $(echo "$nxc_auth") -M maq | grep -oE "MachineAccountQuota:*"
+    
     echo "\033[1;33m[!] Enumerating delegation rights with Impacket \033[0m"
     findDelegation.py "$imp_auth" | tail -n +2 | grep --color=never "\S"
     
@@ -177,12 +277,30 @@ enumdomain() {
     GetUserSPNs.py $(echo "$imp_auth") -request -outputfile kerb.hash 1>/dev/null
     echo '\033[0;34m[*] Saving hashes (if any) to ./kerb.hash \033[0m'
     
+    echo "\033[1;33m[!] Checking for vulnerabilities \033[0m"
+    echo '\033[0;34m[*] EternalBlue \033[0m'
+    nxc smb $(echo "$nxc_auth") -M ms17-010 | grep MS17-010 | tr -s " " | cut -d " " -f 3-
+    echo '\033[0;34m[*] NoPac \033[0m'
+    nxc smb $(echo "$nxc_auth") -M nopac | grep NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+    echo '\033[0;34m[*] PetitPotam \033[0m'
+    nxc smb $(echo "$nxc_auth") -M petitpotam | grep PETITPOTAM | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] DFSCoerce \033[0m'
+    nxc smb $(echo "$nxc_auth") -M dfscoerce | grep DFSCOERCE | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] PrinterBug \033[0m'
+    nxc smb $(echo "$nxc_auth") -M printerbug | grep PRINTERBUG | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] PrintNightmare \033[0m'
+    nxc smb $(echo "$nxc_auth") -M printnightmare | grep PRINTNIGHTMARE | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] Shadowcoerce \033[0m'
+    nxc smb $(echo "$nxc_auth") -M shadowcoerce | grep SHADOWCOERCE | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] Zerologon \033[0m'
+    nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5-
+    
     echo "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then    
       echo "\033[1;33m[!] Ingesting AD data \033[0m"
-      echo "\033[0;34m[*] Collection set to \'DC Only\'. Please run a more thorough collection separately if you wish."
-      bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c dconly --zip | grep -oE [0-9]*_bloodhound\.zip > path.tmp
+      echo "\033[0;34m[*] Collection set to \'All\'. Grab yourself a cup of coffee, this might take a wee while."
+      bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c all --zip | grep -oE [0-9]*_bloodhound\.zip > path.tmp
       mv $(cat path.tmp) ./${domain}_bloodhound.zip
       echo "\033[0;34m[*] Saving data to ./${domain}_bloodhound.zip"
       rm path.tmp
@@ -285,88 +403,6 @@ enumshares() {
     echo "\033[1;31m[*] Done. \033[0m"
 }    
 
-# PINGMAP
-# Runs fping on the network to make a list of live hosts. 
-# The list then gets passed onto nmap to scan the machines further for open ports and services. 
-#------------------------------------------------------------------------------------
-# Usage: pingmap [-F] 172.0.0.1/24
-pingmap() {
-    echo '
-       _)              \033[1;33m   )     \ |    ) \033[0m                     
-   _ \  |    \    _` | \033[1;33m  /     .  |   /  \033[0m    ` \    _` |  _ \ 
-  .__/ _| _| _| \__, | \033[1;33m       _|\_|      \033[0m  _|_|_| \__,_| .__/ 
- _|             ____/  \033[1;33m                  \033[0m               _|                                           
-'  
-    if [ $# -eq 0 ]; then
-        echo "\033[1;31m[!] Missing parameters. \033[0m"
-        echo "Usage: $0 [-F] <CIDR Range>"
-        return 1
-    fi
-
-    while [ $# -gt 1 ]; do
-      case "$1" in
-        --fast|-F)
-          local fast=1
-          ;;
-        --*|-*)
-          echo "\033[1;31m[!] Parameter '$1' not recognized. \033[0m"
-          echo "Usage: $0 [-F] <CIDR Range>"
-          return 1
-          ;;
-      esac 
-      shift     
-    done
-    
-        local cidr_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\/([1-9]|[1-2][0-9]|3[0-2])$'
-    if ! [[ $@ =~ $cidr_pattern ]]; then
-        echo "\033[1;31m[!] \"$@\" is not a valid CIDR range. \033[0m"
-        echo "Usage: $0 <CIDR Range>"
-        return 1
-    fi
-    
-    echo "\033[1;33m[!] Running fping on the $1 network\033[0m"  
-    fping -agq "$1" | tee targets.list
-    echo '\033[0;34m[*] Saving enumerated hosts to ./targets.list \033[0m'
-    
-    if [[ -z $(grep '[^[:space:]]' /root/scripts/pingmap.tmp) ]] ; then
-        echo "\033[1;31m[!] Empty results. Maybe you got the syntax wrong? \033[0m"
-        echo "Usage: $0 [-F] <CIDR Range>"
-        return 1
-    else
-        #echo ""
-    fi    
-    
-    mkdir scan_xml
-    if [[ fast -eq 1 ]]; then
-      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -F --open" on enumerated hosts\033[0m'    
-      while read item
-        do
-          echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -sV -F --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'          
-          #echo ""
-        done < targets.list
-    else
-      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -p- --open" on enumerated hosts\033[0m'    
-      while read item
-        do
-          echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -sV -p- --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'
-          #echo ""
-        done < targets.list
-    fi
-    echo "\033[1;36m[?] Take screenshot of hosts' web pages? [y/N] \033[0m"
-    read -s -q confirm
-    if [[ $confirm =~ ^[Yy]$ ]]; then
-      python3 /opt/ezpz/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
-      mkdir gowitness && cd gowitness    
-      echo "\033[1;33m[!] Screenshotting pages with GoWitness \033[0m"
-      gowitness nmap -f ../scan_xml/scan.xml -t 8 -N > /dev/null 2>&1
-      echo '\033[0;34m[*] Serving GoWitness report on http://localhost:7171. Press CTRL+C to exit.'
-      gowitness server > /dev/null 2>&1
-    fi
-        
-    echo "\033[1;31m[*] Done. \033[0m"
-}
 
 
 #!/bin/zsh
