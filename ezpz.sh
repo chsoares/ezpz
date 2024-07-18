@@ -250,10 +250,10 @@ enumdomain() {
     nxc ldap $(echo "$nxc_auth") -M enum_trusts | grep ENUM_TRUSTS | tr -s " " | cut -d ' ' -f 6-
     
     echo "\033[1;33m[!] Enumerating MachineAccountQuota \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M maq | grep -oE "MachineAccountQuota:*"
+    nxc ldap $(echo "$nxc_auth") -M maq | grep -oE "MachineAccountQuota: .*"
     
     echo "\033[1;33m[!] Enumerating delegation rights with Impacket \033[0m"
-    findDelegation.py "$imp_auth" | tail -n +2 | grep --color=never "\S"
+    findDelegation.py $(echo "$imp_auth") | grep --color=never "\S" | tail -n +2
     
     echo "\033[1;33m[!] Enumerating DCSync rights with NetExec \033[0m"  
     local domain1=$(echo $domain | cut -d '.' -f 1)
