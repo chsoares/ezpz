@@ -261,11 +261,11 @@ enumdomain() {
     nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync | grep "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
     
     echo "\033[1;33m[!] Searching for credentials in the GPO with NetExec \033[0m"
-    nxc smb $(echo "$nxc_auth") -M gpp_password | grep -oE "\[\+\] Found credentials .*|userName:.*|Password:.*" --color=never
-    nxc smb $(echo "$nxc_auth") -M gpp_autologin | grep -oE "\[\+\] Found credentials .*|Usernames:.*|Passwords:.*" --color=never
+    nxc smb $(echo "$nxc_auth") -M gpp_password | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
+    nxc smb $(echo "$nxc_auth") -M gpp_autologin | grep -aioE "\Found credentials .*|Usernames: .*|Passwords: .*" --color=never
     
     echo "\033[1;33m[!] Enumerating PASSWD_NOTREQD with NetExec \033[0m" 
-    nxc ldap $(echo "$nxc_auth") --password-not-required | grep --color=never -o "User:.*"
+    nxc ldap $(echo "$nxc_auth") --password-not-required | grep --color=never -ao "User:.*"
     
     echo "\033[1;33m[!] Enumerating AS-REProastable users with Impacket \033[0m"
     GetNPUsers.py $(echo "$imp_auth") | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
@@ -338,13 +338,13 @@ enumuser() {
     nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" | tail -n +4 | tr -s " " | cut -d " " -f 5-
     
     echo "\033[1;33m[!] Trying to dump gMSA passwords with NetExec \033[0m"
-    nxc ldap $(echo "$nxc_auth") --gmsa | grep -oE "Account:.*" --color=never
+    nxc ldap $(echo "$nxc_auth") --gmsa | grep -aoE "Account:.*" --color=never
     
     echo "\033[1;33m[!] Trying to dump LAPS passwords with NetExec \033[0m"
     nxc ldap $(echo "$nxc_auth") -M laps | tail -n +4 | tr -s " " | cut -d " " -f 6-
     
     echo "\033[1;33m[!] Trying to find KeePass files with NetExec \033[0m"
-    nxc smb $(echo "$nxc_auth") -M keepass_discover | grep -oE "Found .*" --color=never
+    nxc smb $(echo "$nxc_auth") -M keepass_discover | grep -aoE "Found .*" --color=never
     echo "\033[1;31m[*] Done. \033[0m"
 }
     
