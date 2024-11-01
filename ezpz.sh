@@ -1,9 +1,6 @@
 #!/bin/zsh
 # Scripts to run a bunch of tools sequentially and automate a lot of the mindless, repetitive process of enumeration.
-# Heavy lifting done mostly by NetExec, Impacket and SQLMap when applicable. 
-# Copyright (C) 2024 chsoares
 # Permission to copy and modify is granted under the MIT license
-# Last revised 5/2024
 
 # NETSCAN
 # Runs fping on the network to make a list of live hosts. 
@@ -61,41 +58,100 @@ netscan() {
     else
         #echo ""
     fi    
-    
+   
     mkdir scan_xml 2>/dev/null
+    
+    echo '\033[1;33m[!] Running FAST TCP SCAN on enumerated hosts\033[0m'    
+      while read item
+        do
+          echo "\033[0;36m[*] Scanning $item...\033[0m"
+          nmap -T4 -Pn -sV -F --min-rate 10000 --open "$item" | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'          
+          #echo ""
+        done < targets.list
     if [[ fast -eq 1 ]]; then
-      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -F --open" on enumerated hosts\033[0m'    
-      while read item
-        do
-          echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -sV -F --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'          
-          #echo ""
-        done < targets.list
+      return 0
     else
-      echo '\033[1;33m[!] Running "nmap -T4 -Pn -sV -p- --open" on enumerated hosts\033[0m'    
+      echo '\033[1;33m[!] Running FULL TCP SCAN on enumerated hosts\033[0m'    
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -sV -p- --open "$item" -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'
+          nmap -T4 -Pn -sVC -p- --open "$item" --min-rate 10000 -oX scan_xml/scan_${item}.xml | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'
           #echo ""
         done < targets.list
+      echo '\033[1;33m[!] Running UDP SCAN on enumerated hosts\033[0m'    
+      while read item
+        do
+          echo "\033[0;36m[*] Scanning $item...\033[0m"
+          nmap -T4 -sU --max-retries 1 --min-rate 10000 --open "$item" | sed -n '/PORT/,$p' | head -n -2 | grep --color=never -v '^[[:space:]]*$'
+          #echo ""
+        done < targets.list
+    
     fi
-    echo "\033[1;36m[?] Take screenshot of hosts' web pages? [y/N] \033[0m"
-    read -s -q confirm
-    if [[ $confirm =~ ^[Yy]$ ]]; then
-      python3 /opt/ezpz/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
-      mkdir gowitness && cd gowitness    
-      echo "\033[1;33m[!] Screenshotting pages with GoWitness \033[0m"
-      gowitness nmap -f ../scan_xml/scan.xml -t 8 -N > /dev/null 2>&1
-      echo '\033[0;34m[*] Serving GoWitness report on http://localhost:7171. Press CTRL+C to exit.'
-      gowitness server > /dev/null 2>&1
-    fi
+#    echo "\033[1;36m[?] Take screenshot of hosts' web pages? [y/N] \033[0m"
+#    read -s -q confirm
+#    if [[ $confirm =~ ^[Yy]$ ]]; then
+#      python3 /opt/ezpz/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
+#      mkdir gowitness && cd gowitness    
+#      echo "\033[1;33m[!] Screenshotting pages with GoWitness \033[0m"
+#      gowitness nmap -f ../scan_xml/scan.xml -t 8 -N > /dev/null 2>&1
+#      echo '\033[0;34m[*] Serving GoWitness report on http://localhost:7171. Press CTRL+C to exit.'
+#      gowitness server > /dev/null 2>&1
+#    fi
         
     echo "\033[1;31m[*] Done. \033[0m"
 }
 
+# WEBSCAN
+# Runs fping on the network to find live hosts and outputs their IPs to targets.list. 
+# The list then gets passed onto NetExec to enumerate the machines further and get the hosts and domain names. 
+# Lastly, it adds the DC’s IP and domain name to /etc/hosts to make our lives easier.
+#------------------------------------------------------------------------------------
+# Usage: webscan <IP/URL>
+webscan() {
 
+    echo '
+                |    \033[1;33m  __|   __|    \     \ | \033[0m
+ \ \  \ /  -_)   _ \ \033[1;33m\__ \  (      _ \   .  | \033[0m
+  \_/\_/ \___| _.__/ \033[1;33m____/ \___| _/  _\ _|\_| \033[0m                                                                                 
+'  
 
+      
+    if [[ $# -eq 0 ]]; then
+        echo "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: $0 http://<IP/URL>"
+        return 1
+    fi
+    
+    url=$1
+    size=$(curl $1 -s -I | grep Length | awk '{print $NF}' | grep -oE [0-9]+)
+    domain=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 1)
+    tld=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 2)
+
+    echo "\033[1;33m[!] Running whatweb on $1 \033[0m"
+    #echo ""
+    whatweb -a3 -v $1
+    echo ""
+    
+    echo "\033[1;33m[!] Fuzzing for directories \033[0m"
+    echo ""
+    ffuf -u $1/FUZZ -w $directory -c -t 250 -ic 2>/dev/null
+    echo ""
+    
+    echo "\033[1;33m[!] Fuzzing for subdomains \033[0m"
+    ffuf -u $url -w $directory -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -mc 200 -fs $size 2>/dev/null
+    echo ""
+
+    echo "\033[1;33m[!] Fuzzing for vhosts \033[0m"
+    ffuf -u $url -w $directory -H "Host: FUZZ.$tld" -c -t 250 -ic -mc 200 -fs $size 2>/dev/null
+    echo ""
+    
+    echo "\033[1;33m[!] Fuzzing recursively for common file extensions (this might take long!) \033[0m"
+    ffuf -u $url -w $directory -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic 2>/dev/null
+    echo ""    
+    
+    
+    
+}    
 
 # ADSCAN
 # Runs fping on the network to find live hosts and outputs their IPs to targets.list. 
