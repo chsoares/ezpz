@@ -123,7 +123,7 @@ webscan() {
     fi
     
     url=$1
-    size=$(curl $1 -s -I | grep Length | awk '{print $NF}' | grep -oE [0-9]+)
+    size=$(curl $1 -s | wc -c)
     domain=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 1)
     tld=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 2)
 
@@ -134,24 +134,70 @@ webscan() {
     
     echo "\033[1;33m[!] Fuzzing for directories \033[0m"
     echo ""
-    ffuf -u $1/FUZZ -w $directory -c -t 250 -ic 2>/dev/null
+    ffuf -u $1/FUZZ -w $directory -c -t 250 -ic -ac 2>/dev/null
     echo ""
     
     echo "\033[1;33m[!] Fuzzing for subdomains \033[0m"
-    ffuf -u $url -w $directory -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -mc 200 -fs $size 2>/dev/null
+    ffuf -u $url -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac 2>/dev/null
     echo ""
 
     echo "\033[1;33m[!] Fuzzing for vhosts \033[0m"
-    ffuf -u $url -w $directory -H "Host: FUZZ.$tld" -c -t 250 -ic -mc 200 -fs $size 2>/dev/null
+    ffuf -u $url -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -H "Host: FUZZ.$tld" -c -t 250 -ic -ac 2>/dev/null
     echo ""
     
     echo "\033[1;33m[!] Fuzzing recursively for common file extensions (this might take long!) \033[0m"
-    ffuf -u $url -w $directory -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic 2>/dev/null
+    ffuf -u $url/FUZZ -w $directory -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic 2>/dev/null
     echo ""    
     
     
     
 }    
+
+# checkvulns
+#------------------------------------------------------------------------------------
+#Usage: checkvulns -t target -u user [-p password] [-H hash] [-k]
+checkvulns() {
+                                                               
+    if [[ $# -eq 0 ]]; then
+        echo "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: $0 -t target -u user [-p password] [-H hash] [-k]"
+        return 1
+    fi     
+    
+    get_auth $@
+    if [[ $? -eq 2 ]]; then
+        echo "Usage: $0 -t target -u user [-p password] [-H hash] [-k]"
+        return 1
+    fi   
+    #debug
+    #echo "nxc = $nxc_auth"
+    #echo "imp = $imp_auth"
+    #end debug    
+       
+    echo "\033[1;33m[!] Checking for vulnerabilities \033[0m"
+    echo '\033[0;34m[*] EternalBlue \033[0m'
+    nxc smb $(echo "$nxc_auth") -M ms17-010 | grep MS17-010 | tr -s " " | cut -d " " -f 3-
+    echo '\033[0;34m[*] Zerologon \033[0m'
+    nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] PrintNightmare \033[0m'
+    nxc smb $(echo "$nxc_auth") -M printnightmare | grep PRINTNIGHTMARE | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] SMBGhost \033[0m'
+    nxc smb $(echo "$nxc_auth") -M smbghost | grep SMBGHOST | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] NoPac \033[0m'
+    nxc smb $(echo "$nxc_auth") -M nopac | grep NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+    echo '\033[0;34m[*] PetitPotam \033[0m'
+    nxc smb $(echo "$nxc_auth") -M petitpotam | grep PETITPOTAM | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] DFSCoerce \033[0m'
+    nxc smb $(echo "$nxc_auth") -M dfscoerce | grep DFSCOERCE | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] PrinterBug \033[0m'
+    nxc smb $(echo "$nxc_auth") -M printerbug | grep PRINTERBUG | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] Shadowcoerce \033[0m'
+    nxc smb $(echo "$nxc_auth") -M shadowcoerce | grep SHADOWCOERCE | tr -s " " | cut -d " " -f 5-
+    
+    echo "\033[1;31m[*] Done. \033[0m"
+}
+
+
 
 # ADSCAN
 # Runs fping on the network to find live hosts and outputs their IPs to targets.list. 
@@ -336,6 +382,12 @@ enumdomain() {
     echo "\033[1;33m[!] Checking for vulnerabilities \033[0m"
     echo '\033[0;34m[*] EternalBlue \033[0m'
     nxc smb $(echo "$nxc_auth") -M ms17-010 | grep MS17-010 | tr -s " " | cut -d " " -f 3-
+    echo '\033[0;34m[*] Zerologon \033[0m'
+    nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] PrintNightmare \033[0m'
+    nxc smb $(echo "$nxc_auth") -M printnightmare | grep PRINTNIGHTMARE | tr -s " " | cut -d " " -f 5-
+    echo '\033[0;34m[*] SMBGhost \033[0m'
+    nxc smb $(echo "$nxc_auth") -M smbghost | grep SMBGHOST | tr -s " " | cut -d " " -f 5-
     echo '\033[0;34m[*] NoPac \033[0m'
     nxc smb $(echo "$nxc_auth") -M nopac | grep NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
     echo '\033[0;34m[*] PetitPotam \033[0m'
@@ -344,12 +396,8 @@ enumdomain() {
     nxc smb $(echo "$nxc_auth") -M dfscoerce | grep DFSCOERCE | tr -s " " | cut -d " " -f 5-
     echo '\033[0;34m[*] PrinterBug \033[0m'
     nxc smb $(echo "$nxc_auth") -M printerbug | grep PRINTERBUG | tr -s " " | cut -d " " -f 5-
-    echo '\033[0;34m[*] PrintNightmare \033[0m'
-    nxc smb $(echo "$nxc_auth") -M printnightmare | grep PRINTNIGHTMARE | tr -s " " | cut -d " " -f 5-
     echo '\033[0;34m[*] Shadowcoerce \033[0m'
     nxc smb $(echo "$nxc_auth") -M shadowcoerce | grep SHADOWCOERCE | tr -s " " | cut -d " " -f 5-
-    echo '\033[0;34m[*] Zerologon \033[0m'
-    nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5-
     
     echo "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
     read -s -q confirm
