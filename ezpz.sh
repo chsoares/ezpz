@@ -455,8 +455,8 @@ enumuser() {
     
     
     echo "\033[1;33m[!] Trying to find KeePass files with NetExec \033[0m"
-    echo "\033[0;34m[>] cme smb $(echo "$nxc_auth") keepass_discover \033[0m"
-    cme smb $(echo "$nxc_auth") keepass_discover | grep -aoE "Found .*" --color=never
+    echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") -M keepass_discover \033[0m"
+    nxc smb $(echo "$nxc_auth") -M keepass_discover | grep -aoE "Found .*" --color=never
     
  
     echo "\033[1;31m[*] Done. \033[0m"
@@ -495,7 +495,7 @@ enumshares() {
             echo "\033[1;36m[?] Spider "$share" share for interesting files? [y/N]\033[0m"
             read -s -q confirm
             if [[ $confirm =~ ^[Yy]$ ]]; then 
-                echo "\036[0;34m[*] Searching for .txt/.xml/.ini/.config/.ps1 files \033[0m"
+                echo "\033[1;33m[*] Searching $share for .txt/.xml/.ini/.config/.ps1 files \033[0m"
                 echo "\033[0;34m[>] nxc smb $target $@ --spider $share --regex '.txt|.xml|.config|.cnf|.conf|.ini|.ps1'  \033[0m"
                 nxc smb $target $@ --spider "$share" --regex ".txt|.xml|.config|.cnf|.conf|.ini|.ps1" | grep -v "\[.\]" | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee ${share}_files.tmp
                 
@@ -528,8 +528,7 @@ enumshares() {
 #!/bin/zsh
 
 # enumsql
-# Runs sqlmap on the db to do some enumeration. 
-# Not much advantage between this and just running sqlmap other than a prettier output.
+# Just a bunch of sqlmap in a row for enumeration and db dumping.
 #------------------------------------------------------------------------------------
 # Usage: enumsql target [options]
 enumsql() {
