@@ -14,85 +14,100 @@ netscan() {
  _| _| \___| \__|\033[1;33m ____/ \___| _/  _\ _|\_|  \033[0m                                      
 '
 
+    
     if [ $# -eq 0 ]; then
-        echo "\033[1;31m[!] Missing parameters. \033[0m"
+        echo -e "\033[1;31m[!] Missing parameters. \033[0m"
         echo "Usage: $0 <IP/CIDR Range>"
         return 1
     fi
 
-   
+    # Define IP and CIDR patterns
     local cidr_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\/([1-9]|[1-2][0-9]|3[0-2])$'
     local ip_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$'
-        
-    if ! [[ $@ =~ $cidr_pattern ]] && ! [[ $@ =~ $ip_pattern ]] ; then
-        echo "\033[1;31m[!] \"$@\" is not a valid IP or CIDR range. \033[0m"
-        echo "Usage: $0 <IP/CIDR Range>"
+    local input="$1"
+
+    # Validate input
+    if ! [[ "$input" =~ $cidr_pattern ]] && ! [[ "$input" =~ $ip_pattern ]] && ! [[ -f "$input" ]]; then
+        echo -e "\033[1;31m[!] \"$input\" is not a valid file, IP or CIDR range. \033[0m"
+        echo "Usage: $0 <IP/CIDR Range/Targets file>"
         return 1
     fi
     
-    if [[ $@ =~ $cidr_pattern ]] ; then
-      echo "\033[1;33m[!] Running fping on the $1 network\033[0m"  
-      fping -agq "$1" | tee targets.list
-      echo '\033[0;34m[*] Saving enumerated hosts to ./targets.list \033[0m'
-    else
-      echo "$@" > targets.list
-    fi
-    
-    if [[ -z $(grep '[^[:space:]]' targets.list) ]] ; then
-        echo "\033[1;31m[!] Empty results. Maybe you got the syntax wrong? \033[0m"
-        echo "Usage: $0 [-F] <CIDR Range>"
+
+    # Check for required tools
+    if ! command -v fping > /dev/null || ! command -v nmap > /dev/null; then
+        echo -e "\033[1;31m[!] Required tools (fping, nmap) are not installed. \033[0m"
         return 1
-    else
-        #echo ""
-    fi    
-   
-    #mkdir scan_xml 2>/dev/null
+    fi
+
+    # Set a trap to clean up temporary files on exit
+    #trap "rm -f *.tmp" EXIT INT
     
-    echo '\033[1;33m[!] Running FAST TCP SCAN on enumerated hosts\033[0m'    
+    # Host Discovery
+    if [[ -f "$input" ]]; then
+        # Targets file
+        cp "$input" scan_targets.tmp
+    elif [[ "$input" =~ $cidr_pattern ]]; then
+        # Host discovery using fping
+        echo -e "\033[1;33m[!] Running fping on the $input network\033[0m"
+        echo -e "\033[0;34m[>] fping -agq "$input" \033[0m"
+        fping -agq "$input" | tee scan_targets.tmp
+        cat scan_targets.tmp >> hosts.txt && dedup hosts.txt        
+        echo '\033[0;34m[*] Saving enumerated hosts to ./hosts.txt \033[0m'
+        ## Optionally, use nmap for discovery 
+        # echo -e "\033[1;33m[!] Scanning $input for live hosts using nmap\033[0m"
+        # echo -e "\033[0;34m[>] nmap -sn "$input" -T4 --min-rate 10000 \033[0m"
+        # nmap -sn "$input" -T4 --min-rate 10000 -oG - | awk '/Up$/{print $2}' | tee scan_targets.tmp
+        #cat scan_targets.tmp >> hosts.txt && dedup hosts.txt        
+        #echo '\033[0;34m[*] Saving enumerated hosts to ./hosts.txt \033[0m'
+    elif [[ "$input" =~ $ip_pattern ]]; then
+        # Single IP
+        echo "$input" > scan_targets.tmp
+    fi
+
+    # Check for empty results
+    if ! grep -q '[^[:space:]]' scan_targets.tmp; then
+        echo -e "\033[1;31m[!] Empty results. Maybe you got the syntax wrong? \033[0m"
+        rm -f scan_targets.tmp
+        return 1
+    fi
+
+    # Scanning function
+    echo '\033[1;33m[!] Running FAST TCP SCAN on known live hosts\033[0m'    
     echo "\033[0;34m[>] nmap -T4 -Pn -F --min-rate 10000 --open \033[0m"
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
           nmap -T4 -Pn -F --min-rate 10000 --open "$item" | sed -n '/PORT/,$p' | sed -n '/Nmap done/q;p' | grep --color=never -v '^[[:space:]]*$'
           #echo ""
-        done < targets.list
+        done < scan_targets.tmp
     if [[ fast -eq 1 ]]; then
       return 0
     else
-      echo '\033[1;33m[!] Running FULL TCP SCAN on enumerated hosts\033[0m'    
+      echo '\033[1;33m[!] Running FULL TCP SCAN on known live hosts\033[0m'    
       echo "\033[0;34m[>] nmap -T4 -Pn -sVC -p- --open --min-rate 10000 -vv \033[0m"
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -sVC -p- --open "$item" --min-rate 10000 -vv | sed -n '/PORT/,$p' | sed -n '/Script Post-scanning/q;p' | grep --color=never -v '^[[:space:]]*$'
+          nmap -T4 -Pn -sVC -p- --open "$item" --min-rate 10000 -vv 2>/dev/null | sed -n '/PORT/,$p' | sed -n '/Script Post-scanning/q;p' | grep --color=never -v '^[[:space:]]*$'
           #echo ""
-        done < targets.list
-      echo '\033[1;33m[!] Running UDP SCAN on enumerated hosts\033[0m'    
+        done < scan_targets.tmp
+      echo '\033[1;33m[!] Running UDP SCAN on known live hosts\033[0m'    
       echo "\033[0;34m[>] nmap -T4 -sU --min-rate 10000 \033[0m"
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
           nmap -T4 -sU --min-rate 10000 "$item" | sed -n '/PORT/,$p' | sed -n '/Nmap done/q;p' | grep --color=never -v '^[[:space:]]*$'
           #echo ""
-        done < targets.list
+        done < scan_targets.tmp
     fi
 
-  #  echo "\033[1;36m[?] Take screenshot of hosts' web pages? [y/N] \033[0m"
-  #  read -s -q confirm
-  #  if [[ $confirm =~ ^[Yy]$ ]]; then
-  #    python3 /opt/ezpz/nmapmerge.py -d ./scan_xml -o ./scan_xml/scan.xml > /dev/null 2>&1
-  #    mkdir gowitness && cd gowitness    
-  #    echo "\033[1;33m[!] Screenshotting pages with GoWitness \033[0m"
-  #    gowitness nmap -f ../scan_xml/scan.xml -t 8 -N > /dev/null 2>&1
-  #    echo '\033[0;34m[*] Serving GoWitness report on http://localhost:7171. Press CTRL+C to exit.'
-  #    gowitness server > /dev/null 2>&1
-  #  fi
-        
-    echo "\033[1;31m[*] Done. \033[0m"
+    rm -f *.tmp
+    echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
 # WEBSCAN
-# Runs fping on the network to find live hosts and outputs their IPs to targets.list. 
+# Runs fping on the network to find live hosts and outputs their IPs to scan_targets.tmp. 
 # The list then gets passed onto NetExec to enumerate the machines further and get the hosts and domain names. 
 # Lastly, it adds the DC’s IP and domain name to /etc/hosts to make our lives easier.
 #------------------------------------------------------------------------------------
@@ -105,52 +120,94 @@ webscan() {
   \_/\_/ \___| _.__/ \033[1;33m____/ \___| _/  _\ _|\_| \033[0m                                                                                 
 '  
 
-      
+
     if [[ $# -eq 0 ]]; then
-        echo "\033[1;31m[!] Missing parameters. \033[0m"
-        echo "Usage: $0 http://site.com"
+        echo -e "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: $0 <http://site.com> [-w/--wordlist <wordlist>]"
         return 1
     fi
-    
-    url=$1
-    #size=$(curl $1 -s | wc -c)
-    domain=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 1)
-    tld=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 2)
 
-    echo "\033[1;33m[!] Running whatweb on $1 \033[0m"
-    echo "\033[0;34m[>] whatweb -a3 -v $1 \033[0m"
+    # Default variables
+    local url=""
+    local weblist="/usr/share/seclists/Discovery/weblist-chsoares.txt"  # Default wordlist
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -w|--wordlist)
+                weblist="$2"
+                shift 2
+                ;;
+            *)
+                url="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # Validate URL
+    if [[ -z "$url" || ! "$url" =~ ^https?:// ]]; then
+        echo -e "\033[1;31m[!] Invalid or missing URL. Please include 'http://' or 'https://'. \033[0m"
+        echo "Usage: $0 <http://site.com> [-w/--wordlist <wordlist>]"
+        return 1
+    fi
+
+    # Validate wordlist
+    if [[ ! -f "$weblist" ]]; then
+        echo -e "\033[1;31m[!] Wordlist not found: $weblist \033[0m"
+        return 1
+    fi
+
+    # Parse domain and TLD
+    local domain=$(echo "$url" | sed 's|https*://||' | cut -d '.' -f 1)
+    local tld=$(echo "$url" | sed 's|https*://||' | cut -d '.' -f 2)
+
+    # Check for required tools
+    for tool in whatweb ffuf; do
+        if ! command -v "$tool" &>/dev/null; then
+            echo -e "\033[1;31m[!] Required tool not found: $tool \033[0m"
+            return 1
+        fi
+    done
+
+    # Run WhatWeb
+    echo -e "\033[1;33m[!] Running WhatWeb on $url \033[0m"
+    echo -e "\033[0;34m[>] whatweb -a3 -v $url \033[0m"
     echo ""
-    whatweb -a3 -v $1
-    echo ""
-    
-    echo "\033[1;33m[!] Fuzzing for directories \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -c -t 250 -ic -ac -v \033[0m"
-    echo ""  
-    ffuf -u $url/FUZZ -w $weblist -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
-    echo ""
-    
-    echo "\033[1;33m[!] Fuzzing for subdomains \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$domain.$tld\" -c -t 250 -ic -ac -v \033[0m"
-    echo ""  
-    ffuf -u $url -w $weblist -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
-    echo "\033[0;36m[*] Remember to add any discovered subdomain to /etc/hosts :) \033[0m"
+    whatweb -a3 -v "$url"
     echo ""
 
-    echo "\033[1;33m[!] Fuzzing for vhosts \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v \033[0m"
-    echo ""  
-    ffuf -u $url -w $weblist -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
+    # Directory Fuzzing
+    echo -e "\033[1;33m[!] Fuzzing for directories \033[0m"
+    echo -e "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -c -t 250 -ic -ac -v \033[0m"
     echo ""
-    
-    echo "\033[1;33m[!] Fuzzing recursively for common file extensions (this might take long!) \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v \033[0m"
-    echo ""  
-    ffuf -u $url/FUZZ -w $weblist -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
-    echo ""    
-    
-    
-    
-}    
+    ffuf -u "$url/FUZZ" -w "$weblist" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
+    echo ""
+
+    # Subdomain Fuzzing
+    echo -e "\033[1;33m[!] Fuzzing for subdomains \033[0m"
+    echo -e "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$domain.$tld\" -c -t 250 -ic -ac -v \033[0m"
+    echo ""
+    ffuf -u "$url" -w "$weblist" -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
+    echo -e "\033[0;36m[*] Remember to add any discovered subdomain to /etc/hosts :) \033[0m"
+    echo ""
+
+    # Virtual Host Fuzzing
+    echo -e "\033[1;33m[!] Fuzzing for vhosts \033[0m"
+    echo -e "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v \033[0m"
+    echo ""
+    ffuf -u "$url" -w "$weblist" -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
+    echo ""
+
+    # Recursive Fuzzing for Common Extensions
+    echo -e "\033[1;33m[!] Fuzzing recursively for common file extensions (this might take long!) \033[0m"
+    echo -e "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v \033[0m"
+    echo ""
+    ffuf -u "$url/FUZZ" -w "$weblist" -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
+    echo ""
+
+    echo -e "\033[1;31m[*] Done. \033[0m"
+}
 
 # checkvulns
 #------------------------------------------------------------------------------------
@@ -197,7 +254,7 @@ checkvulns() {
 
 
 # ADSCAN
-# Runs fping on the network to find live hosts and outputs their IPs to targets.list. 
+# Runs fping on the network to find live hosts and outputs their IPs to scan_targets.tmp. 
 # The list then gets passed onto NetExec to enumerate the machines further and get the hosts and domain names. 
 # Lastly, it adds the DC’s IP and domain name to /etc/hosts to make our lives easier.
 #------------------------------------------------------------------------------------
@@ -217,49 +274,61 @@ adscan() {
         return 1
     fi
     
+    # Validate CIDR range
     local cidr_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\/([1-9]|[1-2][0-9]|3[0-2])$'
-    if ! [[ $@ =~ $cidr_pattern ]]; then
-        echo "\033[1;31m[!] \"$@\" is not a valid CIDR range. \033[0m"
+    if ! [[ "$1" =~ $cidr_pattern ]]; then
+        echo -e "\033[1;31m[!] \"$1\" is not a valid CIDR range. \033[0m"
         echo "Usage: $0 <CIDR Range>"
         return 1
     fi
                                        
-    echo "\033[1;33m[!] Running fping on the $1 network \033[0m"  
-    fping -agq "$1" | tee targets.list
-    if [[ -z $(grep '[^[:space:]]' targets.list) ]] ; then
-        echo "\033[1;31m[!] Empty results. Maybe you got your parameters wrong? \033[0m"
-        echo "Usage: $0 <CIDR Range>"
+    # Set a trap to clean up temporary files on exit
+    #trap "rm -f *.tmp" EXIT INT
+
+    # Discover live hosts
+    echo -e "\033[1;33m[!] Running fping on the $1 network \033[0m"
+    fping -agq "$1" | tee adscan.tmp
+    if [[ $? -ne 0 || ! -s adscan.tmp ]]; then
+        echo -e "\033[1;31m[!] No live hosts found. Please check your input parameters. \033[0m"
         return 1
     fi
-    echo '\033[0;34m[*] Saving enumerated hosts to ./targets.list \033[0m'
-    
-    echo '\033[1;33m[!] Running NetExec on enumerated hosts \033[0m'
-    nxc smb targets.list | tee nxc.tmp
-    
+    cat adscan.tmp >> hosts.txt
+    dedup hosts.txt
+    echo -e '\033[0;34m[*] Saved known live hosts to ./hosts.txt \033[0m'
+
+    # Run NetExec
+    echo -e '\033[1;33m[!] Running NetExec on known live hosts \033[0m'
+    nxc smb adscan.tmp > nxc.tmp
+    if [[ $? -ne 0 || ! -s nxc.tmp ]]; then
+        echo -e "\033[1;31m[!] NetExec failed or returned no results. \033[0m"
+        return 1
+    fi
     local hosts_count=$(cat nxc.tmp | head -n -1 | wc -l)
     
-    echo '\033[1;36m[?] Add hosts to /etc/hosts? [y/N] \033[0m'
-    read -s -q confirm
-    if [[ $confirm =~ ^[Yy]$ ]]; then    
-      head -n 5 /etc/hosts > /etc/tmp && mv /etc/tmp /etc/hosts
-      for i in {1..$hosts_count}; do
-        is_dc=$(cat nxc.tmp | sed -n "${i}p" | grep -i DC | wc -l)
-        if [[ is_dc -eq 1 ]]; then
-          domain=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 2 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
-          dc_hostname=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
-          dc_ip=$(cat nxc.tmp | sed -n "${i}p" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-          echo "\n$dc_ip    $dc_hostname $dc_hostname.$domain $domain" | tee -a /etc/hosts
-        else          
-          domain=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 2 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
-          dc_hostname=$(cat nxc.tmp | sed -n "${i}p" | grep -oP "\(name:.*\)" | cut -d ' ' -f 1 | sed "s/(//" | sed "s/)//" | cut -d ':' -f 2)
-          dc_ip=$(cat nxc.tmp | sed -n "${i}p" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-          echo "\n$dc_ip    $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
-        fi  
-      done        
-    fi   
+    # Add NetExec results to /etc/hosts
+    local hosts_count=$(wc -l < nxc.tmp)
+    echo -e "\033[1;36m[?] Add discovered hosts to /etc/hosts? [y/N] \033[0m"
+    read -r confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        while IFS= read -r line; do
+            local is_dc=$(echo "$line" | grep -i DC | wc -l)
+            local dc_ip=$(echo "$line" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
+            local dc_info=$(echo "$line" | grep -oP "\(name:.*\)")
+            local dc_hostname=$(echo "$dc_info" | cut -d ' ' -f 1 | sed -e 's/.*://')
+            local domain=$(echo "$dc_info" | cut -d ' ' -f 2 | sed -e 's/.*://')
+
+            if [[ $is_dc -eq 1 ]]; then
+                echo "$dc_ip $dc_hostname $dc_hostname.$domain $domain" | tee -a /etc/hosts
+            else
+                echo "$dc_ip $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
+            fi
+        done < nxc.tmp
+        echo -e "\033[1;32m[+] Hosts added to /etc/hosts successfully. \033[0m"
+    fi 
     
-    rm nxc.tmp
-    echo "\033[1;31m[*] Done. \033[0m"
+    # Clean up temporary files
+    rm -f *.tmp 
+    echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
 # TESTCREDS
@@ -275,35 +344,61 @@ testcreds() {
 '                                               
     
     if [ $# -eq 0 ]; then
-        echo "\033[1;31m[!] Missing parameters. \033[0m"
-        echo "Usage: $0 -u user [-p password] [-H hash] [-k] [-t ips.list]"
-        return 1
-    fi 
-    
-    get_auth $@
-    if [[ $? -eq 2 ]]; then
-        echo "Usage: $0 -u user [-p password] [-H hash] [-k] [-t ips.list]"
-        return 1
+        echo -e "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: $0 -t target [-f file] [-u user] [-p password] [-H hash] [-k]"
+        exit 1
     fi
-        
-    echo -e "\033[1;33m[!] Trying credentials on SMB / WinRM / MSSQL / RDP / SSH with NetExec\033[0m"
-    echo '\033[0;34m[*] Trying SMB... \033[0m'
-    nxc smb $(echo "$nxc_auth") | grep --color=never +  | highlight red "(Pwn3d!)"  
-    nxc smb $(echo "$nxc_auth") --local-auth | grep --color=never +  | highlight red "(Pwn3d!)"  
-    echo '\033[0;34m[*] Trying WinRM... \033[0m'
-    nxc winrm $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-    nxc winrm $(echo "$nxc_auth") --local-auth | grep --color=never + | highlight red "(Pwn3d!)"
-    echo '\033[0;34m[*] Trying MS-SQL... \033[0m'
-    nxc mssql $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-    nxc mssql $(echo "$nxc_auth") --local-auth | grep --color=never + | highlight red "(Pwn3d!)"
-    echo '\033[0;34m[*] Trying RDP... \033[0m'
-    nxc rdp $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-    nxc rdp $(echo "$nxc_auth") --local-auth | grep --color=never +  | highlight red "(Pwn3d!)"
-    if [[ "$auth" == "password" ]]; then
-        echo '\033[0;34m[*] Trying SSH... \033[0m'
-        nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+
+    # Set a trap to clean up temporary files on exit
+    #trap "rm -f *.tmp" EXIT INT
+
+    if [[ $3 == "-f" ]]; then
+        file=$4
+        while IFS= read -r line || [ -n "$line" ]; do
+            if [ -z "$line" ]; then
+                continue
+            fi
+            user=$(echo "$line" | cut -d: -f1)
+            pass=$(echo "$line" | cut -d: -f2)
+            if [[ $pass =~ ^[a-fA-F0-9]{32}$ ]]; then
+                echo "-t $2 -u $user -H $pass" >> auth.tmp
+            else
+                echo "-t $2 -u $user -p $pass" >> auth.tmp
+            fi
+        done < "$file"
+    else
+        echo "$@" > auth.tmp
     fi
-    echo "\033[1;31m[*] Done. \033[0m"
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ -z "$line" ]; then
+            continue
+        fi
+
+        # Use eval to split $line into separate arguments
+        eval get_auth $line
+
+        echo -e "\033[1;33m[!] Testing $user's credentials with NetExec\033[0m"
+        echo -e '\033[0;34m[*] Trying SMB... \033[0m'
+        nxc smb $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc smb $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        echo -e '\033[0;34m[*] Trying WinRM... \033[0m'
+        nxc winrm $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc winrm $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        echo -e '\033[0;34m[*] Trying MS-SQL... \033[0m'
+        nxc mssql $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc mssql $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        echo -e '\033[0;34m[*] Trying RDP... \033[0m'
+        nxc rdp $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc rdp $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        if [[ "$auth" == "password" ]]; then
+            echo -e '\033[0;34m[*] Trying SSH... \033[0m'
+            nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+        fi
+    done < auth.tmp
+
+    rm -f *.tmp
+    echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
 # ENUMDOMAIN
@@ -323,15 +418,19 @@ enumdomain() {
         return 1
     fi     
     
-    get_auth $@
+    get_auth $@ 
     if [[ $? -eq 2 ]]; then
         echo "Usage: $0 -t target -u user [-p password] [-H hash] [-k]"
         return 1
-    fi   
+    fi    
+       
     #debug
     #echo "nxc = $nxc_auth"
     #echo "imp = $imp_auth"
     #end debug    
+
+    # Set a trap to clean up temporary files on exit
+    #trap "rm -f *.tmp" EXIT INT
     
     echo "\033[1;36m[?] Bruteforce RIDs? [y/N]\033[0m"
     read -s -q confirm
@@ -420,6 +519,7 @@ enumdomain() {
       echo "\033[0;34m[*] Saving data to ./${domain}_bloodhound.zip"
       rm path.tmp
     fi
+
     echo "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -437,7 +537,10 @@ enumuser() {
         echo "\033[1;31m[!] Missing parameters. \033[0m"
         echo "Usage: \033[0m $0 -t target -u user [-p password] [-H hash] [-k]"
         return 1
-    fi 
+    fi
+
+    # Set a trap to clean up temporary files on exit
+    #trap "rm -f *.tmp" EXIT INT 
     
     get_auth $@
     if [[ $? -eq 2 ]]; then
@@ -484,14 +587,18 @@ enumshares() {
        
     if [ $# -eq 0 ]; then
         echo "\033[1;31m[!] Missing parameters. \033[0m"
-        echo "Usage: \033[0m $0 -t target -u user [-p password] [-H hash] [-k]"
+        echo "Usage: \033[0m $0 [-t target] -u user [-p password] [-H hash] [-k]"
         return 1
-    fi 
+    fi
+
+    # Set a trap to clean up temporary files on exit
+    #trap "rm -f *.tmp" EXIT INT 
     
-    cat targets.list > hostnames.tmp
     if [[ $1 == '-t' ]]; then
         echo "$2" > hostnames.tmp
         shift 2
+    else
+        cp hosts.txt hostnames.tmp
     fi       
 
                                                 
@@ -552,6 +659,9 @@ enumsql() {
         echo "Usage: target [options]"
         return 1
     fi
+
+    # Set a trap to clean up temporary files on exit
+    #trap "rm -f *.tmp" EXIT INT 
     
     sqlmap $@ --batch | grep "Type:" > sqlmap.tmp
     if [[ $(grep -c "time-based" sqlmap.tmp) -eq 1 ]]; then
@@ -584,7 +694,7 @@ enumsql() {
         sqlmap $@ -D $(cat db.tmp) --schema --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*"
       fi
     
-    while read table
+    while read -r table
       do  
         echo "$table" > tbl.tmp 
         echo "\033[1;36m[?] Do you want to dump table \"$table\"? [y/N] \033[0m"
@@ -596,7 +706,7 @@ enumsql() {
           sqlmap $@ -D $(cat db.tmp) -T $(cat tbl.tmp) --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
         fi
       done < tables.tmp
-      #rm *.tmp
+      rm *.tmp
       echo "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -630,72 +740,97 @@ function highlight() {
 # GET_AUTH
 # Used by the other functions to parse the authentication arguments.
 get_auth() {
-    local target="targets.list"
-    kerb=False
+    # Initialize variables
+    local kerb=0
+    local target user password hashes auth
+    #local nxc_auth imp_auth blood_auth
+    #local dc_ip domain dc_fqdn
+
+    # Parse arguments
     while [ $# -gt 0 ]; do
-      case "$1" in
-        --target|-t)
-          target="$2"
-          shift
-          ;;
-        --user|-u)
-          user="$2"
-          shift
-          ;;
-        --password|-p)
-          password="$2"
-          auth="password"
-          shift
-          ;;
-        --hash|-H)
-          hashes="$2"
-          auth="hashes"
-          shift
-          ;;
-        --kcache)
-          auth="kerb"
-          shift
-          ;;
-        --kerb|-k)
-          kerb=1
-          shift
-          ;;
-        *)
-          echo "\033[1;31m[!] Wrong parameters. \033[0m"
-          return 2
-          ;;
-      esac
-      shift
+        case "$1" in
+            --target|-t)
+                target="$2"
+                shift
+                ;;
+            --user|-u)
+                user="$2"
+                shift
+                ;;
+            --password|-p)
+                password="$2"
+                auth="password"
+                shift
+                ;;
+            --hash|-H)
+                hashes="$2"
+                auth="hashes"
+                shift
+                ;;
+            --kcache)
+                auth="kerb"
+                shift
+                ;;
+            --kerb|-k)
+                kerb=1
+                shift
+                ;;
+            *)
+                echo -e "\033[1;31m[!] Wrong parameters. \033[0m"
+                return 2
+                ;;
+        esac
+        shift
     done
-    
-    export dc_ip=$(cat /etc/hosts | grep -i -m 1 'dc' | tr -s " " | cut -d " " -f 1)
-    export domain=$(cat /etc/hosts | grep -i -m 1 'dc' | tr -s " " | cut -d " " -f 4)
-    export hostname=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 2)
-    export fqdn=$(cat /etc/hosts | grep -i $target | tr -s " " | cut -d " " -f 3)
-    ntpdate $target  > /dev/null 2>&1
-    
-    case $auth in
-      password)
-        nxc_auth="$target -u $user -p $password"
-        imp_auth="$domain/$user:$password -dc-ip $dc_ip"
-        ;;
-      hashes)
-        nxc_auth="$target -u $user -H $hashes"
-        imp_auth="$domain/$user -hashes :$hashes -dc-ip $dc_ip"
-        ;;
-      kerb)
-        nxc_auth="$target -u $user --use-kcache"
-        imp_auth="$domain/$user -k -dc-ip $dc_ip -dc-host $fqdn"
-        ;;
-      *)
-        nxc_auth="$target -u '' -p ''"
-        imp_auth="$domain/ -dc-ip $dc_ip"
-    esac
-    
-    if [[ $kerb -eq 1 ]]; then
-       nxc_auth="$nxc_auth -k"
-       imp_auth="$imp_auth -k -dc-host $fqdn"
+
+    # Validate mandatory parameters
+    if [[ -z "$target" ]]; then
+        echo -e "\033[1;31m[!] Target is required. Use --target or -t. \033[0m"
+        return 2
     fi
-    
-    blood_auth=$(echo $nxc_auth | grep -oE "\-u.*")
+
+    # Extract data from /etc/hosts
+    domain=$(grep -i -m 1 'dc' /etc/hosts | awk '{print $4}')
+    dc_ip=$(grep -i -m 1 'dc' /etc/hosts | awk '{print $1}')
+    dc_fqdn=$(grep -i "$target" /etc/hosts | awk '{print $3}')
+
+    # Sync date (optional, ensure `ntpdate` exists)
+    if command -v ntpdate > /dev/null 2>&1; then
+        ntpdate "$dc_ip" > /dev/null 2>&1 #|| echo -e "\033[1;33m[!] Time sync failed. This is usually not a problem. \033[0m"
+    else
+        echo -e "\033[1;33m[!] ntpdate not found. Skipping time sync.\033[0m"
+    fi
+
+    # Build authentication strings
+    case "$auth" in
+        password)
+            nxc_auth="$target -u $user -p $password"
+            imp_auth="$domain/$user:$password -dc-ip $dc_ip"
+            ;;
+        hashes)
+            nxc_auth="$target -u $user -H $hashes"
+            imp_auth="$domain/$user -hashes :$hashes -dc-ip $dc_ip"
+            ;;
+        kerb)
+            nxc_auth="$target -u $user --use-kcache"
+            imp_auth="$domain/$user -k -dc-ip $dc_ip -dc-host $dc_fqdn"
+            ;;
+        *)
+            nxc_auth="$target -u '' -p ''"
+            imp_auth="$domain/ -dc-ip $dc_ip"
+            ;;
+    esac
+
+    # Add Kerberos options if specified
+    if [[ $kerb -eq 1 ]]; then
+        nxc_auth="$nxc_auth -k"
+        imp_auth="$imp_auth -k -dc-host $dc_fqdn"
+    fi
+
+    # Extract bloodhound-compatible authentication
+    blood_auth=$(echo "$nxc_auth" | grep -oE "\-u.*")
+
+    # Export variables for further use
+    export nxc_auth imp_auth blood_auth dc_ip domain dc_fqdn
 }
+
