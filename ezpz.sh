@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Scripts to run a bunch of tools sequentially and automate a lot of the mindless, repetitive process of enumeration.
-# Permission to copy and modify is granted under the MIT license
+# Permission to copy and modify is granted under the MIT license.
 
 # NETSCAN
 # Runs fping on the network to make a list of live hosts. 
@@ -274,31 +274,43 @@ adscan() {
         return 1
     fi
     
-    # Validate CIDR range
+    # Define IP and CIDR patterns
     local cidr_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\/([1-9]|[1-2][0-9]|3[0-2])$'
-    if ! [[ "$1" =~ $cidr_pattern ]]; then
-        echo -e "\033[1;31m[!] \"$1\" is not a valid CIDR range. \033[0m"
-        echo "Usage: $0 <CIDR Range>"
-        return 1
-    fi
-                                       
-    # Set a trap to clean up temporary files on exit
-    #trap "rm -f *.tmp" EXIT INT
+    local ip_pattern='^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$'
+    local input="$1"
 
-    # Discover live hosts
-    echo -e "\033[1;33m[!] Running fping on the $1 network \033[0m"
-    fping -agq "$1" | tee adscan.tmp
-    if [[ $? -ne 0 || ! -s adscan.tmp ]]; then
-        echo -e "\033[1;31m[!] No live hosts found. Please check your input parameters. \033[0m"
+    # Validate input
+    if ! [[ "$input" =~ $cidr_pattern ]] && ! [[ "$input" =~ $ip_pattern ]] && ! [[ -f "$input" ]]; then
+        echo -e "\033[1;31m[!] \"$input\" is not a valid file, IP or CIDR range. \033[0m"
+        echo "Usage: $0 <IP/CIDR Range/Targets file>"
         return 1
     fi
-    cat adscan.tmp >> hosts.txt
-    dedup hosts.txt
-    echo -e '\033[0;34m[*] Saved known live hosts to ./hosts.txt \033[0m'
+
+    # Host Discovery
+    if [[ -f "$input" ]]; then
+        # Targets file
+        cp "$input" scan_targets.tmp
+    elif [[ "$input" =~ $cidr_pattern ]]; then
+        # Host discovery using fping
+        echo -e "\033[1;33m[!] Running fping on the $input network\033[0m"
+        echo -e "\033[0;34m[>] fping -agq "$input" \033[0m"
+        fping -agq "$input" | tee scan_targets.tmp
+        cat scan_targets.tmp >> hosts.txt && dedup hosts.txt        
+        echo '\033[0;34m[*] Saving enumerated hosts to ./hosts.txt \033[0m'
+        ## Optionally, use nmap for discovery 
+        # echo -e "\033[1;33m[!] Scanning $input for live hosts using nmap\033[0m"
+        # echo -e "\033[0;34m[>] nmap -sn "$input" -T4 --min-rate 10000 \033[0m"
+        # nmap -sn "$input" -T4 --min-rate 10000 -oG - | awk '/Up$/{print $2}' | tee scan_targets.tmp
+        #cat scan_targets.tmp >> hosts.txt && dedup hosts.txt        
+        #echo '\033[0;34m[*] Saving enumerated hosts to ./hosts.txt \033[0m'
+    elif [[ "$input" =~ $ip_pattern ]]; then
+        # Single IP
+        echo "$input" > scan_targets.tmp
+    fi
 
     # Run NetExec
     echo -e '\033[1;33m[!] Running NetExec on known live hosts \033[0m'
-    nxc smb adscan.tmp > nxc.tmp
+    nxc smb scan_targets.tmp > nxc.tmp
     if [[ $? -ne 0 || ! -s nxc.tmp ]]; then
         echo -e "\033[1;31m[!] NetExec failed or returned no results. \033[0m"
         return 1
@@ -308,22 +320,21 @@ adscan() {
     # Add NetExec results to /etc/hosts
     local hosts_count=$(wc -l < nxc.tmp)
     echo -e "\033[1;36m[?] Add discovered hosts to /etc/hosts? [y/N] \033[0m"
-    read -r confirm
+    read -s -q confirm
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         while IFS= read -r line; do
             local is_dc=$(echo "$line" | grep -i DC | wc -l)
             local dc_ip=$(echo "$line" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-            local dc_info=$(echo "$line" | grep -oP "\(name:.*\)")
-            local dc_hostname=$(echo "$dc_info" | cut -d ' ' -f 1 | sed -e 's/.*://')
-            local domain=$(echo "$dc_info" | cut -d ' ' -f 2 | sed -e 's/.*://')
+            local dc_hostname=$(echo "$line" | grep -oP '(?<=name:)[^)]*')
+            local domain=$(echo "$line" | grep -oP '(?<=domain:)[^)]*')
 
-            if [[ $is_dc -eq 1 ]]; then
-                echo "$dc_ip $dc_hostname $dc_hostname.$domain $domain" | tee -a /etc/hosts
+            if [[ $is_dc -eq 1 ]] || [[ $hosts_count -eq 1 ]]; then
+                echo "$dc_ip    DC $dc_hostname $dc_hostname.$domain $domain" | tee -a /etc/hosts
             else
-                echo "$dc_ip $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
+                echo "$dc_ip    $dc_hostname $dc_hostname.$domain" | tee -a /etc/hosts
             fi
         done < nxc.tmp
-        echo -e "\033[1;32m[+] Hosts added to /etc/hosts successfully. \033[0m"
+        echo -e "\033[0;34m[*] Hosts added to /etc/hosts successfully. \033[0m"
     fi 
     
     # Clean up temporary files
@@ -391,10 +402,9 @@ testcreds() {
         echo -e '\033[0;34m[*] Trying RDP... \033[0m'
         nxc rdp $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
         nxc rdp $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
-        if [[ "$auth" == "password" ]]; then
-            echo -e '\033[0;34m[*] Trying SSH... \033[0m'
-            nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-        fi
+        echo -e '\033[0;34m[*] Trying SSH... \033[0m'
+        nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+        
     done < auth.tmp
 
     rm -f *.tmp
@@ -444,12 +454,9 @@ enumdomain() {
     echo "\033[1;36m[?] Enumerate all groups? [y/N]\033[0m"
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
-      echo "\033[1;33m[!] Enumerating domain groups \033[0m"
+      echo "\033[1;33m[!] Enumerating groups \033[0m"
       echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --groups \033[0m"
-      nxc smb $(echo "$nxc_auth") --groups | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"
-      echo "\033[1;33m[!] Enumerating local groups \033[0m"
-      echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --local-group  \033[0m"
-      nxc smb $(echo "$nxc_auth") --local-group | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"     
+      nxc smb $(echo "$nxc_auth") --groups | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"   
     fi
     
     
@@ -552,8 +559,8 @@ enumuser() {
     #echo "imp = $imp_auth"
     #end debug
                                                    
-    echo "\033[1;33m[!] Enumerating $user's groups \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" \033[0m"
+    echo -e "\033[1;33m[!] Enumerating $user's groups \033[0m"
+    echo -e "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" \033[0m"
     nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" | tail -n +4 | tr -s " " | cut -d " " -f 5-
     
     echo "\033[1;33m[!] Trying to dump gMSA passwords with NetExec \033[0m"
@@ -619,7 +626,7 @@ enumshares() {
                 read -s -q confirm
                 if [[ $confirm =~ ^[Yy]$ ]]; then 
                     dir_path=$(echo ${target}${2}${share} | tr -cd '[:alnum:]')
-                    echo "\033[0;34m[*] Saving files to ./$dir_path \033[0m"
+                    echo "\033[1;33m[*] Saving files to ./$dir_path \033[0m"
                     mkdir $dir_path > /dev/null 2>&1
                     while read files; do
                         share_path=$(echo $files | cut -d '/' -f -4)
@@ -742,7 +749,7 @@ function highlight() {
 get_auth() {
     # Initialize variables
     local kerb=0
-    local target user password hashes auth
+    local target password hashes auth
     #local nxc_auth imp_auth blood_auth
     #local dc_ip domain dc_fqdn
 
@@ -790,9 +797,9 @@ get_auth() {
     fi
 
     # Extract data from /etc/hosts
-    domain=$(grep -i -m 1 'dc' /etc/hosts | awk '{print $4}')
+    domain=$(grep -i -m 1 'dc' /etc/hosts | awk '{print $5}')
     dc_ip=$(grep -i -m 1 'dc' /etc/hosts | awk '{print $1}')
-    dc_fqdn=$(grep -i "$target" /etc/hosts | awk '{print $3}')
+    dc_fqdn=$(grep -i "$target" /etc/hosts | awk '{print $4}')
 
     # Sync date (optional, ensure `ntpdate` exists)
     if command -v ntpdate > /dev/null 2>&1; then
@@ -805,15 +812,15 @@ get_auth() {
     case "$auth" in
         password)
             nxc_auth="$target -u $user -p $password"
-            imp_auth="$domain/$user:$password -dc-ip $dc_ip"
+            imp_auth="$domain/$user:$password@$target -dc-ip $dc_ip"
             ;;
         hashes)
             nxc_auth="$target -u $user -H $hashes"
-            imp_auth="$domain/$user -hashes :$hashes -dc-ip $dc_ip"
+            imp_auth="$domain/$user@$target -hashes :$hashes -dc-ip $dc_ip"
             ;;
         kerb)
             nxc_auth="$target -u $user --use-kcache"
-            imp_auth="$domain/$user -k -dc-ip $dc_ip -dc-host $dc_fqdn"
+            imp_auth="$domain/$user@$target -k -dc-ip $dc_ip -dc-host $dc_fqdn"
             ;;
         *)
             nxc_auth="$target -u '' -p ''"
@@ -831,6 +838,6 @@ get_auth() {
     blood_auth=$(echo "$nxc_auth" | grep -oE "\-u.*")
 
     # Export variables for further use
-    export nxc_auth imp_auth blood_auth dc_ip domain dc_fqdn
+    export user nxc_auth imp_auth blood_auth dc_ip domain dc_fqdn
 }
 
