@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Scripts to run a bunch of tools sequentially and automate a lot of the mindless, repetitive process of enumeration.
-# Permission to copy and modify is granted under the MIT license. :)
+# Permission to copy and modify is granted under the MIT license. :))
 
 # NETSCAN
 # Runs fping on the network to make a list of live hosts. 
