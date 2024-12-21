@@ -74,22 +74,22 @@ netscan() {
 
     # Scanning function
     echo '\033[1;33m[!] Running FAST TCP SCAN on known live hosts\033[0m'    
-    echo "\033[0;34m[>] nmap -T4 -Pn -F --min-rate 10000 --open \033[0m"
+    echo "\033[0;34m[>] nmap -T4 -Pn -F --min-rate 10000 \033[0m"
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -F --min-rate 10000 --open "$item" | sed -n '/PORT/,$p' | sed -n '/Nmap done/q;p' | grep --color=never -v '^[[:space:]]*$'
+          nmap -T4 -Pn -F --min-rate 10000 "$item" | sed -n '/PORT/,$p' | sed -n '/Nmap done/q;p' | grep --color=never -v '^[[:space:]]*$'
           #echo ""
         done < scan_targets.tmp
     if [[ fast -eq 1 ]]; then
       return 0
     else
       echo '\033[1;33m[!] Running FULL TCP SCAN on known live hosts\033[0m'    
-      echo "\033[0;34m[>] nmap -T4 -Pn -sVC -p- --open --min-rate 10000 -vv \033[0m"
+      echo "\033[0;34m[>] nmap -T4 -Pn -sVC -p- --min-rate 10000 -vv \033[0m"
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -sVC -p- --open "$item" --min-rate 10000 -vv 2>/dev/null | sed -n '/PORT/,$p' | sed -n '/Script Post-scanning/q;p' | grep --color=never -v '^[[:space:]]*$'
+          nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv 2>/dev/null | sed -n '/PORT/,$p' | sed -n '/Script Post-scanning/q;p' | grep --color=never -v '^[[:space:]]*$' | highlight yellow "[0-9]*\/tcp.*"
           #echo ""
         done < scan_targets.tmp
       echo '\033[1;33m[!] Running UDP SCAN on known live hosts\033[0m'    
@@ -741,7 +741,7 @@ function highlight() {
 	 
 	fg_c=$(echo -e "\e[1;${fg_color_map[$1]}m")
 	c_rs=$'\e[0m'
-	sed -u s"/$2/$fg_c\0$c_rs/g"
+	sed -uE s"/$2/$fg_c\0$c_rs/g"
 }
 
 # GET_AUTH
