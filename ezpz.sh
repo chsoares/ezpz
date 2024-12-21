@@ -106,6 +106,7 @@ netscan() {
     echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
+
 # WEBSCAN
 # Runs fping on the network to find live hosts and outputs their IPs to scan_targets.tmp. 
 # The list then gets passed onto NetExec to enumerate the machines further and get the hosts and domain names. 
