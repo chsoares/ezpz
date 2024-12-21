@@ -93,11 +93,11 @@ netscan() {
           #echo ""
         done < scan_targets.tmp
       echo '\033[1;33m[!] Running UDP SCAN on known live hosts\033[0m'    
-      echo "\033[0;34m[>] nmap -T4 -sU --min-rate 10000 \033[0m"
+      echo "\033[0;34m[>] nmap -T4 -sU --open --min-rate 10000 \033[0m"
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -sU --min-rate 10000 "$item" | sed -n '/PORT/,$p' | sed -n '/Nmap done/q;p' | grep --color=never -v '^[[:space:]]*$'
+          nmap -T4 -sU --open --min-rate 10000 "$item" | sed -n '/PORT/,$p' | sed -n '/Nmap done/q;p' | grep --color=never -v '^[[:space:]]*$'
           #echo ""
         done < scan_targets.tmp
     fi
