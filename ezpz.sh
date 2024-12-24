@@ -89,7 +89,7 @@ netscan() {
       while read item
         do
           echo "\033[0;36m[*] Scanning $item...\033[0m"
-          nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv 2>/dev/null | sed -n '/PORT/,$p' | sed -n '/Script Post-scanning/q;p' | grep --color=never -v '^[[:space:]]*$' | highlight yellow "[0-9]*\/tcp.*"
+          nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv 2>/dev/null | sed -n '/PORT/,$p' | sed -n '/Script Post-scanning/q;p' | grep --color=never -v '^[[:space:]]*$' | color yellow "[0-9]*\/tcp.*"
           #echo ""
         done < scan_targets.tmp
       echo '\033[1;33m[!] Running UDP SCAN on known live hosts\033[0m'    
@@ -741,6 +741,21 @@ function highlight() {
 	fg_color_map[cyan]=36
 	 
 	fg_c=$(echo -e "\e[1;${fg_color_map[$1]}m")
+	c_rs=$'\e[0m'
+	sed -uE s"/$2/$fg_c\0$c_rs/g"
+}
+
+function color() {
+	declare -A fg_color_map
+	fg_color_map[black]=30
+	fg_color_map[red]=31
+	fg_color_map[green]=32
+	fg_color_map[yellow]=33
+	fg_color_map[blue]=34
+	fg_color_map[magenta]=35
+	fg_color_map[cyan]=36
+	 
+	fg_c=$(echo -e "\e[0;${fg_color_map[$1]}m")
 	c_rs=$'\e[0m'
 	sed -uE s"/$2/$fg_c\0$c_rs/g"
 }
