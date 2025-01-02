@@ -698,6 +698,8 @@ enumsql() {
     sqlmap $@ --privileges --batch 2>/dev/null | grep -oP --color=never "(?<=privilege: ').*(?=')"
   
   
+    echo ""
+    trap - INT
     echo -e "\033[1;37m[\033[1;33m+\033[1;37m] Starting data enumeration... \033[0m"
     if [[ ! -f db.txt ]]; then
         echo -e "\033[1;33m[!] Fetching current database \033[0m"
@@ -722,15 +724,15 @@ enumsql() {
     fi
     
     #echo ""
-    echo -e "\033[1;36m[?] Enter the tables you are interested in (comma-separated): \033[0m"
+    echo -e "\033[1;36m[?] Enter the tables you are interested in (comma-separated / default: all): \033[0m"
     stty sane
 
     while true; do
-        read selected_tables < /dev/tty
+        read -t 600 selected_tables < /dev/tty
         if [[ -z "$selected_tables" ]]; then
-            echo -e "\033[1;31m[*] No tables selected. Exiting. \033[0m"
-            trap - INT
-            return
+            echo -e "\033[1;33m[!] No input provided. Proceeding with default (all tables).\033[0m"
+            cat tables.txt > selected_tables.tmp
+            break
         fi
 
         # Process input and validate each table
@@ -749,28 +751,25 @@ enumsql() {
 
         echo -e "\033[1;36m[?] Please re-enter valid table names: \033[0m"
     done
+    echo ""
 
-    # Ensure the final valid tables list is in `selected_tables.tmp`
-    cat selected_tables.tmp > valid_tables.tmp
-    #echo ""
-
-    exec 3< valid_tables.tmp
+    exec 3< selected_tables.tmp
     while IFS= read -r table <&3; do
         echo -e "\033[1;37m[\033[1;33m+\033[1;37m] Accessing \"$table\" table... \033[0m"
         echo -e "\033[1;36m[?] Fetch schema for targeted dumping? [y/N] \033[0m"
         stty sane
-        read -s -q confirm
+        read -t 600 -s -q confirm
         if [[ $confirm =~ ^[Yy]$ ]]; then
             echo -e "\033[1;33m[!] Retrieving columns \033[0m"
             echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table --columns --batch \033[0m"
             sqlmap $@ -D "$(cat db.txt)" -T "$table" --columns --batch | tail -n +10 | grep --color=never -P "Table: .*|^\+\-*|\|\s.*" | tee "${table}_columns.tmp"
             cat "${table}_columns.tmp" | grep --color=never -P "^\|\s.*\s\|" | awk -F'|' '{print $2}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tail -n +2 > columns.tmp; mv columns.tmp "${table}_columns.tmp"
             
-            echo -e "\033[1;36m[?] Enter the columns you are interested in (comma-separated) -- blank for all: \033[0m"
+            echo -e "\033[1;36m[?] Enter the columns you are interested in (comma-separated / default: all): \033[0m"
             while true; do
-                read selected_columns < /dev/tty
+                read -t 600 selected_columns < /dev/tty
                 if [[ -z "$selected_columns" ]]; then
-                    echo -e "\033[1;33m[!] No columns selected. Dumping entire table. \033[0m"
+                    echo -e "\033[1;33m[!] No input provided. Dumping all columns. \033[0m"
                     echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table --dump --batch \033[0m"
                     sqlmap $@ -D "$(cat db.txt)" -T "$table" --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
                     break
@@ -801,7 +800,7 @@ enumsql() {
             echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table --dump --batch \033[0m"
             sqlmap $@ -D "$(cat db.txt)" -T "$table" --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
         fi
-        #echo ""
+        echo ""
     done
     exec 3<&-
     
