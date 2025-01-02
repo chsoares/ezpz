@@ -677,27 +677,30 @@ enumsql() {
     # Set a trap to make each step skippable
     trap "echo ''" INT 
     
+    echo -e "\033[1;37m[\033[1;33m+\033[1;37m] Starting DBMS enumeration... \033[0m"
+
     sqlmap $@ --batch | grep "Type:" > sqlmap.tmp
     if [[ $(grep -c "time-based" sqlmap.tmp) -eq 1 ]]; then
         echo "\033[1;31m[*] Time-based injection -- this might take a while. \033[0m"
     fi
 
-    echo -e "\033[1;33m[!] Fetching database banner...\033[0m"
+    echo -e "\033[1;33m[!] Fetching database banner \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --banner --batch  \033[0m"  
     sqlmap $@ --banner --batch 2>/dev/null | grep -E --color=never "technology:|DBMS:|banner:|system:"
-    echo -e "\033[1;33m[!] Fetching current user...\033[0m"
+    echo -e "\033[1;33m[!] Fetching current user \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --current-user --batch \033[0m"
     sqlmap $@ --current-user --batch 2>/dev/null | grep -oP --color=never "(?<=current user: ').*(?=')"
-    echo -e "\033[1;33m[!] Checking if user is database admin...\033[0m"
+    echo -e "\033[1;33m[!] Checking if user is database admin \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --is-dba --batch \033[0m"
     sqlmap $@ --is-dba --batch 2>/dev/null | grep -oP --color=never "(?<=DBA: ).*" | highlight red "True" 
-    echo -e "\033[1;33m[!] Fetching user privileges...\033[0m"
+    echo -e "\033[1;33m[!] Fetching user privileges \033[0m"
     echo "\033[0;34m[>] sqlmap $@ --privileges --batch \033[0m"
     sqlmap $@ --privileges --batch 2>/dev/null | grep -oP --color=never "(?<=privilege: ').*(?=')"
   
   
+    echo -e "\033[1;37m[\033[1;33m+\033[1;37m] Starting data enumeration... \033[0m"
     if [[ ! -f db.txt ]]; then
-        echo -e "\033[1;33m[!] Fetching current database... \033[0m"
+        echo -e "\033[1;33m[!] Fetching current database \033[0m"
         echo -e "\033[0;34m[>] sqlmap $@ --current-db --batch \033[0m"
         sqlmap "$@" --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')" | tee db.txt
     else
@@ -706,7 +709,7 @@ enumsql() {
     fi
 
     if [[ -f db.txt && ! -f tables.txt ]]; then
-        echo -e "\033[1;33m[!] Fetching tables... \033[0m"
+        echo -e "\033[1;33m[!] Fetching tables \033[0m"
         echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) --tables --batch \033[0m"
         sqlmap "$@" -D "$(cat db.txt)" --tables --batch 2>/dev/null | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | sed 's/[[:space:]]*$//' | tee tables.txt
     elif [[ -f tables.txt ]]; then
@@ -753,7 +756,7 @@ enumsql() {
 
     exec 3< valid_tables.tmp
     while IFS= read -r table <&3; do
-        echo -e "\033[1;33m[!] Accessing \"\033[1;37m$table\033[1;33m\" table... \033[0m"
+        echo -e "\033[1;37m[\033[1;33m+\033[1;37m] Accessing \"$table\" table... \033[0m"
         echo -e "\033[1;36m[?] Fetch schema for targeted dumping? [y/N] \033[0m"
         stty sane
         read -s -q confirm
@@ -778,7 +781,7 @@ enumsql() {
                 echo "$selected_columns" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > selected_columns.tmp
                 while IFS= read -r column; do
                     if ! grep -qxF "$column" "${table}_columns.tmp"; then
-                        echo -e "\033[0;31m[!] Column \"$column\" not found in table \"$table\". \033[0m"
+                        echo -e "\033[1;31m[*] Column \"$column\" not found in table \"$table\". \033[0m"
                         invalid_columns=1
                     fi
                 done < selected_columns.tmp
