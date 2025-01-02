@@ -796,7 +796,7 @@ enumsql() {
             done
 
         else
-            echo -e "\033[1;33m[!] Dumping entire table \"$table\". \033[0m"
+            echo -e "\033[1;33m[!] Dumping entire table \033[0m"
             echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table --dump --batch \033[0m"
             sqlmap $@ -D "$(cat db.txt)" -T "$table" --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
         fi
