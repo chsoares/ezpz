@@ -41,7 +41,7 @@ netscan() {
     fi
 
     # Set a trap to clean up temporary files on exit
-    trap "echo ''" EXIT INT
+    trap "echo ''" INT
     
     # Host Discovery
     if [[ -f "$input" ]]; then
@@ -103,6 +103,7 @@ netscan() {
     fi
 
     rm -f *.tmp
+    trap - INT EXIT
     echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -207,6 +208,7 @@ webscan() {
     ffuf -u "$url/FUZZ" -w "$weblist" -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
     echo ""
 
+    trap - INT
     echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -249,6 +251,7 @@ checkvulns() {
     echo '\033[0;34m[*] Zerologon \033[0m'
     nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g'
     
+    trap - INT
     echo "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -340,6 +343,7 @@ adscan() {
     
     # Clean up temporary files
     rm -f *.tmp 
+    trap - INT
     echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -362,7 +366,7 @@ testcreds() {
     fi
 
     # Set a trap to clean up temporary files on exit
-    trap "echo ''" EXIT INT
+    trap "echo ''" INT
 
     if [[ $3 == "-f" ]]; then
         file=$4
@@ -409,6 +413,7 @@ testcreds() {
     done < auth.tmp
 
     rm -f *.tmp
+    trap - INT
     echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -441,7 +446,7 @@ enumdomain() {
     #end debug    
 
     # Set a trap to clean up temporary files on exit
-    trap "echo ''" EXIT INT
+    trap "echo ''" INT
     
     echo "\033[1;36m[?] Bruteforce RIDs? [y/N]\033[0m"
     read -s -q confirm
@@ -528,6 +533,7 @@ enumdomain() {
       rm path.tmp
     fi
 
+    trap - INT
     echo "\033[1;31m[*] Done. \033[0m"
 }
 
@@ -548,7 +554,7 @@ enumuser() {
     fi
 
     # Set a trap to make each step skippable
-    trap "echo ''" EXIT INT  
+    trap "echo ''" INT  
     
     get_auth $@
     if [[ $? -eq 2 ]]; then
@@ -578,7 +584,7 @@ enumuser() {
     echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") -M keepass_discover \033[0m"
     nxc smb $(echo "$nxc_auth") -M keepass_discover 2>/dev/null | grep -aoE "Found .*" --color=never
     
- 
+    trap - INT
     echo "\033[1;31m[*] Done. \033[0m"
 }
     
@@ -643,7 +649,7 @@ enumshares() {
     done < hostnames.tmp
     rm *.tmp
     
-      
+    trap - INT  
     echo "\033[1;31m[*] Done. \033[0m"
 }    
 
@@ -669,7 +675,7 @@ enumsql() {
     fi
 
     # Set a trap to make each step skippable
-    trap "echo ''" EXIT INT 
+    trap "echo ''" INT 
     
     sqlmap $@ --batch | grep "Type:" > sqlmap.tmp
     if [[ $(grep -c "time-based" sqlmap.tmp) -eq 1 ]]; then
@@ -701,6 +707,7 @@ enumsql() {
     read selected_tables    
     if [[ -z "$selected_tables" ]]; then
         echo "\033[1;31m[*] No tables selected. Exiting. \033[0m"
+        trap - INT
         return
     fi
     echo "$selected_tables" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > selected_tables.tmp
@@ -725,7 +732,7 @@ enumsql() {
         done < selected_tables.tmp            
     fi
     rm selected_tables.tmp
-
+    trap - INT
     echo "\033[1;31m[*] Done. \033[0m"
 }
 
