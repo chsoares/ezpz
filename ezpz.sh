@@ -450,41 +450,114 @@ done < nxc.clean
 #------------------------------------------------------------------------------------
 # Usage: testcreds -u user [-p password] [-H hash] [-k] [--ips ips.list]
 testcreds() {
-
     echo '  
   |               |  \033[1;33m   __|  _ \  __|  _ \    __| \033[0m
    _|   -_) (_-<   _|\033[1;33m  (       /  _|   |  | \__ \ \033[0m
  \__| \___| ___/ \__|\033[1;33m \___| _|_\ ___| ___/  ____/ \033[0m
 '                                               
-    
-    if [ $# -eq 0 ]; then
-        echo -e "\033[1;31m[!] Missing parameters. \033[0m"
-        echo "Usage: $0 -t target [-f file] [-u user] [-p password] [-H hash] [-k]"
+
+    local target_arg=""
+    local file_arg=""
+    local user_arg=""
+    local pass_arg=""
+    local hash_arg=""
+    local protocols_arg=""
+    local kerb_arg=""
+    local other_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--target)
+                target_arg="$2"
+                shift
+                ;;
+            -f|--file)
+                file_arg="$2"
+                shift
+                ;;
+            -u|--user)
+                user_arg="$2"
+                shift
+                ;;
+            -p|--password)
+                pass_arg="$2"
+                shift
+                ;;
+            -H|--hash)
+                hash_arg="$2"
+                shift
+                ;;
+            -k|--kerb)
+                kerb_arg="-k"
+                ;;
+            -x|--protocols)
+                protocols_arg="$2"
+                shift
+                ;;
+            *)
+                other_args+=("$1")
+                if [[ "$2" != "" && "$2" != -* ]]; then
+                    other_args+=("$2")
+                    shift
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$target_arg" ]; then
+        echo -e "\033[1;31m[!] Missing target parameter. \033[0m"
+        echo "Usage: $0 -t target [-f file] [-u user] [-p password] [-H hash] [-k] [-x protocols]"
         exit 1
     fi
 
-    # Cria arquivo temporário único
-    auth_tmp=$(mktemp /tmp/auth.XXXXXX)
+    local default_protocols="smb,winrm,mssql,rdp,ssh,ftp"
+    local protocols_to_test_string
+    
+    if [[ -z "$protocols_arg" || "$protocols_arg" == "all" ]]; then
+        protocols_to_test_string="$default_protocols"
+    else
+        protocols_to_test_string="$protocols_arg"
+    fi
 
-    # Set a trap to clean up temporary files on exit
+    local protocols_to_test=("${(s/,/)protocols_to_test_string}")
+
+    local auth_tmp=$(mktemp /tmp/auth.XXXXXX)
+
     trap "rm -f '$auth_tmp'; echo ''" INT
 
-    if [[ $3 == "-f" ]]; then
-        file=$4
+    if [[ -n "$file_arg" ]]; then
+        if [[ ! -f "$file_arg" ]]; then
+            echo -e "\033[1;31m[!] File '$file_arg' not found. \033[0m"
+            rm -f "$auth_tmp"
+            exit 1
+        fi
         while IFS= read -r line || [ -n "$line" ]; do
             if [ -z "$line" ]; then
                 continue
             fi
-            user=$(echo "$line" | cut -d: -f1)
-            pass=$(echo "$line" | cut -d: -f2)
-            if [[ $pass =~ ^[a-fA-F0-9]{32}$ ]]; then
-                echo "-t $2 -u $user -H $pass" >> "$auth_tmp"
+            local user_from_file=$(echo "$line" | cut -d: -f1)
+            local pass_or_hash_from_file=$(echo "$line" | cut -d: -f2)
+            local cred_type_from_file=""
+            if [[ $pass_or_hash_from_file =~ ^[a-fA-F0-9]{32}$ ]]; then
+                cred_type_from_file="-H"
             else
-                echo "-t $2 -u $user -p $pass" >> "$auth_tmp"
+                cred_type_from_file="-p"
             fi
-        done < "$file"
+            echo "-t \"$target_arg\" -u \"$user_from_file\" $cred_type_from_file \"$pass_or_hash_from_file\" $kerb_arg ${other_args[@]}" >> "$auth_tmp"
+        done < "$file_arg"
     else
-        echo "$@" > "$auth_tmp"
+        local cred_line="-t \"$target_arg\""
+        if [[ -n "$user_arg" ]]; then
+            cred_line+=" -u \"$user_arg\""
+        fi
+        if [[ -n "$pass_arg" ]]; then
+            cred_line+=" -p \"$pass_arg\""
+        elif [[ -n "$hash_arg" ]]; then
+            cred_line+=" -H \"$hash_arg\""
+        fi
+        cred_line+=" $kerb_arg ${other_args[@]}"
+        echo "$cred_line" > "$auth_tmp"
     fi
 
     while IFS= read -r line || [ -n "$line" ]; do
@@ -492,33 +565,47 @@ testcreds() {
             continue
         fi
 
-        # Use eval to split $line into separate arguments
-        eval get_auth $line
-
-        echo -e "\033[1;35m[!] Testing $user's credentials with NetExec\033[0m"
-        echo -e "\033[0;34m[>] nxc xxx "${nxc_auth[@]}" \033[0m"
+        local current_user=""
+        local current_target=""
         
-        echo -e '\033[0;34m[*] Trying SMB... \033[0m'
-        nxc smb "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc smb "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+        # Parse the line into arguments for easier extraction of user/target.
+        local args_from_line=("${(z)line}")
+
+        for ((idx=1; idx <= ${#args_from_line[@]}; idx++)); do
+            case "${args_from_line[idx]}" in
+                -t|--target)
+                    if (( idx + 1 <= ${#args_from_line[@]} )); then
+                        current_target="${args_from_line[idx+1]//\"/}" # Remove quotes
+                    fi
+                    ((idx++))
+                    ;;
+                -u|--user)
+                    if (( idx + 1 <= ${#args_from_line[@]} )); then
+                        current_user="${args_from_line[idx+1]//\"/}" # Remove quotes
+                    fi
+                    ((idx++))
+                    ;;
+            esac
+        done
+
+        # Execute get_auth to set nxc_auth and imp_auth.
+        if ! eval get_auth $line; then
+            echo -e "\033[1;31m[!] Failed to parse authentication arguments for line: $line\033[0m"
+            continue
+        fi
         
-        echo -e '\033[0;34m[*] Trying WinRM... \033[0m'
-        nxc winrm "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc winrm "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+        echo -e "\033[1;35m[!] Testing $current_user's credentials on $current_target with NetExec\033[0m"
+        echo -e "\033[0;34m[>] nxc <PROTOCOL> ${nxc_auth[@]} \033[0m" 
 
-        echo -e '\033[0;34m[*] Trying MS-SQL... \033[0m'
-        nxc mssql "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc mssql "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
-
-        echo -e '\033[0;34m[*] Trying RDP... \033[0m'
-        nxc rdp "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        nxc rdp "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
-
-        echo -e '\033[0;34m[*] Trying SSH... \033[0m'
-        nxc ssh "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
-        
-        echo -e '\033[0;34m[*] Trying FTP... \033[0m'
-        nxc ftp "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+        for protocol in "${protocols_to_test[@]}"; do
+            echo -e "\033[0;36m[*] Trying $(echo $protocol | tr '[:lower:]' '[:upper:]')... \033[0m"
+            
+            nxc "$protocol" "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+            
+            if [[ "$protocol" != "ssh" && "$protocol" != "ftp" ]]; then
+                nxc "$protocol" "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+            fi
+        done
         
     done < "$auth_tmp"
 
