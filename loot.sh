@@ -74,8 +74,8 @@ fi
 echo "" # Separator
 
 ezpz_info_msg "ARP Cache"
-ezpz_cmd_exec "arp -a | sort" # Sort is part of the command itself for display purposes
-arp -a | sort
+ezpz_cmd_exec "arp -a"
+arp -a | sort -V
 
 echo "" # Separator
 
