@@ -1227,84 +1227,123 @@ color() {
 # Parses authentication arguments and sets global arrays for nxc and impacket tools.
 #------------------------------------------------------------------------------------
 get_auth() {
+  # Unset global variables to ensure a clean state for each call
   unset nxc_auth imp_auth target user password hashes auth domain dc_ip dc_fqdn
-  local kerb=0
 
+  local kerb=0
+  local original_user_input="" # Store the user input as-is for later parsing
+  local user_param_passed=0 # Flag to check if -u was passed
+
+  # First pass to capture all parameters, especially the original user input
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --target | -t) target="$2"; shift 2 ;;
-      --user | -u) user="$2"; shift 2 ;;
+      --user | -u) original_user_input="$2"; user_param_passed=1; shift 2 ;;
       --password | -p) password="$2"; auth="password"; shift 2 ;;
       --hash | -H) hashes="$2"; auth="hashes"; shift 2 ;;
       --kcache) auth="kerb"; shift ;;
       --kerb | -k) kerb=1; shift ;;
-      --domain | -d) domain="$2"; shift 2 ;;
+      --domain | -d) domain="$2"; shift 2 ;; # This is the *target domain*
       --dc-ip) dc_ip="$2"; shift 2 ;;
       --dc-fqdn) dc_fqdn="$2"; shift 2 ;;
-      --help | -h) return 1 ;;
-      *) shift ;;
+      --help | -h) return 1 ;; # Signal help requested to caller
+      *) shift ;; # Ignore other arguments, assuming caller handles them
     esac
   done
 
-  [[ "$user" == "''" ]] && user=""
+  # Handle empty string for user
+  if [[ "$original_user_input" == "''" ]]; then
+    user=""
+  else
+    user="$original_user_input"
+  fi
   [[ "$password" == "''" ]] && password=""
 
+  # Validate mandatory parameters
   if [[ -z "$target" ]]; then
     echo -e "\033[1;31m[!] Target is required. Use --target or -t. \033[0m"
     return 1
   fi
 
+  # --- Determine Target Domain for DC (for -dc-ip, -dc-host) ---
+  # If domain not provided via -d, try to infer it from /etc/hosts
   if [[ -z "$domain" ]]; then
     domain=$(awk 'tolower($0) ~ /dc/ {print $5; exit}' /etc/hosts)
-    [[ -z "$domain" ]] && echo -e "\033[1;33m[!] Domain not found. Use --domain. \033[0m"
+    [[ -z "$domain" ]] && echo -e "\033[1;33m[!] Target domain not found. Some features may fail. Use --domain or -d. \033[0m"
   fi
 
+  # If DC IP not provided, try to infer from /etc/hosts using the determined target domain
   if [[ -z "$dc_ip" ]]; then
     dc_ip=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $1; exit}' /etc/hosts)
     if [[ -z "$dc_ip" ]]; then
-      dc_ip="$target"
-      echo -e "\033[1;33m[!] DC IP not found. Using target '$target' as DC IP. Use --dc-ip. \033[0m"
+      dc_ip="$target" # Fallback to target IP itself as DC IP
+      echo -e "\033[1;33m[!] DC IP not found for domain '$domain'. Using target '$target' as DC IP. Use --dc-ip to specify. \033[0m"
     fi
   fi
 
+  # If DC FQDN not provided, try to infer from /etc/hosts using the determined target domain
   if [[ -z "$dc_fqdn" ]]; then
     dc_fqdn=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $4; exit}' /etc/hosts)
-    [[ -z "$dc_fqdn" ]] && echo -e "\033[1;33m[!] DC FQDN not found. Kerberos may fail. Use --dc-fqdn. \033[0m"
+    [[ -z "$dc_fqdn" ]] && echo -e "\033[1;33m[!] DC FQDN not found for domain '$domain'. Kerberos auth may fail. Use --dc-fqdn. \033[0m"
   fi
 
+  # --- Time Synchronization for Kerberos ---
   if [[ $kerb -eq 1 || "$auth" == "kerb" ]]; then
     if command -v ntpdate >/dev/null 2>&1; then
       sudo ntpdate -u "$dc_ip" >/dev/null 2>&1
     else
-      echo -e "\033[1;33m[!] ntpdate not found. Skipping time sync. Kerberos may fail.\033[0m"
+      echo -e "\033[1;33m[!] ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed.\033[0m"
     fi
   fi
 
+  # --- Build Impacket Authentication String ---
+  # This is where the core logic for DOMAIN\user parsing happens
+  local imp_user_part=""
+  if [[ -n "$user_param_passed" && "$original_user_input" =~ "\\"(.*) ]]; then
+    # User contains a backslash (DOMAIN\user format)
+    local domain_in_user="${original_user_input%\\*}" # Extract domain part
+    local username_clean="${original_user_input#*\\}" # Extract username part
+    imp_user_part="$domain_in_user/$username_clean" # Format for Impacket: DOMAIN/user
+    # For nxc_auth, use the original user string "DOMAIN\user" as nxc understands it.
+    nxc_auth=("$target" -u "$original_user_input")
+  elif [[ -n "$user_param_passed" ]]; then
+    # User is just "user" (no domain in username)
+    imp_user_part="$domain/$user" # Prepend the inferred/provided target domain
+    nxc_auth=("$target" -u "$user")
+  else
+    # No user provided, anonymous/null session
+    imp_user_part="$domain/"
+    nxc_auth=("$target" -u '' -p '')
+  fi
+
+  # Add password/hash to imp_user_part
   case "$auth" in
     password)
-      nxc_auth=("$target" -u "$user" -p "$password")
-      imp_auth="$domain/$user:$password -dc-ip $dc_ip"
+      imp_user_part+=":$password"
+      nxc_auth+=(-p "$password")
       ;;
     hashes)
-      nxc_auth=("$target" -u "$user" -H "$hashes")
-      imp_auth="$domain/$user -hashes :$hashes -dc-ip $dc_ip"
+      imp_user_part+=" -hashes :$hashes"
+      nxc_auth+=(-H "$hashes")
       ;;
     kerb)
-      nxc_auth=("$target" -u "$user" --use-kcache)
-      imp_auth="$domain/$user -k -no-pass -dc-ip $dc_ip"
-      ;;
-    *)
-      nxc_auth=("$target" -u '' -p '')
-      imp_auth="$domain/'' -dc-ip $dc_ip"
+      # No password/hash needed for Kerberos ticket
+      imp_user_part+=" -k -no-pass"
+      nxc_auth+=(-u "$user" --use-kcache) # NXC handles this specific combo for kcache
       ;;
   esac
 
-  if [[ $kerb -eq 1 ]]; then
-    nxc_auth+=(-k)
-    imp_auth+=" -k -no-pass"
-    [[ -n "$dc_fqdn" ]] && imp_auth+=" -dc-host $dc_fqdn"
+  # Assemble the final imp_auth string
+  imp_auth="$imp_user_part -dc-ip $dc_ip"
+  # Add dc-host for impacket scripts when using Kerberos
+  if [[ $kerb -eq 1 || "$auth" == "kerb" ]]; then
+      [[ -n "$dc_fqdn" ]] && imp_auth+=" -dc-host $dc_fqdn"
   fi
 
-  export nxc_auth imp_auth target user domain dc_ip dc_fqdn
+  # Add Kerberos flag to nxc_auth if specified (redundant for --use-kcache but good for consistency)
+  [[ $kerb -eq 1 ]] && nxc_auth+=(-k)
+
+  # Export global variables to be accessible by the calling functions
+  export nxc_auth imp_auth target user domain dc_ip dc_fqdn original_user_input # Keep original_user_input for debug/clarity
   return 0
 }
