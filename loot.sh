@@ -13,6 +13,10 @@
 # Output will be displayed directly on the screen.
 #
 
+# --- Self-Deletion Trap ---
+# This trap will attempt to remove the script file itself upon exit (normal or interrupted).
+trap 'rm "$0" 2>/dev/null; exit' EXIT
+
 # --- EZPZ-style Colors & Banners (adapted for local script) ---
 # Functions to output messages similar to ezpz.
 ezpz_banner() {

