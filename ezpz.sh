@@ -88,7 +88,7 @@ Usage: loot -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-x <protocol
   # Determine PowerShell wrapper for SMB
   local pwsh_wrapper=""
   if [[ "$proto" == "smb" ]]; then
-    pwsh_wrapper="powershell -c "
+    pwsh_wrapper="cmd /c powershell -c "
   fi
 
   trap "echo ''" INT
@@ -240,7 +240,7 @@ Usage: loot -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-x <protocol
       # Find all existing <target>-secrets.parsed files in the current directory
       # Concatenate them, sort -u, and save to all-secrets.parsed
       # Also tee the final output to the screen
-      find . -maxdepth 1 -type f -name "*-secrets.parsed" -print0 | xargs -0 cat 2>/dev/null | sort -u | tee "$all_parsed_hashes_file_root"
+      find . -maxdepth 1 -type f -name "*-secrets.parsed" -print0 | xargs -0 cat 2>/dev/null | sort -u > "$all_parsed_hashes_file_root"
 
       echo -e "\033[0;34m[*] All unique parsed hashes consolidated and saved to '$all_parsed_hashes_file_root'. \033[0m"
 
