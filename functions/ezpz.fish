@@ -37,7 +37,7 @@ function ezpz_show_menu
     echo ' \ \  \ /  -_)   _ \ '(set_color magenta --bold)'\__ \  (      _ \   .  | '(set_color normal)
     echo '  \_/\_/ \___| _.__/ '(set_color magenta --bold)'____/ \___| _/  _\ _|\_|  '(set_color normal)
     echo ''
-    echo (set_color cyan --bold)"ezpz CTF Scripts - Fish Shell Version"(set_color normal)
+    echo (set_color cyan --bold)"ezpz CTF Scripts - v0.fish 🍣"(set_color normal)
     echo ""
     echo (set_color magenta)"Available commands:"(set_color normal)
     echo "  netscan     - Network discovery and port scanning"

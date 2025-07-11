@@ -13,7 +13,7 @@ function ezpz_netscan
         echo (set_color red --bold)"[!] "$argv(set_color normal)
     end
     function ezpz_warning
-        echo (set_color blue)"[*] "$argv(set_color normal)
+        echo (set_color blue --bold)"[*] "$argv(set_color normal)
     end
 
     # Usage message
