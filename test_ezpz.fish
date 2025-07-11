@@ -6,6 +6,7 @@
 # Carrega as funções
 source functions/ezpz.fish
 source functions/ezpz_netscan.fish
+source functions/ezpz_webscan.fish
 
 echo (set_color green)"eZpZ functions loaded successfully!"(set_color normal)
 echo "You can now test:"
