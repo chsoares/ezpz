@@ -5,7 +5,7 @@ function ezpz
         return 1
     end
 
-    source $EZPZ_HOME/functions/ezpz_colors.fish
+    source $EZPZ_HOME/functions/_ezpz_colors.fish
     
     set -l commands netscan webscan secretsparse loot checkvulns adscan testcreds enumdomain enumuser enumshares enumsql
 
@@ -18,7 +18,7 @@ function ezpz
     set -e argv[1]
 
     if contains -- $subcmd $commands
-        set -l func_name ezpz_$subcmd
+        set -l func_name _ezpz_$subcmd
         if functions -q $func_name
             $func_name $argv
             return $status

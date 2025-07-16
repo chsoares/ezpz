@@ -1,5 +1,5 @@
-function ezpz_loot
-    source $EZPZ_HOME/functions/ezpz_colors.fish
+function _ezpz_loot
+    source $EZPZ_HOME/functions/_ezpz_colors.fish
 
     # Usage message
     set usage "

@@ -1,8 +1,0 @@
-bloodhound-python>=1.0.0
-impacket>=0.10.0
-netexec>=1.0.0
-sqlmap>=1.7.0
-whatweb>=0.5.5
-ffuf>=2.0.0
-fping>=5.0
-nmap>=7.80 

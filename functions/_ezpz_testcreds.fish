@@ -1,5 +1,5 @@
-function ezpz_testcreds
-    source $EZPZ_HOME/functions/ezpz_colors.fish
+function _ezpz_testcreds
+    source $EZPZ_HOME/functions/_ezpz_colors.fish
     
     # Function to highlight "Pwn3d!"
     function highlight_pwned
