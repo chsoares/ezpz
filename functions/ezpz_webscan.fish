@@ -1,20 +1,5 @@
 function ezpz_webscan
-    # Color helper functions
-    function ezpz_header
-        echo (set_color yellow --bold)"[+] "$argv(set_color normal)
-    end
-    function ezpz_info_star
-        echo (set_color cyan)"[*] "$argv(set_color normal)
-    end
-    function ezpz_cmd_display
-        echo (set_color blue)"[>] "$argv(set_color normal)
-    end
-    function ezpz_error
-        echo (set_color red --bold)"[!] "$argv(set_color normal)
-    end
-    function ezpz_warning
-        echo (set_color blue --bold)"[*] "$argv(set_color normal)
-    end
+    source $EZPZ_HOME/functions/ezpz_colors.fish
 
     # Usage message
     set usage "
