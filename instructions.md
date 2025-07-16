@@ -10,14 +10,16 @@ Este PRD detalha o processo de refatoração do script de hacking `ezpz.sh` (atu
 
 Cada uma das seguintes funções do `ezpz.sh` original será refatorada individualmente para o Fish Shell:
 
-*   `loot`
+✅ Funções já refatoradas:
+*   `loot` - Implementada em `_ezpz_loot.fish`
+*   `adscan` - Implementada em `_ezpz_adscan.fish`
+*   `netscan` - Implementada em `_ezpz_netscan.fish`
+*   `webscan` - Implementada em `_ezpz_webscan.fish`
+*   `testcreds` - Implementada em `_ezpz_testcreds.fish`
+
+🔄 Funções pendentes:
 *   `secretsparse`
-*   `netscan`
-*   `webscan`
 *   `checkvulns`
-*   `adscan`
-*   `startresponder`
-*   `testcreds`
 *   `enumdomain`
 *   `enumuser`
 *   `enumshares`
@@ -43,22 +45,21 @@ Os scripts refatorados serão mantidos em um repositório Git. Dentro do reposit
 ```
 ezpz/
 ├── functions/
-│   ├── ezpz.fish           # O script dispatcher principal (o que o usuário chama)
-│   ├── ezpz_loot.fish      # Função refatorada para 'loot'
-│   ├── ezpz_secretsparse.fish
-│   ├── ezpz_netscan.fish
-│   ├── ezpz_webscan.fish
-│   ├── ezpz_checkvulns.fish
-│   ├── ezpz_adscan.fish
-│   ├── ezpz_startresponder.fish
-│   ├── ezpz_testcreds.fish
-│   ├── ezpz_enumdomain.fish
-│   ├── ezpz_enumuser.fish
-│   ├── ezpz_enumshares.fish
-│   ├── ezpz_enumsql.fish
-│   └── # Outras funções auxiliares ou de cores se necessário
+│   ├── ezpz.fish           # O script dispatcher principal (implementado ✅)
+│   ├── _ezpz_colors.fish   # Funções de colorização (implementado ✅)
+│   ├── _ezpz_loot.fish     # Função refatorada para 'loot' (implementado ✅)
+│   ├── _ezpz_adscan.fish   # Função refatorada para 'adscan' (implementado ✅)
+│   ├── _ezpz_netscan.fish  # Função refatorada para 'netscan' (implementado ✅)
+│   ├── _ezpz_webscan.fish  # Função refatorada para 'webscan' (implementado ✅)
+│   ├── _ezpz_testcreds.fish # Função refatorada para 'testcreds' (implementado ✅)
+│   ├── _ezpz_secretsparse.fish
+│   ├── _ezpz_checkvulns.fish
+│   ├── _ezpz_enumdomain.fish
+│   ├── _ezpz_enumuser.fish
+│   ├── _ezpz_enumshares.fish
+│   └── _ezpz_enumsql.fish
 └── old/
-│   └── ezpz.sh             # O script Zsh original para referência
+    └── ezpz.sh             # O script Zsh original para referência
 └── README.md
 └── LICENSE
 └── .git/
