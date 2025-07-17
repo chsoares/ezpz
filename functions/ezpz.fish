@@ -7,7 +7,7 @@ function ezpz
 
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
-    set -l commands netscan webscan secretsparse loot checkvulns adscan testcreds enumdomain enumuser enumshares enumsql
+    set -l commands netscan webscan secretsparse loot checkvulns adscan testcreds enumdomain enumuser enumshares enumsqli
 
     if test (count $argv) -eq 0
         ezpz_show_menu
@@ -50,7 +50,7 @@ function ezpz_show_menu
     echo "  enumdomain   - Domain enumeration"
     echo "  enumuser     - User enumeration"
     echo "  enumshares   - Share enumeration"
-    echo "  enumsql      - SQL Server enumeration"
+    echo "  enumsqli     - SQL Server enumeration"
     echo "  testcreds    - Test credentials against targets"
     echo "  loot         - Extract information from Windows hosts"
     echo "  secretsparse - Parse secretsdump.py output"
