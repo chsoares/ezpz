@@ -116,8 +116,8 @@ Usage: ezpz netscan [-F] <target>
         sudo /usr/bin/nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv 2>/dev/null |
             sed -n '/PORT/,$p' |
             sed -n '/Script Post-scanning/q;p' |
-            grep --color=never -v '^[[:space:]]*$' |
-            sed 's/^/'(set_color blue)'|/;s/$/'(set_color normal)'/'
+            grep --color=never -v '^[[:space:]]*$' #|
+            #sed 's/^/'(set_color blue)'|/;s/$/'(set_color normal)'/'
     end < "$targets_tmp"
 
     # UDP Scan
