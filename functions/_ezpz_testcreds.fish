@@ -125,10 +125,10 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         end
 
         ezpz_header "Testing $current_user's credentials on $current_target with NetExec (timeout: 60s)"
-        ezpz_cmd_display "nxc <PROTOCOL> $line"
+        ezpz_cmd "nxc <PROTOCOL> $line"
 
         for protocol in $protocols
-            ezpz_info_star "Trying "(string upper $protocol)"..."
+            ezpz_info "Trying "(string upper $protocol)"..."
             
             # Test normal auth
             timeout 60s nxc $protocol $args 2>/dev/null | \
@@ -147,5 +147,5 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         end
     end < $auth_tmp
 
-    ezpz_warning "Done."
+    ezpz_success "Done."
 end 

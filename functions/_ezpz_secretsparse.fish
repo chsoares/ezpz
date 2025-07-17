@@ -117,5 +117,5 @@ Usage: ezpz secretsparse <base_filename>
 
     # Finalization
     trap - INT EXIT TERM # Restore default traps
-    ezpz_warning "Done."
+    ezpz_success "Done."
 end 

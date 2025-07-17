@@ -85,9 +85,9 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
     end
 
     # Test connectivity
-    ezpz_info_star "Testing connectivity to $url"
+    ezpz_info "Testing connectivity to $url"
     if not curl -s --connect-timeout 10 "$url" >/dev/null 2>&1
-        ezpz_warning "Host might not be accessible. Continuing anyway..."
+        ezpz_warn "Host might not be accessible. Continuing anyway..."
     end
 
     # Set trap for Ctrl+C
@@ -95,14 +95,14 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
 
     # Enumeration - WhatWeb
     ezpz_header "Running WhatWeb on $url"
-    ezpz_cmd_display "whatweb -a3 -v \"$url\""
+    ezpz_cmd "whatweb -a3 -v \"$url\""
     echo ""
     whatweb -a3 -v "$url"
     echo ""
 
     # Directory fuzzing
     ezpz_header "Fuzzing for directories"
-    ezpz_cmd_display "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -c -t 250 -ic -ac -v"
+    ezpz_cmd "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -c -t 250 -ic -ac -v"
     echo ""
     ffuf -u "$url/FUZZ" -w "$wordlist" -c -t 250 -ic -ac -v 2>/dev/null |
         grep -vE "FUZZ:|-->"
@@ -111,28 +111,28 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
     # Subdomain fuzzing (only for domains, not IPs)
     if test $is_ip -eq 0
         ezpz_header "Fuzzing for subdomains"
-        ezpz_cmd_display "ffuf -u \"$url\" -w \"$wordlist\" -H \"Host: FUZZ.$domain.$tld\" -c -t 250 -ic -ac -v"
+        ezpz_cmd "ffuf -u \"$url\" -w \"$wordlist\" -H \"Host: FUZZ.$domain.$tld\" -c -t 250 -ic -ac -v"
         echo ""
         ffuf -u "$url" -w "$wordlist" -H "Host: FUZZ.$domain.$tld" -c -t 250 -ic -ac -v 2>/dev/null |
             grep -vE "URL|-->"
-        ezpz_info_star "Remember to add any discovered subdomain to /etc/hosts :)"
+        ezpz_info "Remember to add any discovered subdomain to /etc/hosts :)"
         echo ""
 
         # Vhost fuzzing
         ezpz_header "Fuzzing for vhosts"
-        ezpz_cmd_display "ffuf -u \"$url\" -w \"$wordlist\" -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v"
+        ezpz_cmd "ffuf -u \"$url\" -w \"$wordlist\" -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v"
         echo ""
         ffuf -u "$url" -w "$wordlist" -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null |
             grep -vE "URL|-->"
         echo ""
     else
-        ezpz_warning "Target is an IP. Skipping subdomain and vhost fuzzing."
+        ezpz_warn "Target is an IP. Skipping subdomain and vhost fuzzing."
         echo ""
     end
 
     # Recursive fuzzing with extensions
     ezpz_header "Fuzzing recursively for common file extensions (this might take long!)"
-    ezpz_cmd_display "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v"
+    ezpz_cmd "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v"
     echo ""
     ffuf -u "$url/FUZZ" -w "$wordlist" -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v 2>/dev/null |
         grep -vE "FUZZ:|-->"
@@ -140,5 +140,5 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
 
     # Finalization
     trap - INT
-    ezpz_warning "Done."
+    ezpz_success "Done."
 end 

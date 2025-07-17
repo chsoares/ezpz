@@ -72,10 +72,10 @@ Usage: ezpz netscan [-F] <target>
     else if echo "$target" | grep -qE "$cidr_pattern"
         # Host discovery with CIDR
         ezpz_header "Running fping on the $target network"
-        ezpz_cmd_display "fping -agq \"$target\""
+        ezpz_cmd "fping -agq \"$target\""
         fping -agq "$target" | tee "$targets_tmp"
         cat "$targets_tmp" >> hosts.txt && sort -u -o hosts.txt hosts.txt
-        ezpz_cmd_display "Saving enumerated hosts to ./hosts.txt"
+        ezpz_cmd "Saving enumerated hosts to ./hosts.txt"
     else if echo "$target" | grep -qE "$ip_pattern"
         # Single IP
         echo "$target" > "$targets_tmp"
@@ -87,15 +87,15 @@ Usage: ezpz netscan [-F] <target>
 
     # Check if temporary file has content
     if not test -s "$targets_tmp"
-        ezpz_warning "No live hosts found"
+        ezpz_warn "No live hosts found"
         return 0
     end
 
     # Port Scanning - Fast TCP Scan
     ezpz_header "Running FAST TCP SCAN on discovered hosts"
-    ezpz_cmd_display "sudo nmap -T4 -Pn -F --min-rate 10000 <target_ip>"
+    ezpz_cmd "sudo nmap -T4 -Pn -F --min-rate 10000 <target_ip>"
     while read -l item
-        ezpz_info_star "Scanning $item..."
+        ezpz_info "Scanning $item..."
         sudo /usr/bin/nmap -T4 -Pn -F --min-rate 10000 "$item" |
             sed -n '/PORT/,$p' |
             sed -n '/Nmap done/q;p' |
@@ -103,16 +103,16 @@ Usage: ezpz netscan [-F] <target>
     end < "$targets_tmp"
 
     if test $fast_scan -eq 1
-        ezpz_warning "Fast scan complete."
+        ezpz_warn "Fast scan complete."
         trap - INT
         return 0
     end
 
     # Full TCP Scan
     ezpz_header "Running FULL TCP SCAN on discovered hosts"
-    ezpz_cmd_display "sudo nmap -T4 -Pn -sVC -p- --min-rate 10000 -vv <target_ip>"
+    ezpz_cmd "sudo nmap -T4 -Pn -sVC -p- --min-rate 10000 -vv <target_ip>"
     while read -l item
-        ezpz_info_star "Scanning $item..."
+        ezpz_info "Scanning $item..."
         sudo /usr/bin/nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv 2>/dev/null |
             sed -n '/PORT/,$p' |
             sed -n '/Script Post-scanning/q;p' |
@@ -122,9 +122,9 @@ Usage: ezpz netscan [-F] <target>
 
     # UDP Scan
     ezpz_header "Running UDP SCAN on discovered hosts"
-    ezpz_cmd_display "sudo nmap -T4 -sU --open --min-rate 10000 <target_ip>"
+    ezpz_cmd "sudo nmap -T4 -sU --open --min-rate 10000 <target_ip>"
     while read -l item
-        ezpz_info_star "Scanning $item..."
+        ezpz_info "Scanning $item..."
         sudo /usr/bin/nmap -T4 -sU --open --min-rate 10000 "$item" |
             sed -n '/PORT/,$p' |
             sed -n '/Nmap done/q;p' |
@@ -133,5 +133,5 @@ Usage: ezpz netscan [-F] <target>
 
     # Finalization
     trap - INT
-    ezpz_warning "Done."
+    ezpz_success "Done."
 end 

@@ -68,10 +68,10 @@ Usage: ezpz adscan <target>
     else if echo "$input" | grep -qE "$cidr_pattern"
         # Host discovery with CIDR
         ezpz_header "Running fping on the $input network"
-        ezpz_cmd_display "fping -agq \"$input\""
+        ezpz_cmd "fping -agq \"$input\""
         fping -agq "$input" | tee "$targets_tmp"
         cat "$targets_tmp" >> hosts.txt && sort -u -o hosts.txt hosts.txt
-        ezpz_cmd_display "Saving enumerated hosts to ./hosts.txt"
+        ezpz_cmd "Saving enumerated hosts to ./hosts.txt"
     else if echo "$input" | grep -qE "$ip_pattern"
         # Single IP
         echo "$input" > "$targets_tmp"
@@ -83,16 +83,16 @@ Usage: ezpz adscan <target>
 
     # Check if temporary file has content
     if not test -s "$targets_tmp"
-        ezpz_warning "No live hosts found"
+        ezpz_warn "No live hosts found"
         return 0
     end
 
     # NetExec Scanning
     ezpz_header "Running NetExec on discovered hosts"
-    ezpz_cmd_display "nxc smb <target_ip>"
+    ezpz_cmd "nxc smb <target_ip>"
 
     while read -l host_item
-        ezpz_info_star "Scanning $host_item..."
+        ezpz_info "Scanning $host_item..."
         nxc smb "$host_item" | tr -s " " | tee -a "$nxc_tmp"
     end < "$targets_tmp"
 
@@ -133,9 +133,9 @@ Usage: ezpz adscan <target>
             end
         end < "$nxc_clean"
 
-        ezpz_cmd_display "New hosts added to /etc/hosts successfully."
+        ezpz_cmd "New hosts added to /etc/hosts successfully."
         if set -q domain
-            ezpz_info_star "\$domain is set to $domain"
+            ezpz_info "\$domain is set to $domain"
         end
     end
 
@@ -144,12 +144,12 @@ Usage: ezpz adscan <target>
         read -P (set_color cyan --bold)"[?] Windows hosts detected. Start Responder to capture hashes? [y/N] "(set_color normal) confirm_responder
         if test "$confirm_responder" = "y" -o "$confirm_responder" = "Y"
             ezpz_header "Starting Responder..."
-            ezpz_cmd_display "sudo responder -dwv -I tun0"
+            ezpz_cmd "sudo responder -dwv -I tun0"
             sudo responder -dwv -I tun0
         end
     end
 
     # Finalization
     trap - INT
-    ezpz_warning "Done."
+    ezpz_success "Done."
 end 
