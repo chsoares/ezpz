@@ -41,7 +41,7 @@ function ezpz_error
     echo (set_color red --bold)"[!] "$argv(set_color normal)
 end
 function ezpz_warn
-    echo (set_color magenta --bold)"[*] "$argv(set_color normal)
+    echo (set_color red)"[-] "$argv(set_color normal)
 end
 function ezpz_success
     echo (set_color magenta --bold)"[✓] "$argv(set_color normal)
