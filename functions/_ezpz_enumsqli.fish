@@ -117,7 +117,7 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
                 ezpz_cmd "sqlmap $argv -D \"$db\" -T \"$table\" --columns --batch"
                 sqlmap $argv -D "$db" -T "$table" --columns --batch 2>/dev/null | \
                     tail -n +10 | \
-                    grep --color=never -oP "^\++|\|\s.*" | grep -vE '^\++'
+                    grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
 
                 ezpz_question "Select columns (all/names): [all] "
                 read -l column_choice
