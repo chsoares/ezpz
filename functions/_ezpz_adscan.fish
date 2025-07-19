@@ -112,31 +112,28 @@ Usage: ezpz adscan <target>
             test -z "$line"; and continue
             string match -q "SMB*" "$line"; or continue
 
-            set ip (string match -r '([0-9]{1,3}\.){3}[0-9]{1,3}' "$line")
-            set hostname (string match -r 'name:([^)]+)' "$line" | string sub -s 2)
-            set domain_name (string match -r 'domain:([^)]+)' "$line" | string sub -s 2)
-            set is_dc (string match -ri "DC" "$line" > /dev/null; and echo 1; or echo 0)
+            set -l ip (echo "$line" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}')
+            set -l host_name (echo "$line" | sed -n 's/.*name:\([^)]*\).*/\1/p')
+            set -l domain_name (echo "$line" | sed -n 's/.*domain:\([^)]*\).*/\1/p')
+            set -l is_dc (echo "$line" | grep -qi "DC"; and echo 1; or echo 0)
 
             if test -n "$domain_name"
                 if test $is_dc -eq 1 -o $hosts_count -eq 1
-                    set new_entry "$ip    DC $hostname $hostname.$domain_name $domain_name"
-                    set -gx domain $domain_name
+                    set new_entry "$ip    DC $host_name $host_name.$domain_name $domain_name"
                 else
-                    set new_entry "$ip    $hostname $hostname.$domain_name"
+                    set new_entry "$ip    $host_name $host_name.$domain_name"
                 end
             else
-                set new_entry "$ip    $hostname"
+                set new_entry "$ip    $host_name"
             end
 
             if not grep -q -F "$ip" /etc/hosts
-                echo "$new_entry" | sudo tee -a /etc/hosts > /dev/null
+                echo "$new_entry" | sudo tee -a /etc/hosts
             end
         end < "$nxc_clean"
 
-        ezpz_cmd "New hosts added to /etc/hosts successfully."
-        if set -q domain
-            ezpz_info "\$domain is set to $domain"
-        end
+        ezpz_info "New hosts added to /etc/hosts successfully."
+        
     end
 
     # Ask to start Responder
