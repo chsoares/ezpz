@@ -227,6 +227,13 @@ Examples:
     ezpz_cmd "nxc ldap $nxc_auth --password-not-required"
     nxc ldap $nxc_auth --password-not-required 2>/dev/null | grep --color=never -ao "User:.*"
 
+    ezpz_header "Enumerating Group Managed Service Accounts (gMSA)"
+    ezpz_cmd "nxc ldap $nxc_auth --gmsa"
+    timeout 60 nxc ldap $nxc_auth --gmsa 2>/dev/null | grep -aoE "Account:.*|PrincipalsAllowedToReadPassword:.*" --color=never
+    if test $pipestatus[1] -eq 124
+        ezpz_warn "Operation timed out. Skipping."
+    end
+
     if test -s $users_tmp
         ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
         ezpz_cmd "pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp"
@@ -288,6 +295,57 @@ Examples:
     ezpz_cmd "nxc smb $nxc_auth -M gpp_password -M gpp_autologin"
     nxc smb $nxc_auth -M gpp_password 2>/dev/null | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
     nxc smb $nxc_auth -M gpp_autologin 2>/dev/null | grep -aioE "Found credentials .*|Usernames: .*|Passwords: .*" --color=never
+
+    ezpz_title "DNS enumeration..."
+
+    # DNS Dump using bloodyAD
+    if command -v bloodyAD >/dev/null 2>&1
+        ezpz_header "Enumerating DNS records"
+        
+        # Build bloodyAD authentication
+        set bloody_auth --host $target -d $domain -u $user
+        if set -q _flag_password
+            set -a bloody_auth -p "$_flag_password"
+        else if set -q _flag_hash
+            set -a bloody_auth -p ":$_flag_hash"
+        else if set -q _flag_kerb
+            if set -q KRB5CCNAME
+                set -a bloody_auth -k "ccache=$KRB5CCNAME"
+            else
+                ezpz_warn "KRB5CCNAME not set. Kerberos authentication may fail."
+                set -a bloody_auth -k
+            end
+        end
+        
+        ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
+        timeout 60 bloodyAD $bloody_auth get dnsDump 2>/dev/null | awk '
+        {
+            if (/^recordName:/) {
+                current_record = $2
+            } else if (/^A:/ && current_record != "") {
+                gsub(/^A: /, "", $0)
+                gsub(/; /, ", ", $0)
+                print current_record " -> " $0
+                current_record = ""
+            } else if (/^$/) {
+                current_record = ""
+            }
+        }' | sort | uniq | awk '
+        BEGIN { 
+            printf "%-35s %s\n", "HOSTNAME", "IP ADDRESS(ES)"
+            printf "%-35s %s\n", "--------", "-------------"
+        }
+        {
+            split($0, parts, " -> ")
+            printf "%-35s %s\n", parts[1], parts[2]
+        }'
+        
+        if test $pipestatus[1] -eq 124
+            ezpz_warn "Operation timed out. Skipping."
+        end
+    else
+        ezpz_warn "bloodyAD not found. Skipping DNS enumeration."
+    end
 
     ezpz_title "Starting data collection..."
 
