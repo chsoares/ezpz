@@ -3,10 +3,17 @@ function _ezpz_enumnull
 
     # ASCII banner
     echo ''
-    echo '                           '(set_color yellow --bold)'  __ \   |  |   |     |     '(set_color normal)
-    echo '     -_)    \   |  |   ` \ '(set_color yellow --bold)'  |   |  |  |   |     |     '(set_color normal)
-    echo '   \___| _| _| \_,_| _|_|_|'(set_color yellow --bold)' ____/  \__/  ____| ____| '(set_color normal)
+    echo '                         '(set_color magenta --bold)'   \ |  |  | |     |    '(set_color normal)
+    echo '   -_)    \   |  |   ` \ '(set_color magenta --bold)'  .  |  |  | |     |    '(set_color normal)
+    echo ' \___| _| _| \_,_| _|_|_|'(set_color magenta --bold)' _|\_| \__/ ____| ____| '(set_color normal)
     echo ''
+
+
+
+
+                                                 
+
+
 
     # Usage message
     set usage "
