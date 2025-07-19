@@ -127,8 +127,11 @@ Usage: ezpz adscan <target>
                 set new_entry "$ip    $host_name"
             end
 
-            if not grep -q -F "$ip" /etc/hosts
+            if not grep -q -F "$new_entry" /etc/hosts
                 echo "$new_entry" | sudo tee -a /etc/hosts
+                ezpz_info "Added to /etc/hosts: $new_entry"
+            else
+                ezpz_info "Entry already exists in /etc/hosts: $new_entry"
             end
         end < "$nxc_clean"
 
