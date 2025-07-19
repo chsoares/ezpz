@@ -132,21 +132,47 @@ Examples:
 
     ezpz_title "Starting user & group enumeration..."
 
-    # RID Brute Force - check if users file already exists
+    # User Enumeration - check if users file already exists
     set users_file "$file_domain"_users.txt
     if test -f $users_file
-        ezpz_info "Users file $users_file already exists. Skipping RID brute force."
+        ezpz_info "Users file $users_file already exists. Skipping user enumeration."
         cp $users_file $users_tmp
     else
-        ezpz_header "Enumerating all users with RID Bruteforcing"
-        ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
-        nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
-        if test -s $users_tmp
+        # Create temporary file for users display
+        set users_temp (mktemp)
+        
+        # Try --users first
+        ezpz_header "Enumerating users"
+        ezpz_cmd "nxc smb $nxc_auth --users"
+        timeout 60 nxc smb $nxc_auth --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+        
+        if test $pipestatus[1] -eq 124
+            ezpz_warn "Operation timed out. Skipping."
+        else if test -s $users_temp
+            # Extract just usernames and save to file
+            cat $users_temp | awk '{print $1}' > $users_tmp
             cp $users_tmp $users_file
             ezpz_info "Saving enumerated users to $users_file"
         else
-            ezpz_error "No users found during RID Bruteforcing."
+            ezpz_warn "No users found with --users. Trying RID brute force..."
+            
+            # Fallback to RID brute force
+            ezpz_header "Enumerating users with RID Bruteforcing (fallback)"
+            ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
+            timeout 60 nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+            
+            if test $pipestatus[1] -eq 124
+                ezpz_warn "Operation timed out. Skipping."
+            else if test -s $users_tmp
+                cp $users_tmp $users_file
+                ezpz_info "Saving enumerated users to $users_file"
+            else
+                ezpz_error "No users found during RID Bruteforcing."
+            end
         end
+        
+        # Cleanup temp file
+        rm -f $users_temp
     end
 
     ezpz_header "Enumerating groups"
@@ -158,8 +184,8 @@ Examples:
     nxc ldap $nxc_auth --admin-count 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5
 
     ezpz_header "Enumerating user descriptions for clues"
-    ezpz_cmd "nxc ldap $nxc_auth -M user-desc"
-    nxc ldap $nxc_auth -M user-desc 2>/dev/null | grep --color=never -o "User:.*"
+    ezpz_cmd "nxc ldap $nxc_auth -M get-desc-users"
+    nxc ldap $nxc_auth -M get-desc-users 2>/dev/null | grep --color=never -o "User:.*"
 
     ezpz_title "Looking for exploitable accounts..."
 
