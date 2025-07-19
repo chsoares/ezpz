@@ -3,9 +3,9 @@ function _ezpz_enumshares
 
     # ASCII banner
     echo ''
-    echo '                         '(set_color yellow --bold)'   __|  |  |    \    _ \  __|   __| '(set_color normal)
-    echo '   -_)    \   |  |   ` \ '(set_color yellow --bold)' \__ \  __ |   _ \     /  _|  \__ \ '(set_color normal)
-    echo ' \___| _| _| \_,_| _|_|_|'(set_color yellow --bold)' ____/ _| _| _/  _\ _|_\ ___| ____/ '(set_color normal)
+    echo '                         '(set_color magenta --bold)'   __|  |  |    \    _ \  __|   __| '(set_color normal)
+    echo '   -_)    \   |  |   ` \ '(set_color magenta --bold)' \__ \  __ |   _ \     /  _|  \__ \ '(set_color normal)
+    echo ' \___| _| _| \_,_| _|_|_|'(set_color magenta --bold)' ____/ _| _| _/  _\ _|_\ ___| ____/ '(set_color normal)
     echo ''
 
     # Usage message
@@ -168,14 +168,16 @@ Examples:
         }' > $share_names_tmp
 
         # Process each share
-        while read -l share
+        for share in (cat $share_names_tmp)
             test -z "$share"; and continue
             
             ezpz_question "Spider '$share' share for interesting files? [y/N]"
-            read -l confirm
+            read -l confirm < /dev/tty
+            or set confirm "n" # Default to no if timeout
+            set confirm (string trim $confirm)
             if test "$confirm" = "y" -o "$confirm" = "Y"
                 ezpz_header "Searching '$share' for config/script/text files"
-                set regex_pattern "\.txt|\.xml|\.config|\.cnf|\.conf|\.ini|\.ps1"
+                set regex_pattern "\.txt|\.csv|\.xml|\.config|\.cnf|\.conf|\.ini|\.ps1"
                 ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
                 
                 timeout 60 nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
@@ -187,7 +189,9 @@ Examples:
 
                 if test -s $files_tmp
                     ezpz_question "Download these files? [y/N]"
-                    read -l confirm_dl
+                    read -l confirm_dl < /dev/tty
+                    or set confirm_dl "n" # Default to no if timeout
+                    set confirm_dl (string trim $confirm_dl)
                     if test "$confirm_dl" = "y" -o "$confirm_dl" = "Y"
                         set dir_path "./$target"_"$share"_loot
                         mkdir -p $dir_path
@@ -210,7 +214,8 @@ Examples:
                             test -z "$file_path_full"; and continue
                             
                             set share_path "//$target/$share"
-                            set file_path (echo "$file_path_full" | sed "s|/|\\\\|g")
+                            # Extract just the filename from the full path (remove //target/share/ prefix)
+                            set file_path (echo "$file_path_full" | sed "s|^//$target/$share/||" | sed "s|/|\\\\|g")
                             set file_name (basename "$file_path_full")
                             
                             if test -n "$smb_domain" -a -n "$smb_pass"
@@ -229,14 +234,18 @@ Examples:
                             ezpz_header "Searching for secrets in downloaded files..."
                             set secret_pattern "password|passwd|secret|key|token|cred|connstr"
                             ezpz_cmd "grep -iE -r \"$secret_pattern\" \"$dir_path\""
-                            grep -iE -r --color=always $secret_pattern $dir_path 2>/dev/null
+                            # Use -a flag to treat binary files as text and handle special characters
+                            grep -iE -r -a --color=always $secret_pattern $dir_path 2>/dev/null
+                            if test $status -ne 0
+                                ezpz_info "No secrets found in downloaded files."
+                            end
                         end
                     end
                 else
                     ezpz_warn "No files found matching the pattern in share '$share'."
                 end
             end
-        end < $share_names_tmp
+        end
     end < $hosts_tmp
 
     trap - INT
