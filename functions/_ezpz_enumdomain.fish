@@ -176,16 +176,16 @@ Examples:
     end
 
     ezpz_header "Enumerating groups"
-    ezpz_cmd "nxc smb $nxc_auth --groups"
-    nxc smb $nxc_auth --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"
+    ezpz_cmd "nxc ldap $nxc_auth --groups"
+    nxc ldap $nxc_auth --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"
 
     ezpz_header "Enumerating privileged users"
     ezpz_cmd "nxc ldap $nxc_auth --admin-count"
     nxc ldap $nxc_auth --admin-count 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5
 
-    ezpz_header "Enumerating user descriptions for clues"
+    ezpz_header "Enumerating user descriptions"
     ezpz_cmd "nxc ldap $nxc_auth -M get-desc-users"
-    nxc ldap $nxc_auth -M get-desc-users 2>/dev/null | grep --color=never -o "User:.*"
+    nxc ldap $nxc_auth -M get-desc-users 2>/dev/null | grep --color=never -o "User:.*" | awk -F'description: ' '{user=$1; sub(/^User: /, "", user); print user " ||| " $2}' | column -s '|||' -t
 
     ezpz_title "Looking for exploitable accounts..."
 
@@ -235,6 +235,8 @@ Examples:
 
     ezpz_question "Bruteforce all discovered users with username as password? [y/N]"
     read -l confirm
+    or set confirm "n" # Default to no if timeout
+    set confirm (string trim $confirm)
     if test "$confirm" = "y" -o "$confirm" = "Y"
         if test -s $users_tmp
             ezpz_header "Starting username-as-password bruteforce..."
@@ -291,6 +293,8 @@ Examples:
 
     ezpz_question "Ingest data for Bloodhound? [y/N]"
     read -l confirm
+    or set confirm "n" # Default to no if timeout
+    set confirm (string trim $confirm)
     if test "$confirm" = "y" -o "$confirm" = "Y"
         ezpz_header "Ingesting AD data for BloodHound"
         ezpz_cmd "nxc ldap $nxc_auth --bloodhound --collection All --dns-server $target"
