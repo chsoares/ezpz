@@ -107,8 +107,8 @@ Examples:
 
     # Groups
     ezpz_header "Enumerating groups"
-    ezpz_cmd "nxc smb $target -u '' -p '' --groups"
-    timeout 60 nxc smb $target -u '' -p '' --groups 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    ezpz_cmd "nxc ldap $target -u '' -p '' --groups"
+    timeout 60 nxc ldap $target -u '' -p '' --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
@@ -124,10 +124,39 @@ Examples:
     # Shares Enumeration
     ezpz_header "Enumerating shares"
     ezpz_cmd "nxc smb $target -u '' -p '' --shares --smb-timeout 999"
-    timeout 60 nxc smb $target -u '' -p '' --shares --smb-timeout 999 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5-
+    set shares_output (mktemp)
+    timeout 60 nxc smb $target -u '' -p '' --shares --smb-timeout 999 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- > $shares_output
+    
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
+    else if test -s $shares_output
+        # Format shares as table using READ/WRITE as delimiter
+        printf "%-20s %-15s %s\n" "SHARE NAME" "PERMISSIONS" "DESCRIPTION"
+        printf "%-20s %-15s %s\n" "----------" "-----------" "-----------"
+        cat $shares_output | awk '
+        {
+            line = $0
+            if (match(line, /READ,WRITE/)) {
+                share = substr(line, 1, RSTART-1)
+                perm = "READ,WRITE"
+                desc = substr(line, RSTART+10)
+            } else if (match(line, /READ/)) {
+                share = substr(line, 1, RSTART-1)
+                perm = "READ"
+                desc = substr(line, RSTART+5)
+            } else if (match(line, /WRITE/)) {
+                share = substr(line, 1, RSTART-1)
+                perm = "WRITE"
+                desc = substr(line, RSTART+6)
+            }
+            gsub(/^[ \t]+|[ \t]+$/, "", share)
+            gsub(/^[ \t]+|[ \t]+$/, "", desc)
+            printf "%-20s %-15s %s\n", share, perm, desc
+        }'
     end
+    
+    # Cleanup temp file
+    rm -f $shares_output
 
     trap - INT
     ezpz_success "Done."
