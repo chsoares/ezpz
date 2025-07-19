@@ -123,8 +123,8 @@ Examples:
 
     # Shares Enumeration
     ezpz_header "Enumerating shares"
-    ezpz_cmd "nxc smb $target -u '' -p '' --shares"
-    timeout 60 nxc smb $target -u '' -p '' --shares 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5-
+    ezpz_cmd "nxc smb $target -u '' -p '' --shares --smb-timeout 999"
+    timeout 60 nxc smb $target -u '' -p '' --shares --smb-timeout 999 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5-
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
