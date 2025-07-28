@@ -1,3 +1,20 @@
+function ezpz_get_log_path
+    set -l subcmd $argv[1]
+    set -l timestamp (date +"%Y%m%d_%H%M%S")
+    
+    # Determinar diretório base
+    if set -q boxpwd
+        set -l log_dir "$boxpwd/ezpz"
+    else
+        set -l log_dir "$HOME/.ezpz"
+    end
+    
+    # Criar diretório se não existir
+    mkdir -p $log_dir
+    
+    echo "$log_dir/$timestamp"_"$subcmd.log"
+end
+
 function ezpz
     # Get EZPZ_HOME
     if not set -q EZPZ_HOME
@@ -20,8 +37,11 @@ function ezpz
     if contains -- $subcmd $commands
         set -l func_name _ezpz_$subcmd
         if functions -q $func_name
-            $func_name $argv
-            return $status
+            set -l log_path (ezpz_get_log_path $subcmd)
+            $func_name $argv | tee $log_path
+            set -l exit_status $status
+            ezpz_info "Log saved to: $log_path"
+            return $exit_status
         else
             ezpz_error "Function '$func_name' not found."
             return 127
