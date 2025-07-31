@@ -118,7 +118,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # PrintNightmare (CVE-2021-34527)
         ezpz_header "PrintNightmare (CVE-2021-34527)"
         ezpz_cmd "nxc smb $target $auth_string -M printnightmare"
-        timeout $timeout_secs nxc smb $target $auth_string -M printnightmare | grep -a 'PRINTNIGHTMARE' | tr -s " " | cut -d " " -f 5- | grep -v "STATUS_ACCESS_DENIED"
+        timeout $timeout_secs nxc smb $target $auth_string -M printnightmare | grep -a 'PRINT' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing PrintNightmare on $target"
         end
