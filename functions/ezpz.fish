@@ -4,13 +4,13 @@ function ezpz_get_log_path
     
     # Determinar diretório base
     if set -q boxpwd
-        set -l log_dir "$boxpwd/ezpz"
+        set log_dir "$boxpwd/ezpz"
     else
-        set -l log_dir "$HOME/.ezpz"
+        set log_dir "$HOME/.ezpz"
     end
     
     # Criar diretório se não existir
-    mkdir -p $log_dir
+    mkdir -p "$log_dir" 2>/dev/null
     
     echo "$log_dir/$timestamp"_"$subcmd.log"
 end
