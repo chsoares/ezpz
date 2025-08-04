@@ -1,10 +1,6 @@
 function _ezpz_testcreds
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
-    # Function to highlight "Pwn3d!"
-    function highlight_pwned
-        string replace -r "(Pwn3d\!)" (set_color red --bold)"\$1"(set_color normal) $argv
-    end
 
     # ASCII art banner
     echo ''
@@ -62,9 +58,8 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         set protocols smb winrm mssql rdp ssh ftp
     end
 
-    # Temporary file for credentials
-    set -l auth_tmp (mktemp)
-    trap "rm -f '$auth_tmp'" EXIT
+    # Store credential sets
+    set -l cred_sets
 
     # Process credentials
     if set -q _flag_file
@@ -74,78 +69,84 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         end
         
         # Read credentials from file
+        set -l cred_count 0
         while read -l line
-            set -l line (string trim $line)
+            set line (string trim -- $line)
             test -z "$line" && continue
             
             set -l user_from_file (string split : $line)[1]
             set -l pass_or_hash_from_file (string split : $line)[2]
             
+            set cred_count (math $cred_count + 1)
+            
+            # Build credential arguments like enumdomain does
+            set -l nxc_auth $_flag_target -u $user_from_file
+            
             # Detect if it's a hash (32 hex chars) or password
             if string match -qr '^[a-fA-F0-9]{32}$' -- $pass_or_hash_from_file
-                echo "-t \"$_flag_target\" -u \"$user_from_file\" -H \"$pass_or_hash_from_file\"" $_flag_kerb >> $auth_tmp
+                set -a nxc_auth -H $pass_or_hash_from_file
             else
-                echo "-t \"$_flag_target\" -u \"$user_from_file\" -p \"$pass_or_hash_from_file\"" $_flag_kerb >> $auth_tmp
+                set -a nxc_auth -p $pass_or_hash_from_file
             end
-        end < $_flag_file
+            
+            if set -q _flag_kerb
+                set -a nxc_auth -k
+            end
+            
+            # Store this credential set
+            set -a cred_sets "$user_from_file"
+            set -g "cred_$cred_count" $nxc_auth
+        end
     else
-        # Use command line credentials
-        set -l cred_line "-t \"$_flag_target\""
-        if set -q _flag_user
-            set cred_line $cred_line "-u \"$_flag_user\""
-        end
+        # Use command line credentials - build like enumdomain
+        set -l nxc_auth $_flag_target -u $_flag_user
+        
         if set -q _flag_password
-            set cred_line $cred_line "-p \"$_flag_password\""
+            set -a nxc_auth -p $_flag_password
         else if set -q _flag_hash
-            set cred_line $cred_line "-H \"$_flag_hash\""
+            set -a nxc_auth -H $_flag_hash
         end
+        
         if set -q _flag_kerb
-            set cred_line $cred_line "-k"
+            set -a nxc_auth -k
         end
-        echo $cred_line > $auth_tmp
+        
+        set cred_sets "$_flag_user"
+        set -g cred_1 $nxc_auth
     end
 
     # Test each set of credentials
-    while read -l line
-        set -l line (string trim $line)
-        test -z "$line" && continue
+    set -l cred_num 1
+    for current_user in $cred_sets
+        set -l cred_args_var "cred_$cred_num"
+        set -l cred_args $$cred_args_var
 
-        # Extract user and target for display
-        set -l current_user ""
-        set -l current_target ""
-        
-        set -l args (string split " " $line)
-        for i in (seq 1 (count $args))
-            switch $args[$i]
-                case "-t" "--target"
-                    set current_target (string trim -c '"' $args[(math $i + 1)])
-                case "-u" "--user"
-                    set current_user (string trim -c '"' $args[(math $i + 1)])
-            end
-        end
-
-        ezpz_header "Testing $current_user's credentials on $current_target with NetExec (timeout: 60s)"
-        ezpz_cmd "nxc <PROTOCOL> $line"
+        ezpz_header "Testing $current_user's credentials on $_flag_target with NetExec (timeout: 60s)"
+        ezpz_cmd "nxc <PROTOCOL> $cred_args"
 
         for protocol in $protocols
             ezpz_info "Trying "(string upper $protocol)"..."
             
-            # Test normal auth
-            timeout 60s nxc $protocol $args 2>/dev/null | \
+            # Test normal auth - same pattern as enumdomain
+            timeout 60s nxc $protocol $cred_args | \
             grep --text --color=never + | \
-            highlight_pwned | \
+            string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
             string replace -r '\s+' ' '
 
             # Test local auth for supported protocols
             if not contains $protocol ssh ftp
-                timeout 60s nxc $protocol $args --local-auth 2>/dev/null | \
+                timeout 60s nxc $protocol $cred_args --local-auth | \
                 grep --text --color=never + | \
-                string replace -a "(local auth)" (set_color blue)"(local auth)"(set_color normal) | \
-                highlight_pwned | \
+                awk '{print $0 " '(set_color blue)'(local auth)'(set_color normal)'"}' | \
+                string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
                 string replace -r '\s+' ' '
             end
         end
-    end < $auth_tmp
+        
+        # Clean up the credential variable
+        set -e "cred_$cred_num"
+        set cred_num (math $cred_num + 1)
+    end
 
     ezpz_success "Done."
-end 
+end
