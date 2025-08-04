@@ -38,9 +38,17 @@ function ezpz
         set -l func_name _ezpz_$subcmd
         if functions -q $func_name
             set -l log_path (ezpz_get_log_path $subcmd)
-            $func_name $argv | tee $log_path
+            set -l temp_log (mktemp)
+            $func_name $argv | tee $temp_log
             set -l exit_status $status
-            ezpz_info "Log saved to: $log_path"
+            
+            if test $exit_status -eq 0
+                mv $temp_log $log_path
+                ezpz_info "Log saved to: $log_path"
+            else
+                rm -f $temp_log
+            end
+            
             return $exit_status
         else
             ezpz_error "Function '$func_name' not found."
