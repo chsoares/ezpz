@@ -60,8 +60,7 @@ Usage: ezpz secretsparse <base_filename>
     end
 
     # Trap to ensure temporary collection file is removed on exit
-    trap "rm -f '$tmp_collection_file'" EXIT TERM
-    trap "echo ''" INT # Standard ezpz skip behavior
+    trap "rm -f '$tmp_collection_file'" EXIT TERM INT
 
     ezpz_header "Starting secrets parsing for '$base_filename'..."
 
@@ -116,6 +115,5 @@ Usage: ezpz secretsparse <base_filename>
     ezpz_cmd "All unique parsed hashes consolidated and saved to '$all_parsed_hashes_file_root'."
 
     # Finalization
-    trap - INT EXIT TERM # Restore default traps
     ezpz_success "Done."
 end 

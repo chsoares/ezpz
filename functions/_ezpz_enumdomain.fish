@@ -128,7 +128,6 @@ Examples:
     # Create temporary file for users
     set users_tmp (mktemp)
     trap 'rm -f "$users_tmp"' EXIT TERM
-    trap "echo ''" INT
 
     ezpz_title "Starting user & group enumeration..."
 
@@ -368,6 +367,5 @@ Examples:
         end
     end
 
-    trap - INT
     ezpz_success "Done."
 end

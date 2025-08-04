@@ -48,10 +48,8 @@ Usage: ezpz adscan <target>
     set nxc_tmp (mktemp)
     set nxc_clean (mktemp)
 
-    # Trap for final cleanup
-    trap "rm -f '$targets_tmp' '$nxc_tmp' '$nxc_clean'" EXIT TERM
-    # Trap for Ctrl+C (skip to next command, don't delete temp)
-    trap "echo ''" INT
+    # Trap for cleanup
+    trap "rm -f '$targets_tmp' '$nxc_tmp' '$nxc_clean'" EXIT TERM INT
 
     # Validation patterns
     set cidr_pattern '^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/([1-9]|[1-2][0-9]|3[0-2])$'
@@ -150,6 +148,5 @@ Usage: ezpz adscan <target>
     end
 
     # Finalization
-    trap - INT
     ezpz_success "Done."
 end 

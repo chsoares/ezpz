@@ -69,8 +69,6 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         end
     end
 
-    trap "echo ''" INT
-
     # Set timeout for vulnerability checks
     set -x timeout_secs 60
 
@@ -161,6 +159,5 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         _check_single_target $_flag_target $auth_args
     end
 
-    trap - INT
     ezpz_success "Done."
 end 

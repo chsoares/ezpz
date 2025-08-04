@@ -91,7 +91,6 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
     end
 
     # Set trap for Ctrl+C
-    trap "echo ''" INT
 
     # Enumeration - WhatWeb
     ezpz_header "Running WhatWeb on $url"
@@ -139,6 +138,5 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
     echo ""
 
     # Finalization
-    trap - INT
     ezpz_success "Done."
 end 

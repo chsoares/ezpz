@@ -103,8 +103,7 @@ Examples:
     set shares_tmp (mktemp)
     set share_names_tmp (mktemp)
     set files_tmp (mktemp)
-    trap 'rm -f "$hosts_tmp" "$shares_tmp" "$share_names_tmp" "$files_tmp"' EXIT TERM
-    trap "echo ''" INT
+    trap 'rm -f "$hosts_tmp" "$shares_tmp" "$share_names_tmp" "$files_tmp"' EXIT TERM INT
 
     # Determine target hosts
     if test -f "$target_host"
@@ -248,6 +247,5 @@ Examples:
         end
     end < $hosts_tmp
 
-    trap - INT
     ezpz_success "Done."
 end

@@ -58,8 +58,7 @@ Examples:
     # Create temporary files
     set users_tmp (mktemp)
     set users_temp (mktemp)
-    trap 'rm -f "$users_tmp" "$users_temp"' EXIT TERM
-    trap "echo ''" INT
+    trap 'rm -f "$users_tmp" "$users_temp"' EXIT TERM INT
 
     ezpz_title "Starting null session enumeration on $target..."
 
@@ -158,6 +157,5 @@ Examples:
     # Cleanup temp file
     rm -f $shares_output
 
-    trap - INT
     ezpz_success "Done."
 end

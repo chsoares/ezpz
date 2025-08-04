@@ -92,7 +92,6 @@ Examples:
 
 
 
-    trap "echo ''" INT
 
     ezpz_title "Starting user enumeration for '$user' on $target..."
 
@@ -134,6 +133,5 @@ Examples:
         ezpz_warn "Operation timed out. Skipping."
     end
 
-    trap - INT
     ezpz_success "Done."
 end

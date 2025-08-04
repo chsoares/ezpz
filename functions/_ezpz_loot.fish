@@ -127,8 +127,6 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
         set pwsh_wrapper "cmd /c powershell -c "
     end
 
-    # Set trap for Ctrl+C
-    trap "echo ''" INT
 
     # Section 1: Dumping Machine Information
     ezpz_header "Dumping machine information..."
@@ -189,7 +187,7 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
     set tmp_this_target_collection (mktemp)
 
     # Trap for temporary file cleanup
-    trap "rm -f '$tmp_this_target_collection'" EXIT TERM
+    trap "rm -f '$tmp_this_target_collection'" EXIT TERM INT
 
     ezpz_info "Running secretsdump.py to extract hashes..."
 
@@ -292,6 +290,5 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
     echo ""
 
     # Finalization
-    trap - INT
     ezpz_success "Done."
 end 

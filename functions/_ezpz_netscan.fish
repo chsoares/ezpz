@@ -52,10 +52,8 @@ Usage: ezpz netscan [-F] <target>
 
     # Temporary file and trap management
     set targets_tmp (mktemp)
-    # Trap for final cleanup
-    trap "rm -f '$targets_tmp'" EXIT TERM
-    # Trap for Ctrl+C (skip to next command, don't delete temp)
-    trap "echo ''" INT
+    # Trap for cleanup
+    trap "rm -f '$targets_tmp'" EXIT TERM INT
 
     # Validation patterns (fixed to avoid escaped slash)
     set cidr_pattern '^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/([1-9]|[1-2][0-9]|3[0-2])$'
@@ -104,7 +102,6 @@ Usage: ezpz netscan [-F] <target>
 
     if test $fast_scan -eq 1
         ezpz_warn "Fast scan complete."
-        trap - INT
         return 0
     end
 
@@ -132,6 +129,5 @@ Usage: ezpz netscan [-F] <target>
     end < "$targets_tmp"
 
     # Finalization
-    trap - INT
     ezpz_success "Done."
 end 
