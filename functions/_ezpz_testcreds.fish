@@ -96,7 +96,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             # Store this credential set
             set -a cred_sets "$user_from_file"
             set -g "cred_$cred_count" $nxc_auth
-        end
+        end < $_flag_file
     else
         # Use command line credentials - build like enumdomain
         set -l nxc_auth $_flag_target -u $_flag_user
