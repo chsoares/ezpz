@@ -27,7 +27,7 @@ Examples:
 "
 
     # Check required tools
-    set required_tools nxc GetNPUsers.py GetUserSPNs.py findDelegation.py pre2k
+    set required_tools nxc GetNPUsers.py GetUserSPNs.py findDelegation.py
     for tool in $required_tools
         if not command -v $tool >/dev/null 2>&1
             ezpz_error "Required tool not found: $tool"
@@ -234,9 +234,13 @@ Examples:
     end
 
     if test -s $users_tmp
-        ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
-        ezpz_cmd "pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp"
-        pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
+        if command -v pre2k >/dev/null 2>&1
+            ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
+            ezpz_cmd "pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp"
+            pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
+        else
+            ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
+        end
     end
 
     ezpz_question "Bruteforce all discovered users with username as password? [y/N]"

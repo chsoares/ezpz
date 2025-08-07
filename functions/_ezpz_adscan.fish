@@ -36,7 +36,7 @@ Usage: ezpz adscan <target>
     set input $argv[1]
 
     # Prerequisites check
-    for tool in fping nxc responder
+    for tool in fping nxc
         if not command -v $tool >/dev/null 2>&1
             ezpz_error "Required tool not found: $tool"
             return 1
@@ -137,14 +137,10 @@ Usage: ezpz adscan <target>
         
     end
 
-    # Ask to start Responder
+    # Responder Suggestion
     if test -s "$nxc_tmp"
-        read -P (set_color cyan --bold)"[?] Windows hosts detected. Start Responder to capture hashes? [y/N] "(set_color normal) confirm_responder
-        if test "$confirm_responder" = "y" -o "$confirm_responder" = "Y"
-            ezpz_header "Starting Responder..."
-            ezpz_cmd "sudo responder -dwv -I tun0"
-            sudo responder -dwv -I tun0
-        end
+        ezpz_info "Next Step: Consider using Responder to capture hashes from Windows hosts:"
+        ezpz_cmd "sudo responder -dwv -I tun0"
     end
 
     # Finalization
