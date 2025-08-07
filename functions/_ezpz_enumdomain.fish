@@ -366,6 +366,11 @@ Examples:
             set dest_zip "./$file_domain"_bloodhound.zip
             mv $zip_path $dest_zip
             ezpz_info "Saving data to $dest_zip"
+            
+            # Remove JSON files created in the last minute (BloodHound artifacts)
+            find . -maxdepth 1 -name "*.json" -mmin -1 -delete 2>/dev/null
+            # Also remove any files matching BloodHound naming pattern
+            find . -maxdepth 1 -name "*_*_*_*_*.json" -delete 2>/dev/null
         else
             ezpz_error "Could not find BloodHound zip output!"
         end
