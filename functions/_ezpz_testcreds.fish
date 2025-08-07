@@ -129,7 +129,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             
             # Test normal auth - same pattern as enumdomain
             timeout 60s nxc $protocol $cred_args | \
-            grep --text --color=never + | \
+            grep --text --color=never -E '\+|DISABLED|ERROR' | \
             string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
             string replace -r '\s+' ' '
 
