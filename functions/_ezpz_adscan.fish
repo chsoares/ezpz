@@ -133,8 +133,6 @@ Usage: ezpz adscan <target>
             end
         end < "$nxc_clean"
 
-        ezpz_info "New hosts added to /etc/hosts successfully."
-        
     end
 
     # Responder Suggestion
