@@ -265,8 +265,8 @@ Examples:
     nxc ldap $nxc_auth -M adcs 2>/dev/null | grep 'ADCS' | tr -s " " | cut -d ' ' -f 6-
 
     ezpz_header "Enumerating trust relationships"
-    ezpz_cmd "nxc ldap $nxc_auth -M enum_trusts"
-    nxc ldap $nxc_auth -M enum_trusts 2>/dev/null | grep 'ENUM_TRUSTS' | tr -s " " | cut -d ' ' -f 6-
+    ezpz_cmd "nxc ldap $nxc_auth --dc-list"
+    nxc ldap $nxc_auth --dc-list 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
 
     ezpz_header "Enumerating MachineAccountQuota (MAQ)"
     ezpz_cmd "nxc ldap $nxc_auth -M maq"
