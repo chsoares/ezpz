@@ -170,13 +170,27 @@ Examples:
         for share in (cat $share_names_tmp)
             test -z "$share"; and continue
             
-            ezpz_question "Spider '$share' share for interesting files? [y/N]"
+            ezpz_question "Spider '$share' share for files? (all/quick/NO): "
             read -l confirm < /dev/tty
-            or set confirm "n" # Default to no if timeout
+            or set confirm "NO" # Default to no if timeout
             set confirm (string trim $confirm)
-            if test "$confirm" = "y" -o "$confirm" = "Y"
-                ezpz_header "Searching '$share' for config/script/text files"
-                set regex_pattern "\.txt|\.csv|\.xml|\.config|\.cnf|\.conf|\.ini|\.ps1"
+            
+            set regex_pattern ""
+            set search_desc ""
+            
+            switch $confirm
+                case "all" "ALL" "All" "a"
+                    set regex_pattern ".*"
+                    set search_desc "all files"
+                case "quick" "QUICK" "Quick" "q"
+                    set regex_pattern "\.txt|\.csv|\.xml|\.config|\.cnf|\.conf|\.ini|\.ps1"
+                    set search_desc "config/script/text files"
+                case '*'
+                    continue
+            end
+            
+            if test -n "$regex_pattern"
+                ezpz_header "Searching '$share' for $search_desc"
                 ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
                 
                 timeout 60 nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
