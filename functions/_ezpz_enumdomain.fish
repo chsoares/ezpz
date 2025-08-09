@@ -158,11 +158,9 @@ Examples:
             # Fallback to RID brute force
             ezpz_header "Enumerating users with RID Bruteforcing (fallback)"
             ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
-            timeout 60 nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+            nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
             
-            if test $pipestatus[1] -eq 124
-                ezpz_warn "Operation timed out. Skipping."
-            else if test -s $users_tmp
+            if test -s $users_tmp
                 cp $users_tmp $users_file
                 ezpz_info "Saving enumerated users to $users_file"
             else
