@@ -238,8 +238,8 @@ Examples:
                                 ezpz_cmd "smbclient $share_path -U \"$smb_user%$smb_pass\" -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
                                 smbclient $share_path -U "$smb_user%$smb_pass" -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
                             else
-                                ezpz_warn "No password provided for smbclient download. Skipping file downloads."
-                                break
+                                ezpz_cmd "smbclient $share_path -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
+                                smbclient $share_path -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
                             end
                         end < $files_tmp
 
