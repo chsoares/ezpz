@@ -58,17 +58,8 @@ Examples:
     # Set variables
     set target_host $_flag_target
     
-    # Extract DC FQDN from /etc/hosts if needed for Kerberos
-    set dc_fqdn ""
+    # Time synchronization for Kerberos
     if set -q _flag_kerb
-        set dc_fqdn (awk -v target="$target_host" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
-        if test -n "$dc_fqdn"
-            ezpz_info "Using FQDN $dc_fqdn for Kerberos authentication."
-        else
-            ezpz_warn "DC FQDN not found in /etc/hosts for $target_host. Kerberos may fail."
-        end
-        
-        # Time synchronization for Kerberos
         if command -v ntpdate >/dev/null 2>&1
             ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
             sudo ntpdate -u $target_host >/dev/null 2>&1
@@ -127,16 +118,10 @@ Examples:
 
     # Process each target
     while read -l target
-        # For Kerberos, use FQDN if available and this is the original target
-        set actual_target $target
-        if set -q _flag_kerb -a -n "$dc_fqdn" -a "$target" = "$target_host"
-            set actual_target $dc_fqdn
-        end
+        ezpz_header "Enumerating non-default shares on $target"
+        ezpz_cmd "nxc smb $target $nxc_auth --shares"
         
-        ezpz_header "Enumerating shares on $actual_target"
-        ezpz_cmd "nxc smb $actual_target $nxc_auth --shares"
-        
-        timeout 60 nxc smb $actual_target $nxc_auth --shares 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- > $shares_tmp
+        timeout 60 nxc smb $target $nxc_auth --shares 2>/dev/null | grep -v '\[.\]' | tail -n +3 | tr -s " " | cut -d " " -f 5- > $shares_tmp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping $target."
@@ -144,42 +129,78 @@ Examples:
         end
 
         if not test -s $shares_tmp
-            ezpz_warn "No readable/writable shares found on $actual_target."
+            ezpz_warn "No shares found on $target."
             continue
         end
 
-        # Format shares as table using READ/WRITE as delimiter
+        # Format shares as table, ordered by permissions (WRITE first, READ second, none last)
         printf "%-20s %-15s %s\n" "SHARE NAME" "PERMISSIONS" "DESCRIPTION"
         printf "%-20s %-15s %s\n" "----------" "-----------" "-----------"
         cat $shares_tmp | awk '
         {
             line = $0
+            perm_order = 3  # Default: no permissions (lowest priority)
+            
             if (match(line, /READ,WRITE/)) {
                 share = substr(line, 1, RSTART-1)
                 perm = "READ,WRITE"
                 desc = substr(line, RSTART+10)
-            } else if (match(line, /READ/)) {
-                share = substr(line, 1, RSTART-1)
-                perm = "READ"
-                desc = substr(line, RSTART+5)
+                perm_order = 1  # Highest priority
             } else if (match(line, /WRITE/)) {
                 share = substr(line, 1, RSTART-1)
                 perm = "WRITE"
                 desc = substr(line, RSTART+6)
+                perm_order = 1  # Highest priority
+            } else if (match(line, /READ/)) {
+                share = substr(line, 1, RSTART-1)
+                perm = "READ"
+                desc = substr(line, RSTART+5)
+                perm_order = 2  # Medium priority
+            } else {
+                # No READ/WRITE found, extract share name from start
+                if (match(line, /[A-Za-z0-9_$-]+/)) {
+                    share = substr(line, RSTART, RLENGTH)
+                    perm = "NO ACCESS"
+                    desc = substr(line, RSTART + RLENGTH + 1)
+                }
             }
             gsub(/^[ \t]+|[ \t]+$/, "", share)
             gsub(/^[ \t]+|[ \t]+$/, "", desc)
-            printf "%-20s %-15s %s\n", share, perm, desc
+            
+            # Filter out default shares completely
+            if (share !~ /^(IPC\$|C\$|NETLOGON|SYSVOL|ADMIN\$)$/) {
+                # Store for sorting
+                shares[++count] = sprintf("%d|%-20s %-15s %s", perm_order, share, perm, desc)
+            }
+        }
+        END {
+            # Sort by permission order and print
+            for (i = 1; i <= count; i++) {
+                for (j = i + 1; j <= count; j++) {
+                    if (shares[i] > shares[j]) {
+                        temp = shares[i]
+                        shares[i] = shares[j]
+                        shares[j] = temp
+                    }
+                }
+            }
+            for (i = 1; i <= count; i++) {
+                sub(/^[0-9]\|/, "", shares[i])
+                print shares[i]
+            }
         }'
 
-        # Extract share names for spidering
+        # Extract share names for spidering (only READ shares, exclude default shares)
         cat $shares_tmp | awk '
         {
             line = $0
-            if (match(line, /READ,WRITE|READ|WRITE/)) {
+            if (match(line, /READ/)) {
                 share = substr(line, 1, RSTART-1)
                 gsub(/^[ \t]+|[ \t]+$/, "", share)
-                print share
+                # Filter out default shares
+                if (share !~ /^(IPC\$|C\$|NETLOGON|SYSVOL|ADMIN\$)$/) {
+                    print share
+                }
             }
         }' > $share_names_tmp
 
@@ -208,9 +229,9 @@ Examples:
             
             if test -n "$regex_pattern"
                 ezpz_header "Searching '$share' for $search_desc"
-                ezpz_cmd "nxc smb $actual_target $nxc_auth --spider $share --regex '$regex_pattern'"
+                ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
                 
-                timeout 60 nxc smb $actual_target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
+                timeout 60 nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | grep -v '\[dir\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
                 
                 if test $pipestatus[1] -eq 124
                     ezpz_warn "Operation timed out. Skipping spider for $share."
@@ -228,7 +249,7 @@ Examples:
                         or set confirm_dl "n" # Default to no if timeout
                         set confirm_dl (string trim $confirm_dl)
                         if test "$confirm_dl" = "y" -o "$confirm_dl" = "Y"
-                        set dir_path "./$actual_target"_"$share"_loot
+                        set dir_path "./$target"_"$share"_loot
                         mkdir -p $dir_path
                         ezpz_header "Saving files to $dir_path"
 
@@ -248,9 +269,9 @@ Examples:
                         while read -l file_path_full
                             test -z "$file_path_full"; and continue
                             
-                            set share_path "//$actual_target/$share"
+                            set share_path "//$target/$share"
                             # Extract just the filename from the full path (remove //target/share/ prefix)
-                            set file_path (echo "$file_path_full" | sed "s|^//$actual_target/$share/||" | sed "s|/|\\\\|g")
+                            set file_path (echo "$file_path_full" | sed "s|^//$target/$share/||" | sed "s|/|\\\\|g")
                             set file_name (basename "$file_path_full")
                             
                             if test -n "$smb_domain" -a -n "$smb_pass"
