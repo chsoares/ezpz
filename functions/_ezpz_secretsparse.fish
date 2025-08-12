@@ -28,7 +28,7 @@ Usage: ezpz secretsparse <base_filename>
 
     if set -q _flag_help
         echo $usage
-        return 0
+        return 1
     end
 
     # Check if base filename was provided

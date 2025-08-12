@@ -36,7 +36,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
 
     if set -q _flag_help
         echo $usage
-        return 0
+        return 1
     end
 
     # Check required arguments

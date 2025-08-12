@@ -44,7 +44,7 @@ Examples:
 
     if set -q _flag_help
         echo $usage
-        return 0
+        return 1
     end
 
     # Check required arguments

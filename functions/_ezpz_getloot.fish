@@ -1,4 +1,4 @@
-function _ezpz_loot
+function _ezpz_getloot
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
     # Usage message
@@ -31,7 +31,7 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
 
     if set -q _flag_help
         echo $usage
-        return 0
+        return 1
     end
 
     # Validate required arguments

@@ -27,7 +27,7 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
 
     if set -q _flag_help
         echo $usage
-        return 0
+        return 1
     end
 
     if set -q _flag_wordlist
