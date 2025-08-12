@@ -125,6 +125,17 @@ Examples:
         if test -n "$dc_fqdn"
             # Update nxc auth to use FQDN instead of IP for Kerberos
             set nxc_auth[1] $dc_fqdn
+            # Create IP-only version for commands that require IP (like --dc-list)
+            set nxc_auth_ip $target -u "$domain\\$user"
+            if set -q _flag_password
+                set -a nxc_auth_ip -p "$_flag_password"
+            else if set -q _flag_hash
+                set -a nxc_auth_ip -H "$_flag_hash"
+            end
+            set -a nxc_auth_ip -k
+            if set -q KRB5CCNAME
+                set -a nxc_auth_ip --use-kcache
+            end
             # For Kerberos, rebuild impacket auth with @fqdn
             if set -q _flag_password
                 set imp_auth "$domain/$user:$_flag_password@$dc_fqdn" -k -dc-ip $target -dc-host $dc_fqdn
@@ -347,8 +358,13 @@ Examples:
     nxc ldap $nxc_auth -M adcs 2>/dev/null | grep 'ADCS' | tr -s " " | cut -d ' ' -f 6-
 
     ezpz_header "Searching for trust relationships"
-    ezpz_cmd "nxc ldap $nxc_auth --dc-list"
-    nxc ldap $nxc_auth --dc-list 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    if set -q nxc_auth_ip
+        ezpz_cmd "nxc ldap $nxc_auth_ip --dc-list"
+        nxc ldap $nxc_auth_ip --dc-list 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    else
+        ezpz_cmd "nxc ldap $nxc_auth --dc-list"
+        nxc ldap $nxc_auth --dc-list 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    end
 
     ezpz_header "Enumerating MachineAccountQuota (MAQ)"
     ezpz_cmd "nxc ldap $nxc_auth -M maq"
