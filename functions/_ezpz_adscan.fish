@@ -127,9 +127,9 @@ Usage: ezpz adscan <target>
 
             if not grep -q -F "$new_entry" /etc/hosts
                 echo "$new_entry" | sudo tee -a /etc/hosts
-                ezpz_info "Added to /etc/hosts: $new_entry"
-            else
-                ezpz_info "Entry already exists in /etc/hosts: $new_entry"
+                #ezpz_info "Added to /etc/hosts: $new_entry"
+            #else
+                #ezpz_info "Entry already exists in /etc/hosts: $new_entry"
             end
         end < "$nxc_clean"
 
@@ -137,8 +137,8 @@ Usage: ezpz adscan <target>
 
     # Responder Suggestion
     if test -s "$nxc_tmp"
-        ezpz_info "Next Step: Consider using Responder to capture hashes from Windows hosts:"
-        ezpz_cmd "sudo responder -dwv -I tun0"
+        ezpz_info "Consider using Responder to capture hashes from Windows hosts!"
+        #ezpz_cmd "sudo responder -dwv -I tun0"
     end
 
     # Finalization
