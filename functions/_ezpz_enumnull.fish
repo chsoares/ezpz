@@ -17,15 +17,17 @@ function _ezpz_enumnull
 
     # Usage message
     set usage "
-Usage: ezpz enumnull -t <target> [--guest]
+Usage: ezpz enumnull -t <target> [--guest] [-k]
   Performs initial reconnaissance on a target without credentials (null session).
 
   -t, --target    Target IP or hostname (Required)
   --guest         Use guest account with empty password instead of null session
+  -k, --kerb      Use Kerberos authentication (requires a valid TGT)
 
 Examples:
   ezpz enumnull -t 10.10.10.10
   ezpz enumnull -t dc01.corp.local --guest
+  ezpz enumnull -t dc01.corp.local --guest -k
 "
 
     # Check required tools
@@ -35,7 +37,7 @@ Examples:
     end
 
     # Parse arguments
-    argparse 't/target=' 'guest' 'h/help' -- $argv
+    argparse 't/target=' 'guest' 'k/kerb' 'h/help' -- $argv
     or begin
         ezpz_error "Invalid arguments."
         echo $usage
@@ -67,6 +69,26 @@ Examples:
         set auth_desc "null session"
     end
 
+    # Extract DC FQDN from /etc/hosts if needed for Kerberos
+    set dc_fqdn ""
+    if set -q _flag_kerb
+        set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+        if test -n "$dc_fqdn"
+            # For Kerberos, use FQDN instead of IP
+            set target $dc_fqdn
+        else
+            ezpz_warn "DC FQDN not found in /etc/hosts for $_flag_target. Kerberos may fail."
+        end
+        
+        # Time synchronization for Kerberos
+        if command -v ntpdate >/dev/null 2>&1
+            ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
+            sudo ntpdate -u $_flag_target >/dev/null 2>&1
+        else
+            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
+        end
+    end
+
     # Create temporary files
     set users_tmp (mktemp)
     set users_temp (mktemp)
@@ -86,10 +108,19 @@ Examples:
         set users_file "$domain"_users.txt
     end
 
+    # Build nxc command arguments
+    set nxc_args $target -u "$auth_user" -p "$auth_pass"
+    if set -q _flag_kerb
+        set -a nxc_args -k
+        if set -q KRB5CCNAME
+            set -a nxc_args --use-kcache
+        end
+    end
+
     # User Enumeration
     ezpz_header "Enumerating users"
-    ezpz_cmd "nxc smb $target -u "$auth_user" -p "$auth_pass" --users"
-    timeout 60 nxc smb $target -u "$auth_user" -p "$auth_pass" --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+    ezpz_cmd "nxc smb $nxc_args --users"
+    timeout 60 nxc smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
     
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
@@ -103,8 +134,8 @@ Examples:
         
         # Fallback to RID brute force
         ezpz_header "Enumerating users with RID Bruteforcing (fallback)"
-        ezpz_cmd "nxc smb $target -u "$auth_user" -p "$auth_pass" --rid-brute 10000"
-        nxc smb $target -u "$auth_user" -p "$auth_pass" --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+        ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
+        nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
         
         if test -s $users_tmp
             cp $users_tmp $users_file
@@ -116,25 +147,25 @@ Examples:
 
     # Groups
     ezpz_header "Enumerating groups"
-    ezpz_cmd "nxc ldap $target -u "$auth_user" -p "$auth_pass" --groups"
-    timeout 60 nxc ldap $target -u "$auth_user" -p "$auth_pass" --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"
+    ezpz_cmd "nxc ldap $nxc_args --groups"
+    timeout 60 nxc ldap $nxc_args --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
 
     # Password Policy
     ezpz_header "Enumerating password policy"
-    ezpz_cmd "nxc smb $target -u "$auth_user" -p "$auth_pass" --pass-pol"
-    timeout 60 nxc smb $target -u "$auth_user" -p "$auth_pass" --pass-pol 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    ezpz_cmd "nxc smb $nxc_args --pass-pol"
+    timeout 60 nxc smb $nxc_args --pass-pol 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
 
     # Shares Enumeration
     ezpz_header "Enumerating shares"
-    ezpz_cmd "nxc smb $target -u "$auth_user" -p "$auth_pass" --shares --smb-timeout 999"
+    ezpz_cmd "nxc smb $nxc_args --shares --smb-timeout 999"
     set shares_output (mktemp)
-    timeout 60 nxc smb $target -u "$auth_user" -p "$auth_pass" --shares --smb-timeout 999 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- > $shares_output
+    timeout 60 nxc smb $nxc_args --shares --smb-timeout 999 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- > $shares_output
     
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."

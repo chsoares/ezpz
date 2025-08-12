@@ -58,6 +58,25 @@ Examples:
     # Set variables
     set target_host $_flag_target
     
+    # Extract DC FQDN from /etc/hosts if needed for Kerberos
+    set dc_fqdn ""
+    if set -q _flag_kerb
+        set dc_fqdn (awk -v target="$target_host" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+        if test -n "$dc_fqdn"
+            ezpz_info "Using FQDN $dc_fqdn for Kerberos authentication."
+        else
+            ezpz_warn "DC FQDN not found in /etc/hosts for $target_host. Kerberos may fail."
+        end
+        
+        # Time synchronization for Kerberos
+        if command -v ntpdate >/dev/null 2>&1
+            ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
+            sudo ntpdate -u $target_host >/dev/null 2>&1
+        else
+            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
+        end
+    end
+    
     # Build nxc authentication arguments
     set nxc_auth
     if set -q _flag_user
@@ -82,16 +101,8 @@ Examples:
 
     if set -q _flag_kerb
         set -a nxc_auth -k
-        
-        # Time synchronization for Kerberos
-        if command -v ntpdate >/dev/null 2>&1
-            if set -q _flag_target
-                sudo ntpdate -u $_flag_target >/dev/null 2>&1
-            else
-                ezpz_warn "No target specified for time sync. Kerberos may fail."
-            end
-        else
-            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
+        if set -q KRB5CCNAME
+            set -a nxc_auth --use-kcache
         end
     end
 
@@ -116,10 +127,16 @@ Examples:
 
     # Process each target
     while read -l target
-        ezpz_header "Enumerating shares on $target"
-        ezpz_cmd "nxc smb $target $nxc_auth --shares"
+        # For Kerberos, use FQDN if available and this is the original target
+        set actual_target $target
+        if set -q _flag_kerb -a -n "$dc_fqdn" -a "$target" = "$target_host"
+            set actual_target $dc_fqdn
+        end
         
-        timeout 60 nxc smb $target $nxc_auth --shares 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- > $shares_tmp
+        ezpz_header "Enumerating shares on $actual_target"
+        ezpz_cmd "nxc smb $actual_target $nxc_auth --shares"
+        
+        timeout 60 nxc smb $actual_target $nxc_auth --shares 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- > $shares_tmp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping $target."
@@ -127,7 +144,7 @@ Examples:
         end
 
         if not test -s $shares_tmp
-            ezpz_warn "No readable/writable shares found on $target."
+            ezpz_warn "No readable/writable shares found on $actual_target."
             continue
         end
 
@@ -191,9 +208,9 @@ Examples:
             
             if test -n "$regex_pattern"
                 ezpz_header "Searching '$share' for $search_desc"
-                ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
+                ezpz_cmd "nxc smb $actual_target $nxc_auth --spider $share --regex '$regex_pattern'"
                 
-                timeout 60 nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
+                timeout 60 nxc smb $actual_target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
                 
                 if test $pipestatus[1] -eq 124
                     ezpz_warn "Operation timed out. Skipping spider for $share."
@@ -201,12 +218,17 @@ Examples:
                 end
 
                 if test -s $files_tmp
-                    ezpz_question "Download these files? [y/N]"
-                    read -l confirm_dl < /dev/tty
-                    or set confirm_dl "n" # Default to no if timeout
-                    set confirm_dl (string trim $confirm_dl)
-                    if test "$confirm_dl" = "y" -o "$confirm_dl" = "Y"
-                        set dir_path "./$target"_"$share"_loot
+                    # Skip download operations for Kerberos
+                    if set -q _flag_kerb
+                        ezpz_warn "Download operations skipped for Kerberos authentication."
+                        ezpz_info "Use smbclient.py manually for file downloads with Kerberos."
+                    else
+                        ezpz_question "Download these files? [y/N]"
+                        read -l confirm_dl < /dev/tty
+                        or set confirm_dl "n" # Default to no if timeout
+                        set confirm_dl (string trim $confirm_dl)
+                        if test "$confirm_dl" = "y" -o "$confirm_dl" = "Y"
+                        set dir_path "./$actual_target"_"$share"_loot
                         mkdir -p $dir_path
                         ezpz_header "Saving files to $dir_path"
 
@@ -226,9 +248,9 @@ Examples:
                         while read -l file_path_full
                             test -z "$file_path_full"; and continue
                             
-                            set share_path "//$target/$share"
+                            set share_path "//$actual_target/$share"
                             # Extract just the filename from the full path (remove //target/share/ prefix)
-                            set file_path (echo "$file_path_full" | sed "s|^//$target/$share/||" | sed "s|/|\\\\|g")
+                            set file_path (echo "$file_path_full" | sed "s|^//$actual_target/$share/||" | sed "s|/|\\\\|g")
                             set file_name (basename "$file_path_full")
                             
                             if test -n "$smb_domain" -a -n "$smb_pass"
@@ -252,6 +274,7 @@ Examples:
                             if test $status -ne 0
                                 ezpz_info "No secrets found in downloaded files."
                             end
+                        end
                         end
                     end
                 else

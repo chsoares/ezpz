@@ -66,6 +66,31 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
 
         if set -q _flag_kerb
             set -a auth_args -k
+            if set -q KRB5CCNAME
+                set -a auth_args --use-kcache
+            end
+        end
+    end
+
+    # Extract DC FQDN from /etc/hosts if needed for Kerberos
+    set dc_fqdn ""
+    if set -q _flag_kerb -a set -q _flag_target
+        set dc_fqdn (awk -v target="$_flag_target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+        if test -n "$dc_fqdn"
+            # Update nxc auth to use FQDN instead of IP for Kerberos
+            if set -q _flag_user
+                set auth_args[1] $dc_fqdn
+            end
+        else
+            ezpz_warn "DC FQDN not found in /etc/hosts for $_flag_target. Kerberos may fail."
+        end
+        
+        # Time synchronization for Kerberos  
+        if command -v ntpdate >/dev/null 2>&1
+            ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
+            sudo ntpdate -u $_flag_target >/dev/null 2>&1
+        else
+            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
         end
     end
 
@@ -75,6 +100,11 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
     function _check_single_target
         set target $argv[1]
         set auth_string $argv[2..-1]
+        
+        # For Kerberos, use FQDN if available
+        if set -q _flag_kerb -a -n "$dc_fqdn" -a "$target" = "$_flag_target"
+            set target $dc_fqdn
+        end
 
         ezpz_title "Checking for vulnerabilities on $target"
 

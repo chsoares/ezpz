@@ -64,6 +64,26 @@ Examples:
     set target $_flag_target
     set user $_flag_user
 
+    # Extract DC FQDN from /etc/hosts if needed for Kerberos
+    set dc_fqdn ""
+    if set -q _flag_kerb
+        set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+        if test -n "$dc_fqdn"
+            # Use FQDN instead of IP for Kerberos
+            set target $dc_fqdn
+        else
+            ezpz_warn "DC FQDN not found in /etc/hosts for $_flag_target. Kerberos may fail."
+        end
+        
+        # Time synchronization for Kerberos
+        if command -v ntpdate >/dev/null 2>&1
+            ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
+            sudo ntpdate -u $_flag_target >/dev/null 2>&1
+        else
+            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
+        end
+    end
+
     # Build nxc authentication arguments
     set nxc_auth $target
     if set -q _flag_domain
@@ -81,12 +101,8 @@ Examples:
 
     if set -q _flag_kerb
         set -a nxc_auth -k
-        
-        # Time synchronization for Kerberos
-        if command -v ntpdate >/dev/null 2>&1
-            sudo ntpdate -u $target >/dev/null 2>&1
-        else
-            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
+        if set -q KRB5CCNAME
+            set -a nxc_auth --use-kcache
         end
     end
 
