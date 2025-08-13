@@ -82,6 +82,10 @@ function _ezpz_getflag
         ezpz_error "Authentication method required (-p, -H, or -k)"
         return 1
     end
+
+    if set -q _flag_kerberos
+        set -a auth_args -k
+    end
     
     if set -q _flag_domain
         set -a auth_args -d $_flag_domain

@@ -125,11 +125,34 @@ Usage: ezpz adscan <target>
                 set new_entry "$ip    $host_name"
             end
 
-            if not grep -q -F "$new_entry" /etc/hosts
-                echo "$new_entry" | sudo tee -a /etc/hosts
-                #ezpz_info "Added to /etc/hosts: $new_entry"
-            #else
-                #ezpz_info "Entry already exists in /etc/hosts: $new_entry"
+            # Check if IP already exists in /etc/hosts
+            set -l existing_line (grep "^$ip\s" /etc/hosts)
+            
+            if test -n "$existing_line"
+                # IP exists, merge hostnames avoiding duplicates
+                set -l existing_hosts (echo "$existing_line" | cut -d' ' -f2-)
+                set -l new_hosts (echo "$new_entry" | cut -d' ' -f2-)
+                
+                # Combine and deduplicate while preserving adscan order
+                set -l all_hosts
+                for host in (string split ' ' "$new_hosts")
+                    test -n "$host"; and set -a all_hosts "$host"
+                end
+                for host in (string split ' ' "$existing_hosts")
+                    if test -n "$host"; and not contains "$host" $all_hosts
+                        set -a all_hosts "$host"
+                    end
+                end
+                
+                set -l merged_entry "$ip    "(string join ' ' $all_hosts)
+                
+                # Replace the existing line
+                sudo sed -i "s|^$ip\s.*|$merged_entry|" /etc/hosts
+                ezpz_info "Updated /etc/hosts: $merged_entry"
+            else
+                # IP doesn't exist, add new entry
+                echo "$new_entry" | sudo tee -a /etc/hosts >/dev/null
+                ezpz_info "Added to /etc/hosts: $new_entry"
             end
         end < "$nxc_clean"
 
