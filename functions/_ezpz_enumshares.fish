@@ -231,7 +231,7 @@ Examples:
                 ezpz_header "Searching '$share' for $search_desc"
                 ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
                 
-                timeout 60 nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | grep -v '\[dir\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
+                nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | grep -v '\[dir\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
                 
                 if test $pipestatus[1] -eq 124
                     ezpz_warn "Operation timed out. Skipping spider for $share."
