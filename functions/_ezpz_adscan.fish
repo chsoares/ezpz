@@ -71,11 +71,17 @@ Usage: ezpz adscan <target>
 
     # NetExec Scanning with hosts and krb5 file generation
     ezpz_header "Running NetExec on target network"
-    nxc smb "$input" --generate-hosts-file "$hostsfile"
+    set output (mktemp)
+    nxc smb "$input" --generate-hosts-file "$hostsfile" > $output
     if test $status -ne 0
         ezpz_error "NetExec failed."
         return 1
     end
+
+    cat $output | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*' \
+                | string replace -a "Null Auth:True" (set_color red --bold)"Null Auth:True"(set_color normal)
+                | string replace -a "signing:False" (set_color cyan)"signing:False"(set_color normal)
+                | string replace -a "SMBv1:True" (set_color cyan)"SMBv1:True"(set_color normal)
 
     # Remove duplicates from hosts file
     if test -f "$hostsfile"
@@ -86,7 +92,6 @@ Usage: ezpz adscan <target>
     if test -f "$hostsfile"
         ezpz_info "Hosts file generated at $hostsfile"
         cat "$hostsfile"
-        echo ""
         
         ezpz_question "Add hosts information to /etc/hosts? [append/overwrite/no]"
         read -l choice
@@ -154,16 +159,18 @@ Usage: ezpz adscan <target>
     end
 
     # KRB5 Configuration
+    ezpz_header "Trying to generate KRB5 config file"
     nxc smb "$input" --generate-krb5-file "$krb5file" > /dev/null
 
     if test -f "$krb5file"
+        cat $krb5file | awk /./
         ezpz_info "KRB5.conf generated at $krb5file and exported to \$KRB5_CONFIG"
         set -gx KRB5_CONFIG "$krb5file"
     end
 
     # Responder Suggestion
     if test -f "$hostsfile"
-        ezpz_info "Consider using Responder to capture hashes from Windows hosts!"
+        ezpz_title "Consider using Responder to capture hashes from Windows hosts!"
         #ezpz_cmd "sudo responder -dwv -I tun0"
     end
 
