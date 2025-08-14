@@ -149,5 +149,13 @@ Examples:
         ezpz_warn "Operation timed out. Skipping."
     end
 
+    # Try to find Recent files
+    ezpz_header "Trying to enumerate Recent Files"
+    ezpz_cmd "nxc smb $nxc_auth -M recent_files"
+    timeout 60 nxc smb $nxc_auth -M recent_files 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    if test $pipestatus[1] -eq 124
+        ezpz_warn "Operation timed out. Skipping."
+    end
+
     ezpz_success "Done."
 end
