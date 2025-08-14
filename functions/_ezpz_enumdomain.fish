@@ -94,12 +94,30 @@ Examples:
         set -a imp_auth -hashes ":$_flag_hash"
     end
 
+    
     if set -q _flag_kerb
         set -a nxc_auth -k
+        set -a imp_auth -k
         if set -q KRB5CCNAME
             set -a nxc_auth --use-kcache
+            ezpz_info "Using KRB5CCNAME at $KRB5CCNAME"
         end
-        set -a imp_auth -k -no-pass
+        
+        # Extract DC FQDN from /etc/hosts if needed for Kerberos
+        set dc_fqdn ""
+        set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+        
+        if test -n "$dc_fqdn"
+            # Change IP to FQDN
+            set nxc_auth[1] $dc_fqdn
+            set -a imp_auth -dc-host $dc_fqdn
+            # Create IP-only version for commands that require IP (like --dc-list)
+            set nxc_auth_ip $nxc_auth
+            set nxc_auth_ip[1] $target
+        else
+            ezpz_warn "DC FQDN not found in /etc/hosts for $target. Kerberos may fail."
+    end
+            
         
         # Time synchronization for Kerberos
         if command -v ntpdate >/dev/null 2>&1
@@ -116,42 +134,6 @@ Examples:
     # Add target-domain if specified
     if set -q _flag_target_domain
         set -a imp_auth -target-domain $_flag_target_domain
-    end
-
-    # Extract DC FQDN from /etc/hosts if needed for Kerberos
-    set dc_fqdn ""
-    if set -q _flag_kerb
-        set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
-        if test -n "$dc_fqdn"
-            # Update nxc auth to use FQDN instead of IP for Kerberos
-            set nxc_auth[1] $dc_fqdn
-            # Create IP-only version for commands that require IP (like --dc-list)
-            set nxc_auth_ip $target -u "$domain\\$user"
-            if set -q _flag_password
-                set -a nxc_auth_ip -p "$_flag_password"
-            else if set -q _flag_hash
-                set -a nxc_auth_ip -H "$_flag_hash"
-            end
-            set -a nxc_auth_ip -k
-            if set -q KRB5CCNAME
-                set -a nxc_auth_ip --use-kcache
-            end
-            # For Kerberos, rebuild impacket auth with @fqdn
-            if set -q _flag_password
-                set imp_auth "$domain/$user:$_flag_password@$dc_fqdn" -k -dc-ip $target -dc-host $dc_fqdn
-            else if set -q _flag_hash
-                set imp_auth "$domain/$user@$dc_fqdn" -hashes ":$_flag_hash" -k -dc-ip $target -dc-host $dc_fqdn
-            else
-                set imp_auth "$domain/$user@$dc_fqdn" -k -no-pass -dc-ip $target -dc-host $dc_fqdn
-            end
-            # Add target-domain if specified
-            if set -q _flag_target_domain
-                set -a imp_auth -target-domain $_flag_target_domain
-            end
-        else
-            ezpz_warn "DC FQDN not found in /etc/hosts for $target. Kerberos may fail."
-            set -a imp_auth -dc-host $dc_fqdn
-        end
     end
 
     # Build bloodyAD authentication
