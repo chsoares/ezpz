@@ -117,31 +117,34 @@ Examples:
         end
     end
 
-    # User Enumeration
-    ezpz_header "Enumerating users"
-    ezpz_cmd "nxc smb $nxc_args --users"
-    timeout 60 nxc smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+    # User Enumeration - prioritize --rid-brute over --users
+    ezpz_header "Enumerating users with RID Bruteforcing"
+    ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
+    timeout 120 nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
     
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
-    else if test -s $users_temp
-        # Extract just usernames and save to file
-        cat $users_temp | awk '{print $1}' > $users_tmp
+    else if test -s $users_tmp
         cp $users_tmp $users_file
         ezpz_info "Saving enumerated users to $users_file"
     else
-        ezpz_warn "No users found with --users. Trying RID brute force..."
+        ezpz_warn "No users found with --rid-brute. Trying --users as fallback..."
         
-        # Fallback to RID brute force
-        ezpz_header "Enumerating users with RID Bruteforcing (fallback)"
-        ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
-        nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+        # Fallback to --users
+        ezpz_header "Enumerating users (fallback)"
+        ezpz_cmd "nxc smb $nxc_args --users"
+        timeout 60 nxc smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
         
-        if test -s $users_tmp
-            cp $users_tmp $users_file
-            ezpz_info "Saving enumerated users to $users_file"
+        if test $pipestatus[1] -eq 124
+            ezpz_warn "Operation timed out. Skipping."
+        else if test -s $users_temp
+            # Extract just usernames and save to file with -mini suffix
+            set users_file_mini (string replace '.txt' '-mini.txt' $users_file)
+            cat $users_temp | awk '{print $1}' > $users_tmp
+            cp $users_tmp $users_file_mini
+            ezpz_info "Saving enumerated users to $users_file_mini"
         else
-            ezpz_warn "No users found during RID Bruteforcing with null session."
+            ezpz_warn "No users found with --users fallback."
         end
     end
 

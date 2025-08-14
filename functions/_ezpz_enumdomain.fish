@@ -164,36 +164,40 @@ Examples:
     set users_file "$file_domain"_users.txt
     if test -f $users_file
         ezpz_info "Users file $users_file already exists. Skipping user enumeration."
+        cat $users_file
         cp $users_file $users_tmp
     else
         # Create temporary file for users display
         set users_temp (mktemp)
         
-        # Try --users first
-        ezpz_header "Enumerating users"
-        ezpz_cmd "nxc smb $nxc_auth --users"
-        timeout 60 nxc smb $nxc_auth --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+        # Prioritize --rid-brute over --users
+        ezpz_header "Enumerating users with RID Bruteforcing"
+        ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
+        timeout 120 nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping."
-        else if test -s $users_temp
-            # Extract just usernames and save to file
-            cat $users_temp | awk '{print $1}' > $users_tmp
+        else if test -s $users_tmp
             cp $users_tmp $users_file
             ezpz_info "Saving enumerated users to $users_file"
         else
-            ezpz_warn "No users found with --users. Trying RID brute force..."
+            ezpz_warn "No users found with --rid-brute. Trying --users as fallback..."
             
-            # Fallback to RID brute force
-            ezpz_header "Enumerating users with RID Bruteforcing (fallback)"
-            ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
-            nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+            # Fallback to --users
+            ezpz_header "Enumerating users (fallback)"
+            ezpz_cmd "nxc smb $nxc_auth --users"
+            timeout 60 nxc smb $nxc_auth --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
             
-            if test -s $users_tmp
-                cp $users_tmp $users_file
-                ezpz_info "Saving enumerated users to $users_file"
+            if test $pipestatus[1] -eq 124
+                ezpz_warn "Operation timed out. Skipping."
+            else if test -s $users_temp
+                # Extract just usernames and save to file with -mini suffix
+                set users_file_mini (string replace '_users.txt' '_users-mini.txt' $users_file)
+                cat $users_temp | awk '{print $1}' > $users_tmp
+                cp $users_tmp $users_file_mini
+                ezpz_info "Saving enumerated users to $users_file_mini"
             else
-                ezpz_error "No users found during RID Bruteforcing."
+                ezpz_error "No users found with --users fallback."
             end
         end
         
@@ -306,12 +310,12 @@ Examples:
             
             # Build pre2k command
             if set -q _flag_kerb -a -n "$dc_fqdn"
-                set pre2k_cmd pre2k unauth -d $domain -dc-host $dc_fqdn -dc-ip $target -inputfile $users_tmp -k
+                set pre2k_cmd pre2k unauth -d $domain -dc-host $dc_fqdn -dc-ip $target -inputfile $users_file -k
                 if set -q KRB5CCNAME
                     set -a pre2k_cmd -no-pass
                 end
             else
-                set pre2k_cmd pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp
+                set pre2k_cmd pre2k unauth -d $domain -dc-ip $target -inputfile $users_file
             end
             
             ezpz_cmd "$pre2k_cmd"
