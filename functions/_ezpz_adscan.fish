@@ -43,13 +43,13 @@ Usage: ezpz adscan <target>
         end
     end
 
-    # Temporary files and trap management
-    set targets_tmp (mktemp)
-    set nxc_tmp (mktemp)
-    set nxc_clean (mktemp)
+    # Generate hosts file name from target
+    set target_clean (echo "$input" | sed 's/[\/:]/_/g')
+    set hostsfile "$target_clean"_etchosts.txt
+    set krb5file "$target_clean"_krb5conf.txt
 
     # Trap for cleanup
-    trap "rm -f '$targets_tmp' '$nxc_tmp' '$nxc_clean'" EXIT TERM INT
+    trap "rm -f '$targets_tmp'" EXIT TERM INT
 
     # Validation patterns
     set cidr_pattern '^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/([1-9]|[1-2][0-9]|3[0-2])$'
@@ -62,104 +62,107 @@ Usage: ezpz adscan <target>
             ezpz_error "Cannot read target file: $input"
             return 1
         end
-        cp "$input" "$targets_tmp"
-    else if echo "$input" | grep -qE "$cidr_pattern"
-        # Host discovery with CIDR
-        ezpz_header "Running fping on the $input network"
-        ezpz_cmd "fping -agq \"$input\""
-        fping -agq "$input" | tee "$targets_tmp"
-        cat "$targets_tmp" >> hosts.txt && sort -u -o hosts.txt hosts.txt
-        ezpz_cmd "Saving enumerated hosts to ./hosts.txt"
-    else if echo "$input" | grep -qE "$ip_pattern"
-        # Single IP
-        echo "$input" > "$targets_tmp"
-    else
+    else if not echo "$input" | grep -qE "$cidr_pattern|$ip_pattern"
         ezpz_error "Invalid target format: $input"
         echo $usage
         return 1
     end
 
-    # Check if temporary file has content
-    if not test -s "$targets_tmp"
-        ezpz_warn "No live hosts found"
-        return 0
-    end
 
-    # NetExec Scanning
-    ezpz_header "Running NetExec on discovered hosts"
-    ezpz_cmd "nxc smb <target_ip>"
-
-    while read -l host_item
-        ezpz_info "Scanning $host_item..."
-        nxc smb "$host_item" | tr -s " " | tee -a "$nxc_tmp"
-    end < "$targets_tmp"
-
-    if test $status -ne 0; or not test -s "$nxc_tmp"
-        ezpz_error "NetExec failed or returned no results."
+    # NetExec Scanning with hosts and krb5 file generation
+    ezpz_header "Running NetExec on target network"
+    nxc smb "$input" --generate-hosts-file "$hostsfile"
+    if test $status -ne 0
+        ezpz_error "NetExec failed."
         return 1
     end
 
-    # Clean ANSI color codes from nxc output
-    sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' "$nxc_tmp" > "$nxc_clean"
-    set hosts_count (cat "$nxc_clean" | head -n -1 | wc -l)
+    # Remove duplicates from hosts file
+    if test -f "$hostsfile"
+        sort -u "$hostsfile" -o "$hostsfile"
+    end
 
-    # Ask to add hosts to /etc/hosts
-    read -P (set_color cyan --bold)"[?] Add discovered hosts to /etc/hosts? [y/N] "(set_color normal) confirm
-    if test "$confirm" = "y" -o "$confirm" = "Y"
-        while read -l line
-            test -z "$line"; and continue
-            string match -q "SMB*" "$line"; or continue
-
-            set -l ip (echo "$line" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}')
-            set -l host_name (echo "$line" | sed -n 's/.*name:\([^)]*\).*/\1/p')
-            set -l domain_name (echo "$line" | sed -n 's/.*domain:\([^)]*\).*/\1/p')
-            set -l is_dc (echo "$line" | grep -qi "DC"; and echo 1; or echo 0)
-
-            if test -n "$domain_name"
-                if test $is_dc -eq 1 -o $hosts_count -eq 1
-                    set new_entry "$ip    DC $host_name $host_name.$domain_name $domain_name"
-                else
-                    set new_entry "$ip    $host_name $host_name.$domain_name"
-                end
-            else
-                set new_entry "$ip    $host_name"
-            end
-
-            # Check if IP already exists in /etc/hosts
-            set -l existing_line (grep "^$ip\s" /etc/hosts)
-            
-            if test -n "$existing_line"
-                # IP exists, merge hostnames avoiding duplicates
-                set -l existing_hosts (echo "$existing_line" | cut -d' ' -f2-)
-                set -l new_hosts (echo "$new_entry" | cut -d' ' -f2-)
-                
-                # Combine and deduplicate while preserving adscan order
-                set -l all_hosts
-                for host in (string split ' ' "$new_hosts")
-                    test -n "$host"; and set -a all_hosts "$host"
-                end
-                for host in (string split ' ' "$existing_hosts")
-                    if test -n "$host"; and not contains "$host" $all_hosts
-                        set -a all_hosts "$host"
+    # Display generated hosts file
+    if test -f "$hostsfile"
+        ezpz_info "Hosts file generated at $hostsfile"
+        cat "$hostsfile"
+        echo ""
+        
+        ezpz_question "Add hosts information to /etc/hosts? [append/overwrite/no]"
+        read -l choice
+        or set choice "append"
+        set choice (string trim $choice)
+        
+        switch "$choice"
+            case "append" "" "a"
+                # Append mode (default) - merge hosts for existing IPs
+                while read -l line
+                    test -n "$line"; or continue
+                    
+                    set -l ip (echo "$line" | awk '{print $1}')
+                    set -l new_hosts (echo "$line" | cut -d' ' -f2-)
+                    
+                    # Check if IP already exists in /etc/hosts
+                    set -l existing_line (grep "^$ip\s" /etc/hosts)
+                    
+                    if test -n "$existing_line"
+                        # IP exists, merge hostnames avoiding duplicates
+                        set -l existing_hosts (echo "$existing_line" | cut -d' ' -f2-)
+                        
+                        # Combine and deduplicate hosts (exclude IP addresses)
+                        set -l all_hosts
+                        for host in (string split ' ' "$new_hosts")
+                            if test -n "$host"; and not echo "$host" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+                                set -a all_hosts "$host"
+                            end
+                        end
+                        for host in (string split ' ' "$existing_hosts")
+                            if test -n "$host"; and not contains "$host" $all_hosts; and not echo "$host" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+                                set -a all_hosts "$host"
+                            end
+                        end
+                        
+                        set -l merged_entry "$ip    "(string join ' ' $all_hosts)
+                        
+                        # Replace the existing line
+                        sudo sed -i "s|^$ip\s.*|$merged_entry|" /etc/hosts
+                        ezpz_info "Updated /etc/hosts: $merged_entry"
+                    else
+                        # IP doesn't exist, add new entry
+                        echo "$line" | sudo tee -a /etc/hosts >/dev/null
+                        ezpz_info "Added to /etc/hosts: $line"
                     end
-                end
+                end < "$hostsfile"
                 
-                set -l merged_entry "$ip    "(string join ' ' $all_hosts)
+            case "overwrite" "o" "ow"
+                # Overwrite mode - create new /etc/hosts with localhost + generated content
+                set temp_hosts (mktemp)
+                echo "127.0.0.1    localhost" > "$temp_hosts"
+                cat "$hostsfile" >> "$temp_hosts"
+                sudo tee /etc/hosts < "$temp_hosts" >/dev/null
+                rm -f "$temp_hosts"
+                ezpz_info "Overwritten /etc/hosts with localhost + generated hosts"
                 
-                # Replace the existing line
-                sudo sed -i "s|^$ip\s.*|$merged_entry|" /etc/hosts
-                ezpz_info "Updated /etc/hosts: $merged_entry"
-            else
-                # IP doesn't exist, add new entry
-                echo "$new_entry" | sudo tee -a /etc/hosts >/dev/null
-                ezpz_info "Added to /etc/hosts: $new_entry"
-            end
-        end < "$nxc_clean"
+            case "no"
+                ezpz_info "Hosts file not added to /etc/hosts"
+                
+            case "*"
+                ezpz_error "Invalid choice. Use 'append', 'overwrite', or 'no'"
+        end
+    else
+        ezpz_warn "No hosts file was generated"
+    end
 
+    # KRB5 Configuration
+    nxc smb "$input" --generate-krb5-file "$krb5file" > /dev/null
+
+    if test -f "$krb5file"
+        ezpz_info "KRB5.conf generated at $krb5file and exported to \$KRB5_CONFIG"
+        set -gx KRB5_CONFIG "$krb5file"
     end
 
     # Responder Suggestion
-    if test -s "$nxc_tmp"
+    if test -f "$hostsfile"
         ezpz_info "Consider using Responder to capture hashes from Windows hosts!"
         #ezpz_cmd "sudo responder -dwv -I tun0"
     end
