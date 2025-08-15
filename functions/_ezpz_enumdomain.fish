@@ -100,7 +100,7 @@ Examples:
         set -a imp_auth -k
         if set -q KRB5CCNAME
             set -a nxc_auth --use-kcache
-            ezpz_info "Using KRB5CCNAME at $KRB5CCNAME"
+            ezpz_cmd "Using KRB5CCNAME at $KRB5CCNAME"
         end
         
         # Extract DC FQDN from /etc/hosts if needed for Kerberos
@@ -116,7 +116,7 @@ Examples:
             set nxc_auth_ip[1] $target
         else
             ezpz_warn "DC FQDN not found in /etc/hosts for $target. Kerberos may fail."
-    end
+        end
             
         
         # Time synchronization for Kerberos

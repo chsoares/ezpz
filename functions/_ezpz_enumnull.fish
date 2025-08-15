@@ -83,6 +83,7 @@ Examples:
         # Time synchronization for Kerberos
         if command -v ntpdate >/dev/null 2>&1
             ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
+            sudo systemctl stop systemd-timesyncd
             sudo ntpdate -u $_flag_target >/dev/null 2>&1
         else
             ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."

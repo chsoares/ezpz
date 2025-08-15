@@ -59,10 +59,11 @@ Examples:
     set target_host $_flag_target
     
     # Time synchronization for Kerberos
-    if set -q _flag_kerb
+    if set -q _flag_kerb -a set -q _flag_target
         if command -v ntpdate >/dev/null 2>&1
             ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
-            sudo ntpdate -u $target_host >/dev/null 2>&1
+            sudo systemctl stop systemd-timesyncd
+            sudo ntpdate -u $_flag_target >/dev/null 2>&1
         else
             ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
         end
@@ -94,6 +95,7 @@ Examples:
         set -a nxc_auth -k
         if set -q KRB5CCNAME
             set -a nxc_auth --use-kcache
+            ezpz_cmd "Using KRB5CCNAME at $KRB5CCNAME"
         end
     end
 

