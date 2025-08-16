@@ -157,6 +157,46 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
             ezpz_warn "Timeout reached while testing Coerce on $target"
         end
 
+        # Print Spooler
+        ezpz_header "Print Spooler"
+        ezpz_cmd "nxc smb $target $auth_string -M spooler"
+        timeout $timeout_secs nxc smb $target $auth_string -M spooler | grep -a 'SPOOLER' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing Print Spooler on $target"
+        end
+
+        # WebDAV Detection
+        ezpz_header "WebDAV Detection"
+        ezpz_cmd "nxc smb $target $auth_string -M webdav"
+        timeout $timeout_secs nxc smb $target $auth_string -M webdav | grep -a 'WEBDAV' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing WebDAV on $target"
+        end
+
+        # SMBGhost (CVE-2020-0796)
+        ezpz_header "SMBGhost (CVE-2020-0796)"
+        ezpz_cmd "nxc smb $target $auth_string -M smbghost"
+        timeout $timeout_secs nxc smb $target $auth_string -M smbghost | grep -a 'SMBGHOST' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing SMBGhost on $target"
+        end
+
+        # Remove MIC (CVE-2019-1040)
+        ezpz_header "Remove MIC (CVE-2019-1040)"
+        ezpz_cmd "nxc smb $target $auth_string -M remove-mic"
+        timeout $timeout_secs nxc smb $target $auth_string -M remove-mic | grep -a 'REMOVE-MIC' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing Remove MIC on $target"
+        end
+
+        # BadSuccessor
+        ezpz_header "BadSuccessor"
+        ezpz_cmd "nxc ldap $target $auth_string -M badsuccessor"
+        timeout $timeout_secs nxc ldap $target $auth_string -M badsuccessor | grep -a 'BADSUCCESSOR' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing BadSuccessor on $target"
+        end
+
         # Zerologon (CVE-2020-1472)
         ezpz_header "Zerologon (CVE-2020-1472)"
         ezpz_cmd "nxc smb $target $auth_string -M zerologon"

