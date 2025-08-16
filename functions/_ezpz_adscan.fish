@@ -71,6 +71,7 @@ Usage: ezpz adscan <target>
 
     # NetExec Scanning with hosts and krb5 file generation
     ezpz_header "Running NetExec on target network"
+    ezpz_cmd "nxc smb $input'
     set output (mktemp)
     nxc smb "$input" --generate-hosts-file "$hostsfile" > $output
     if test $status -ne 0
@@ -81,7 +82,8 @@ Usage: ezpz adscan <target>
     cat $output | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*' \
                 | string replace -a "Null Auth:True" (set_color red --bold)"Null Auth:True"(set_color normal) \
                 | string replace -a "signing:False" (set_color cyan)"signing:False"(set_color normal) \
-                | string replace -a "SMBv1:True" (set_color cyan)"SMBv1:True"(set_color normal)
+                | string replace -a "SMBv1:True" (set_color cyan)"SMBv1:True"(set_color normal) \
+                | string replace -a "NTLM:False" (set_color red --bold)"NTLM:False"(set_color normal) \
 
     # Remove duplicates from hosts file
     if test -f "$hostsfile"

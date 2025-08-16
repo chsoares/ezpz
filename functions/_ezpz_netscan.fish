@@ -114,7 +114,8 @@ Usage: ezpz netscan [-F] <target>
             sed -n '/PORT/,$p' |
             sed -n '/Script Post-scanning/q;p' |
             grep --color=never -v '^[[:space:]]*$' #|
-            #sed 's/^/'(set_color blue)'|/;s/$/'(set_color normal)'/'
+            sed 's/^|/'(set_color blue)'&/;s/$/'(set_color normal)'/'
+             
     end < "$targets_tmp"
 
     # UDP Scan
