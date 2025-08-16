@@ -136,7 +136,7 @@ Examples:
         # Fallback to --users
         ezpz_header "Enumerating users (fallback)"
         ezpz_cmd "nxc smb $nxc_args --users"
-        smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+        nxc smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping."

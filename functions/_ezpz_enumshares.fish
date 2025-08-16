@@ -123,7 +123,7 @@ Examples:
         ezpz_header "Enumerating non-default shares on $target"
         ezpz_cmd "nxc smb $target $nxc_auth --shares"
         
-        timeout 60 nxc smb $target $nxc_auth --shares 2>/dev/null | grep -v '\[.\]' | tail -n +3 | tr -s " " | cut -d " " -f 5- > $shares_tmp
+        timeout 600 nxc smb $target $nxc_auth --shares 2>/dev/null | grep -v '\[.\]' | tail -n +3 | tr -s " " | cut -d " " -f 5- > $shares_tmp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping $target."
