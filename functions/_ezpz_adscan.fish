@@ -83,7 +83,7 @@ Usage: ezpz adscan <target>
                 | string replace -a "Null Auth:True" (set_color red --bold)"Null Auth:True"(set_color normal) \
                 | string replace -a "signing:False" (set_color cyan)"signing:False"(set_color normal) \
                 | string replace -a "SMBv1:True" (set_color cyan)"SMBv1:True"(set_color normal) \
-                | string replace -a "NTLM:False" (set_color red --bold)"NTLM:False"(set_color normal) \
+                | string replace -a "NTLM:False" (set_color red --bold)"NTLM:False"(set_color normal)
 
     # Remove duplicates from hosts file
     if test -f "$hostsfile"
