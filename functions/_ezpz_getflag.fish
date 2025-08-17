@@ -79,8 +79,6 @@ Examples:
         else
             ezpz_warn "ntpdate not found. Skipping time sync. Kerberos may fail if clocks are skewed."
         end
-    end
-    
     else
         ezpz_error "Authentication method required (-p, -H, or -k)"
         echo $usage

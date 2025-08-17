@@ -82,7 +82,7 @@ Examples:
     # Extract DC FQDN from /etc/hosts if needed for Kerberos
     set dc_fqdn ""
     set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
-    if test -n "$dc_fqdn"
+    if test -z "$dc_fqdn" -a -n "$_flag_kerb"
         ezpz_warn "DC FQDN not found in /etc/hosts for $target. Kerberos may fail."
     end
 
