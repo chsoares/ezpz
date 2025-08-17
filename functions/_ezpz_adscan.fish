@@ -71,7 +71,7 @@ Usage: ezpz adscan <target>
 
     # NetExec Scanning with hosts and krb5 file generation
     ezpz_header "Running NetExec on target network"
-    ezpz_cmd "nxc smb $input'
+    ezpz_cmd "nxc smb $input"
     set output (mktemp)
     nxc smb "$input" --generate-hosts-file "$hostsfile" > $output
     if test $status -ne 0
