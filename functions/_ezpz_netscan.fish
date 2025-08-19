@@ -59,6 +59,10 @@ Usage: ezpz netscan [-F] <target>
     set cidr_pattern '^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/([1-9]|[1-2][0-9]|3[0-2])$'
     set ip_pattern '^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$'
 
+    # Generate hosts file name from target
+    set target_clean (echo "$target" | sed 's/[\/:]/_/g')
+    set hostsfile "$target_clean"_ips.txt
+
     # Host Discovery
     if test -f "$target"
         # Target file
@@ -72,8 +76,8 @@ Usage: ezpz netscan [-F] <target>
         ezpz_header "Running fping on the $target network"
         ezpz_cmd "fping -agq \"$target\""
         fping -agq "$target" | tee "$targets_tmp"
-        cat "$targets_tmp" >> hosts.txt && sort -u -o hosts.txt hosts.txt
-        ezpz_cmd "Saving enumerated hosts to ./hosts.txt"
+        cat "$targets_tmp" >> "$hostsfile" && sort -u -o "$hostsfile" "$hostsfile"
+        ezpz_cmd "Saving enumerated hosts to ./$hostsfile"
     else if echo "$target" | grep -qE "$ip_pattern"
         # Single IP
         echo "$target" > "$targets_tmp"
