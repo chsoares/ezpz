@@ -8,9 +8,9 @@ function _ezpz_enumsqli
     echo ' \___| _| _| \_,_| _|_|_|'(set_color magenta --bold)'  ____/ \__\_\ ____| '(set_color normal)
     echo ''
 
-    # Parse arguments for our flags
-    set -l parsed_args (argparse --ignore-unknown 'h/help' 'F/fast' -- $argv 2>/dev/null)
-    or set parsed_args
+    # Check for our flags manually
+    set -l fast_mode false
+    set -l show_help false
     
     # Usage message
     set usage "
@@ -19,15 +19,28 @@ Usage: ezpz enumsqli [options] [sqlmap_options]
   Pass any valid sqlmap options for targeting (e.g., -u 'http://...').
 
 Options:
-  -F, --fast    Skip DBMS enumeration and go directly to data enumeration
+  -F, --fast    Skip DBMS enumeration and all interactive prompts (uses defaults)
   -h, --help    Show this help message
 
 Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
 Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
 "
 
+    # Remove our flags from argv for sqlmap and detect them
+    set sqlmap_args
+    for arg in $argv
+        switch $arg
+            case '-F' '--fast'
+                set fast_mode true
+            case '-h' '--help'
+                set show_help true
+            case '*'
+                set sqlmap_args $sqlmap_args $arg
+        end
+    end
+
     # Show help if requested
-    if set -q _flag_help
+    if test "$show_help" = true
         echo $usage
         return 0
     end
@@ -38,22 +51,6 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
         return 1
     end
 
-    # Remove our flags from argv for sqlmap
-    set sqlmap_args
-    set skip_next false
-    for arg in $argv
-        if test "$skip_next" = true
-            set skip_next false
-            continue
-        end
-        switch $arg
-            case '-F' '--fast' '-h' '--help'
-                # Skip our flags
-            case '*'
-                set sqlmap_args $sqlmap_args $arg
-        end
-    end
-
     # If no sqlmap arguments provided, show usage
     if test (count $sqlmap_args) -eq 0
         ezpz_error "Missing sqlmap parameters."
@@ -62,7 +59,7 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
     end
 
     # Skip DBMS enumeration if -F flag is used
-    if not set -q _flag_fast
+    if test "$fast_mode" = false
         # Start DBMS enumeration
         ezpz_title "Starting DBMS enumeration..."
 
@@ -95,10 +92,15 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
     set current_db (sqlmap $sqlmap_args --current-db --batch 2>/dev/null | grep -oP --color=never "(?<=current database: ').*(?=')")
     
     # Ask user which database to enumerate
-    ezpz_question "Select database (all/current/name) [current]: "
-    read -l db_choice
-    or set db_choice "current" # Default to current if timeout
-    set db_choice (string trim $db_choice)
+    if test "$fast_mode" = true
+        set db_choice "current"
+        ezpz_info "Fast mode: using current database"
+    else
+        ezpz_question "Select database (all/current/name) [current]: "
+        read -l db_choice
+        or set db_choice "current" # Default to current if no input
+        set db_choice (string trim $db_choice)
+    end
 
     switch $db_choice
         case "" "current"
@@ -130,10 +132,15 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
     end
 
     # Ask user which tables to enumerate
-    ezpz_question "Select tables (all/names): [all] "
-    read -l table_choice
-    or set table_choice "all" # Default to all if timeout
-    set table_choice (string trim $table_choice)
+    if test "$fast_mode" = true
+        set table_choice "all"
+        ezpz_info "Fast mode: dumping all tables"
+    else
+        ezpz_question "Select tables (all/names): [all] "
+        read -l table_choice
+        or set table_choice "all" # Default to all if no input
+        set table_choice (string trim $table_choice)
+    end
 
     switch $table_choice
         case "" "all"
@@ -153,10 +160,15 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
                     tail -n +10 | \
                     grep --color=never -oP "Database: .*|Table: .*|^\++|\|\s.*" | grep -vE '^\++'
 
-                ezpz_question "Select columns (all/names): [all] "
-                read -l column_choice
-                or set column_choice "all" # Default to all if timeout
-                set column_choice (string trim $column_choice)
+                if test "$fast_mode" = true
+                    set column_choice "all"
+                    ezpz_info "Fast mode: dumping all columns from table '$table'"
+                else
+                    ezpz_question "Select columns (all/names): [all] "
+                    read -l column_choice
+                    or set column_choice "all" # Default to all if no input
+                    set column_choice (string trim $column_choice)
+                end
 
                 switch $column_choice
                     case "" "all"
