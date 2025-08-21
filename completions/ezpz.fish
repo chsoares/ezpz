@@ -75,10 +75,11 @@ complete -c ezpz -f -n '__fish_use_subcommand' -a 'getloot' -d 'Extract informat
 complete -c ezpz -f -n '__fish_use_subcommand' -a 'secretsparse' -d 'Parse secretsdump.py output'
 complete -c ezpz -f -n '__fish_use_subcommand' -a 'getflag' -d 'Read flags from compromised hosts'
 complete -c ezpz -f -n '__fish_use_subcommand' -a 'getshell' -d 'Get reverse shell from compromised hosts'
+complete -c ezpz -f -n '__fish_use_subcommand' -a 'credspray' -d 'Password spraying using kerbrute'
 
 # Target flag with IP completion from *_ips.txt files - requires argument
 # All commands that take targets
-complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell' -s t -l target -r -a '(__ezpz_get_ips)' -d 'Target IP or hostname'
+complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell credspray' -s t -l target -r -a '(__ezpz_get_ips)' -d 'Target IP or hostname'
 
 # Authentication options - for commands that support auth
 # Username completion from creds.txt
@@ -91,13 +92,13 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcr
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s H -l hash -r -a '(__ezpz_get_creds_for_user (__ezpz_get_current_user))' -d 'NTLM hash for pass-the-hash'
 
 # Domain option with hostname completion from *_etchosts.txt files
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot credspray' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
 
 # Kerberos authentication
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s k -l kerb -d 'Use Kerberos authentication'
 
 # Help option - for all commands
-complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot secretsparse getflag getshell' -s h -l help -d 'Show help message'
+complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot secretsparse getflag getshell credspray' -s h -l help -d 'Show help message'
 
 # Specific options for individual commands
 # testcreds specific
@@ -106,3 +107,8 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s x -l protocols
 
 # enumsqli specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from enumsqli' -s F -l fast -d 'Skip DBMS enumeration and interactive prompts'
+
+# credspray specific
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s u -l usersfile -r -a '(find . -maxdepth 1 -name "*users.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'File with usernames (one per line)'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s p -l password -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Password to spray (string or file)'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s c -l credsfile -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'File with user:pass credentials'
