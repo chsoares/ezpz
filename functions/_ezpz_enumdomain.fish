@@ -136,6 +136,8 @@ Examples:
     # Build bloodyAD authentication
     if command -v bloodyAD >/dev/null 2>&1
         if set -q _flag_kerb
+            set bloody_auth --host $dc_fqdn -dc-ip $target -d $domain -u $user
+        else
             set bloody_auth --host $target -d $domain -u $user
         end
         
