@@ -74,7 +74,9 @@ Examples:
         set -a auth_args -p $_flag_password
     else if set -q _flag_hash
         set -a auth_args -H $_flag_hash
-    else if set -q _flag_kerberos
+    end
+    
+    if set -q _flag_kerberos
         set -a auth_args -k
         if set -q KRB5CCNAME
             set -a auth_args --use-kcache
