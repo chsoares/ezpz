@@ -24,7 +24,7 @@ function ezpz
 
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
-    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell
+    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell wordlister
 
     if test (count $argv) -eq 0
         ezpz_show_menu
