@@ -125,7 +125,8 @@ class WordlistGenerator:
     def generate_word_combinations(self, user_words, default_words):
         """Generate combinations of 1-2 words, mixing user and default words."""
         combinations = set()
-        all_words = user_words + default_words
+        # Remove duplicates when combining lists
+        all_words = list(set(user_words + default_words))
         
         # Single words
         for word in all_words:
