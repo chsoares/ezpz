@@ -47,14 +47,15 @@ function _ezpz_wordlister --description "Generate mutated wordlists for CTF"
         return 1
     end
     
-    # Display header
-    ezpz_header "EZPZ Wordlist Generator"
+    # Display starting message
+    ezpz_header "Starting wordlist generation..."
     
     # Call the Python script with all arguments
     python3 $wordlister_path $argv
+    set python_status $status
     
     # Check if the command was successful
-    if test $status -eq 0
+    if test $python_status -eq 0
         ezpz_success "Wordlist generation completed successfully!"
     else
         ezpz_error "Wordlist generation failed!"

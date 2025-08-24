@@ -10,6 +10,33 @@ from itertools import product, combinations_with_replacement
 from pathlib import Path
 
 
+class Colors:
+    """ANSI color codes matching ezpz_colors.fish"""
+    YELLOW_BOLD = '\033[1;33m'    # ezpz_header [+]
+    CYAN = '\033[36m'             # ezpz_info [*]
+    BLUE = '\033[34m'             # ezpz_cmd [>]
+    RED_BOLD = '\033[1;31m'       # ezpz_error [!]
+    RED = '\033[31m'              # ezpz_warn [-]
+    MAGENTA_BOLD = '\033[1;35m'   # ezpz_success [✓], ezpz_title [~]
+    RESET = '\033[0m'             # reset colors
+    
+    @staticmethod
+    def header(msg):
+        return f"{Colors.YELLOW_BOLD}[+] {msg}{Colors.RESET}"
+    
+    @staticmethod
+    def info(msg):
+        return f"{Colors.CYAN}[*] {msg}{Colors.RESET}"
+    
+    @staticmethod
+    def cmd(msg):
+        return f"{Colors.BLUE}[>] {msg}{Colors.RESET}"
+    
+    @staticmethod
+    def error(msg):
+        return f"{Colors.RED_BOLD}[!] {msg}{Colors.RESET}"
+
+
 class WordlistGenerator:
     def __init__(self):
         self.default_words = [
@@ -41,10 +68,8 @@ class WordlistGenerator:
                     word = line.strip().lower()
                     if word and word.isalpha():
                         self.user_words.append(word)
-            total_words = len(self.default_words) + len(self.user_words)
-            print(f"[+] Loaded {len(self.user_words)} user words + {len(self.default_words)} default words = {total_words} total")
         except FileNotFoundError:
-            print(f"[!] Base wordlist file not found: {filepath}")
+            print(Colors.error(f"Base wordlist file not found: {filepath}"))
             sys.exit(1)
 
     def apply_capitalization(self, word):
@@ -167,7 +192,6 @@ class WordlistGenerator:
 
     def generate_wordlist(self, base_file, fast_mode=False, min_length=1):
         """Main wordlist generation pipeline."""
-        print("[*] Starting wordlist generation...")
         
         # Load base words
         if base_file:
@@ -176,53 +200,52 @@ class WordlistGenerator:
         # Choose word sources based on fast mode
         if fast_mode:
             all_base_words = self.user_words
-            print(f"[*] Fast mode: Processing {len(all_base_words)} user words only...")
+            print(Colors.info(f"Fast mode: Processing {len(all_base_words)} user words only..."))
         else:
             all_base_words = self.user_words + self.default_words
-            print(f"[*] Processing {len(all_base_words)} base words...")
         
         # Step 1: Apply capitalization to all base words
         cap_words = []
         for word in all_base_words:
             cap_words.extend(self.apply_capitalization(word))
         
-        print(f"[*] Generated {len(cap_words)} capitalization variants")
+        print(Colors.cmd(f"Generated {len(cap_words)} capitalization variants"))
         
         # Step 2: Apply leetspeak (skip in fast mode)
         if fast_mode:
             leet_words = cap_words
-            print(f"[*] Fast mode: Skipping leetspeak")
+            print(Colors.cmd(f"Fast mode: Skipping leetspeak"))
         else:
             leet_words = []
             for word in cap_words:
                 leet_words.extend(self.generate_leet_variants(word))
-            print(f"[*] Generated {len(leet_words)} leetspeak variants")
+            print(Colors.cmd(f"Generated {len(leet_words)} leetspeak variants"))
         
         # Step 3: Generate word combinations
         if fast_mode:
             # Fast mode: only user word combinations (no default words)
             user_leet = leet_words  # All words are user words in fast mode
             combo_words = self.generate_word_combinations(user_leet, [])
-            print(f"[*] Fast mode: Generated {len(combo_words)} user-only combinations")
+            print(Colors.cmd(f"Fast mode: Generated {len(combo_words)} user-only combinations"))
         else:
             user_leet = [w for w in leet_words if any(base in w.lower() for base in self.user_words)]
             default_leet = [w for w in leet_words if any(base in w.lower() for base in self.default_words)]
             
             combo_words = self.generate_word_combinations(user_leet, default_leet)
-            print(f"[*] Generated {len(combo_words)} word combinations")
+            print(Colors.cmd(f"Generated {len(combo_words)} word combinations"))
         
         # Step 4: Add numeric suffixes
         numeric_words = self.add_numeric_suffixes(combo_words)
-        print(f"[*] Generated {len(numeric_words)} numeric variants")
+        print(Colors.cmd(f"Generated {len(numeric_words)} numeric variants"))
         
         # Step 5: Add symbol suffixes
         symbol_words = self.add_symbol_suffixes(numeric_words)
-        print(f"[*] Generated {len(symbol_words)} symbol variants")
+        print(Colors.cmd(f"Generated {len(symbol_words)} symbol variants"))
         
         # Step 6: Filter by minimum length
         if min_length > 1:
             final_words = [word for word in symbol_words if len(word) >= min_length]
-            print(f"[*] Filtered by minimum length {min_length}: {len(final_words)} words")
+            print(Colors.info(f"Filtered by minimum length {min_length}: {len(final_words)} words"))
         else:
             final_words = symbol_words
         
@@ -234,9 +257,9 @@ class WordlistGenerator:
             with open(output_file, 'w', encoding='utf-8') as f:
                 for word in words:
                     f.write(f"{word}\n")
-            print(f"[+] Saved {len(words)} words to {output_file}")
+            print(Colors.header(f"Saved {len(words)} words to {output_file}"))
         except Exception as e:
-            print(f"[!] Error saving wordlist: {e}")
+            print(Colors.error(f"Error saving wordlist: {e}"))
             sys.exit(1)
 
 
@@ -265,9 +288,6 @@ def main():
     
     # Save results
     generator.save_wordlist(words, output_file)
-    
-    print(f"[+] Wordlist generation complete!")
-    print(f"[+] Output: {output_file}")
 
 
 if __name__ == "__main__":
