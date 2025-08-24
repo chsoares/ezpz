@@ -6,6 +6,12 @@ function __ezpz_get_ips
     # Use find to avoid wildcard expansion errors
     set -l ip_files (find . -maxdepth 1 -name "*_ips.txt" -type f 2>/dev/null)
     
+    # First, list the filenames themselves (without ./ prefix)
+    for file in $ip_files
+        echo (basename "$file")
+    end
+    
+    # Then list the IPs inside the files
     for file in $ip_files
         if test -f "$file"
             cat "$file" 2>/dev/null | string match -r '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
