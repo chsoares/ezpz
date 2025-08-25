@@ -57,7 +57,7 @@ class WordlistGenerator:
             'i': ['1']
         }
         
-        self.symbols = ['!', '@', '#', '$', '%', '&', '*', '-', '+', '=']
+        self.symbols = ['!', '@', '#', '$', '%', '&', '*', '-', '+', '=', '^']
         self.wordlist = set()
 
     def load_base_wordlist(self, filepath):
@@ -82,6 +82,26 @@ class WordlistGenerator:
             
         return list(set(variations))
 
+    def apply_reversal(self, words):
+        """Generate reversed versions of words."""
+        reversed_words = []
+        for word in words:
+            reversed_word = word[::-1]
+            if reversed_word != word:  # Only add if different from original
+                reversed_words.append(reversed_word)
+        return words + reversed_words
+
+    def validate_character_requirements(self, word, min_upper=0, min_lower=0, min_num=0, min_special=0):
+        """Validate if word meets character requirements."""
+        upper_count = sum(1 for c in word if c.isupper())
+        lower_count = sum(1 for c in word if c.islower())
+        num_count = sum(1 for c in word if c.isdigit())
+        special_count = sum(1 for c in word if not c.isalnum())
+        
+        return (upper_count >= min_upper and 
+                lower_count >= min_lower and 
+                num_count >= min_num and 
+                special_count >= min_special)
 
     def generate_leet_variants(self, word):
         """Generate all possible leetspeak combinations."""
@@ -191,7 +211,7 @@ class WordlistGenerator:
         
         return list(result)
 
-    def generate_wordlist(self, base_file, fast_mode=False, min_length=1):
+    def generate_wordlist(self, base_file, fast_mode=False, ultra_fast_mode=False, min_length=1, min_upper=0, min_lower=0, min_num=0, min_special=0):
         """Main wordlist generation pipeline."""
         
         # Load base words
@@ -199,9 +219,10 @@ class WordlistGenerator:
             self.load_base_wordlist(base_file)
         
         # Choose word sources based on fast mode
-        if fast_mode:
+        if fast_mode or ultra_fast_mode:
             all_base_words = self.user_words
-            print(Colors.info(f"Fast mode: Processing {len(all_base_words)} user words only..."))
+            mode_text = "Ultra-fast mode" if ultra_fast_mode else "Fast mode"
+            print(Colors.info(f"{mode_text}: Processing {len(all_base_words)} user words only..."))
         else:
             all_base_words = self.user_words + self.default_words
         
@@ -212,22 +233,31 @@ class WordlistGenerator:
         
         print(Colors.cmd(f"Generated {len(cap_words)} capitalization variants"))
         
-        # Step 2: Apply leetspeak (skip in fast mode)
-        if fast_mode:
-            leet_words = cap_words
-            print(Colors.cmd(f"Fast mode: Skipping leetspeak"))
+        # Step 1.5: Apply word reversal (skip in ultra-fast mode)
+        if ultra_fast_mode:
+            reversed_words = cap_words
+            print(Colors.cmd(f"Ultra-fast mode: Skipping word reversal"))
+        else:
+            reversed_words = self.apply_reversal(cap_words)
+            print(Colors.cmd(f"Generated {len(reversed_words)} words with reversal variants"))
+        
+        # Step 2: Apply leetspeak (skip in ultra-fast mode)
+        if ultra_fast_mode:
+            leet_words = reversed_words
+            print(Colors.cmd(f"Ultra-fast mode: Skipping leetspeak"))
         else:
             leet_words = []
-            for word in cap_words:
+            for word in reversed_words:
                 leet_words.extend(self.generate_leet_variants(word))
             print(Colors.cmd(f"Generated {len(leet_words)} leetspeak variants"))
         
         # Step 3: Generate word combinations
-        if fast_mode:
-            # Fast mode: only user word combinations (no default words)
+        if fast_mode or ultra_fast_mode:
+            # Fast/Ultra-fast mode: only user word combinations (no default words)
             user_leet = leet_words  # All words are user words in fast mode
             combo_words = self.generate_word_combinations(user_leet, [])
-            print(Colors.cmd(f"Fast mode: Generated {len(combo_words)} user-only combinations"))
+            mode_text = "Ultra-fast mode" if ultra_fast_mode else "Fast mode"
+            print(Colors.cmd(f"{mode_text}: Generated {len(combo_words)} user-only combinations"))
         else:
             user_leet = [w for w in leet_words if any(base in w.lower() for base in self.user_words)]
             default_leet = [w for w in leet_words if any(base in w.lower() for base in self.default_words)]
@@ -243,10 +273,26 @@ class WordlistGenerator:
         symbol_words = self.add_symbol_suffixes(numeric_words)
         print(Colors.cmd(f"Generated {len(symbol_words)} symbol variants"))
         
-        # Step 6: Filter by minimum length
+        # Step 6: Filter by requirements
+        filters_applied = []
+        final_words = symbol_words
+        
         if min_length > 1:
-            final_words = [word for word in symbol_words if len(word) >= min_length]
-            print(Colors.info(f"Filtered by minimum length {min_length}: {len(final_words)} words"))
+            final_words = [word for word in final_words if len(word) >= min_length]
+            filters_applied.append(f"length >= {min_length}")
+        
+        if min_upper > 0 or min_lower > 0 or min_num > 0 or min_special > 0:
+            final_words = [word for word in final_words 
+                          if self.validate_character_requirements(word, min_upper, min_lower, min_num, min_special)]
+            char_filters = []
+            if min_upper > 0: char_filters.append(f"uppercase >= {min_upper}")
+            if min_lower > 0: char_filters.append(f"lowercase >= {min_lower}")
+            if min_num > 0: char_filters.append(f"numbers >= {min_num}")
+            if min_special > 0: char_filters.append(f"special >= {min_special}")
+            filters_applied.extend(char_filters)
+        
+        if filters_applied:
+            print(Colors.info(f"Filtered by {', '.join(filters_applied)}: {len(final_words)} words"))
         else:
             final_words = symbol_words
         
@@ -269,7 +315,11 @@ def main():
     parser.add_argument('input_file', nargs='?', help='Base wordlist file (optional)')
     parser.add_argument('-o', '--output', help='Output file (default: input_mutated.txt)')
     parser.add_argument('--min', type=int, default=1, help='Minimum password length (default: 1)')
-    parser.add_argument('-F', '--fast', action='store_true', help='Fast mode: skip leetspeak and default words')
+    parser.add_argument('--upper', type=int, default=0, help='Minimum uppercase characters (default: 0)')
+    parser.add_argument('--lower', type=int, default=0, help='Minimum lowercase characters (default: 0)')
+    parser.add_argument('--num', type=int, default=0, help='Minimum numbers (default: 0)')
+    parser.add_argument('--special', type=int, default=0, help='Minimum special characters (default: 0)')
+    parser.add_argument('-F', '--fast', action='count', default=0, help='Fast mode: -F skips default words, -FF also skips reversal and leetspeak')
     
     args = parser.parse_args()
     
@@ -285,7 +335,11 @@ def main():
         output_file = "ezpz_wordlist_mutated.txt"
     
     # Generate wordlist
-    words = generator.generate_wordlist(args.input_file, fast_mode=args.fast, min_length=args.min)
+    fast_mode = args.fast >= 1
+    ultra_fast_mode = args.fast >= 2
+    words = generator.generate_wordlist(args.input_file, fast_mode=fast_mode, ultra_fast_mode=ultra_fast_mode,
+                                      min_length=args.min, min_upper=args.upper, min_lower=args.lower, 
+                                      min_num=args.num, min_special=args.special)
     
     # Save results
     generator.save_wordlist(words, output_file)

