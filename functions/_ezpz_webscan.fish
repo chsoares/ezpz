@@ -3,11 +3,14 @@ function _ezpz_webscan
 
     # Usage message
     set usage "
-Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
+Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extensions>]
   <url> must be a full URL including http:// or https://.
 
   -w, --wordlist   Specify a custom wordlist for fuzzing.
                    Default: utils/weblist_ezpz.txt
+  -e, --extensions Specify extensions for recursive fuzzing (comma-separated).
+                   Default: .php,.aspx,.txt,.html
+                   Note: .txt is always included automatically.
 "
 
     # ASCII art banner
@@ -20,9 +23,10 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
     # Variables
     set url ""
     set wordlist "$EZPZ_HOME/utils/weblist_ezpz.txt"
+    set extensions ".php,.aspx,.txt,.html"
 
     # Argument parsing
-    argparse 'w/wordlist' 'h/help' -- $argv
+    argparse 'w/wordlist=' 'e/extensions=' 'h/help' -- $argv
     or return 1
 
     if set -q _flag_help
@@ -36,6 +40,15 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
         else
             ezpz_error "Wordlist not found: $_flag_wordlist"
             return 1
+        end
+    end
+
+    if set -q _flag_extensions
+        # Always ensure .txt is included
+        if not echo "$_flag_extensions" | grep -q "\.txt"
+            set extensions "$_flag_extensions,.txt"
+        else
+            set extensions "$_flag_extensions"
         end
     end
 
@@ -79,9 +92,19 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
     # Extract domain and TLD for subdomain/vhost fuzzing
     set domain ""
     set tld ""
+    set has_subdomain 0
     if test $is_ip -eq 0
-        set domain (echo "$host" | cut -d '.' -f 1)
-        set tld (echo "$host" | cut -d '.' -f 2-)
+        set parts (echo "$host" | tr '.' '\n' | wc -l)
+        if test $parts -gt 2
+            # More than 2 parts means we likely have a subdomain (e.g., dev.htb.local)
+            set has_subdomain 1
+            set domain (echo "$host" | cut -d '.' -f 1)
+            set tld (echo "$host" | cut -d '.' -f 2-)
+        else
+            # Only 2 parts, standard domain.tld format
+            set domain (echo "$host" | cut -d '.' -f 1)
+            set tld (echo "$host" | cut -d '.' -f 2-)
+        end
     end
 
     # Test connectivity
@@ -117,23 +140,28 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>]
         ezpz_info "Remember to add any discovered subdomain to /etc/hosts :)"
         echo ""
 
-        # Vhost fuzzing
-        ezpz_header "Fuzzing for vhosts"
-        ezpz_cmd "ffuf -u \"$url\" -w \"$wordlist\" -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v"
-        echo ""
-        ffuf -u "$url" -w "$wordlist" -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null |
-            grep -vE "URL|-->"
-        echo ""
+        # Vhost fuzzing (skip if URL already has a subdomain)
+        if test $has_subdomain -eq 0
+            ezpz_header "Fuzzing for vhosts"
+            ezpz_cmd "ffuf -u \"$url\" -w \"$wordlist\" -H \"Host: FUZZ.$tld\" -c -t 250 -ic -ac -v"
+            echo ""
+            ffuf -u "$url" -w "$wordlist" -H "Host: FUZZ.$tld" -c -t 250 -ic -ac -v 2>/dev/null |
+                grep -vE "URL|-->"
+            echo ""
+        else
+            ezpz_info "URL already contains a subdomain ($host). Skipping vhost fuzzing."
+            echo ""
+        end
     else
         ezpz_warn "Target is an IP. Skipping subdomain and vhost fuzzing."
         echo ""
     end
 
     # Recursive fuzzing with extensions
-    ezpz_header "Fuzzing recursively for common file extensions (this might take long!)"
-    ezpz_cmd "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v"
+    ezpz_header "Fuzzing recursively for file extensions (this might take long!)"
+    ezpz_cmd "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -recursion -recursion-depth 1 -e $extensions -c -t 250 -ic -ac -v"
     echo ""
-    ffuf -u "$url/FUZZ" -w "$wordlist" -recursion -recursion-depth 1 -e .php,.aspx,.txt,.html -c -t 250 -ic -ac -v 2>/dev/null |
+    ffuf -u "$url/FUZZ" -w "$wordlist" -recursion -recursion-depth 1 -e $extensions -c -t 250 -ic -ac -v 2>/dev/null |
         grep -vE "FUZZ:|-->"
     echo ""
 
