@@ -285,7 +285,7 @@ Examples:
 
     if test -s $users_tmp
         if command -v pre2k >/dev/null 2>&1
-            ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
+            ezpz_header "Searching for pre-Win2k compatible computer accounts"
             
             # Build pre2k auth command
             set pre2k_cmd pre2k auth -t 100 -u "$user" -d $domain -dc-ip $target
