@@ -85,7 +85,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
     end
 
     # Set timeout for vulnerability checks
-    set -x timeout_secs 60
+    set -x timeout_secs 180
 
     function _check_single_target
         set target $argv[1]
@@ -119,6 +119,22 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         
         if test $should_skip -eq 1
             return
+        end
+
+        # Print Spooler
+        ezpz_header "Print Spooler"
+        ezpz_cmd "nxc smb $target $auth_string -M spooler"
+        timeout $timeout_secs nxc smb $target $auth_string -M spooler | grep -a 'SPOOLER' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing Print Spooler on $target"
+        end
+
+        # WebDAV Detection
+        ezpz_header "WebDAV Detection"
+        ezpz_cmd "nxc smb $target $auth_string -M webdav"
+        timeout $timeout_secs nxc smb $target $auth_string -M webdav | grep -a 'WEBDAV' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing WebDAV on $target"
         end
 
         # EternalBlue (MS17-010)
@@ -155,22 +171,6 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         timeout $timeout_secs nxc smb $target $auth_string -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing Coerce on $target"
-        end
-
-        # Print Spooler
-        ezpz_header "Print Spooler"
-        ezpz_cmd "nxc smb $target $auth_string -M spooler"
-        timeout $timeout_secs nxc smb $target $auth_string -M spooler | grep -a 'SPOOLER' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing Print Spooler on $target"
-        end
-
-        # WebDAV Detection
-        ezpz_header "WebDAV Detection"
-        ezpz_cmd "nxc smb $target $auth_string -M webdav"
-        timeout $timeout_secs nxc smb $target $auth_string -M webdav | grep -a 'WEBDAV' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing WebDAV on $target"
         end
 
         # SMBGhost (CVE-2020-0796)

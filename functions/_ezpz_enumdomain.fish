@@ -288,7 +288,7 @@ Examples:
             ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
             
             # Build pre2k auth command
-            set pre2k_cmd pre2k auth -u "$user" -d $domain -dc-ip $target
+            set pre2k_cmd pre2k auth -t 100 -u "$user" -d $domain -dc-ip $target
             
             # Add authentication method
             if set -q _flag_password
