@@ -8,9 +8,8 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
 
   -w, --wordlist   Specify a custom wordlist for fuzzing.
                    Default: utils/weblist_ezpz.txt
-  -e, --extensions Specify extensions for recursive fuzzing (comma-separated).
-                   Default: .php,.aspx,.txt,.html
-                   Note: .txt is always included automatically.
+  -e, --extensions Specify extensions for fuzzing (comma-separated).
+                   Default: .php,.txt
 "
 
     # ASCII art banner
@@ -23,7 +22,7 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
     # Variables
     set url ""
     set wordlist "$EZPZ_HOME/utils/weblist_ezpz.txt"
-    set extensions ".php,.aspx,.txt,.html"
+    set extensions ".php,.txt"
 
     # Argument parsing
     argparse 'w/wordlist=' 'e/extensions=' 'h/help' -- $argv
@@ -44,12 +43,7 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
     end
 
     if set -q _flag_extensions
-        # Always ensure .txt is included
-        if not echo "$_flag_extensions" | grep -q "\.txt"
-            set extensions "$_flag_extensions,.txt"
-        else
-            set extensions "$_flag_extensions"
-        end
+        set extensions "$_flag_extensions"
     end
 
     # Check for exactly one positional argument
@@ -122,11 +116,12 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
     whatweb -a3 -v "$url"
     echo ""
 
-    # Directory fuzzing
-    ezpz_header "Fuzzing for directories"
-    ezpz_cmd "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -c -t 250 -ic -ac -v"
+    # Directory and file fuzzing with extensions
+    ezpz_header "Fuzzing for directories and files"
+    ezpz_info "Using extensions: $extensions"
+    ezpz_cmd "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -e $extensions -c -t 250 -ic -ac -v"
     echo ""
-    ffuf -u "$url/FUZZ" -w "$wordlist" -c -t 250 -ic -ac -v 2>/dev/null |
+    ffuf -u "$url/FUZZ" -w "$wordlist" -e $extensions -c -t 250 -ic -ac -v 2>/dev/null |
         grep -vE "FUZZ:|-->"
     echo ""
 
@@ -157,12 +152,10 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
         echo ""
     end
 
-    # Recursive fuzzing with extensions
-    ezpz_header "Fuzzing recursively for file extensions (this might take long!)"
+    # Recursive fuzzing suggestion
+    ezpz_header "Suggested recursive fuzzing command"
+    ezpz_info "For recursive fuzzing with extensions, you can run:"
     ezpz_cmd "ffuf -u \"$url/FUZZ\" -w \"$wordlist\" -recursion -recursion-depth 1 -e $extensions -c -t 250 -ic -ac -v"
-    echo ""
-    ffuf -u "$url/FUZZ" -w "$wordlist" -recursion -recursion-depth 1 -e $extensions -c -t 250 -ic -ac -v 2>/dev/null |
-        grep -vE "FUZZ:|-->"
     echo ""
 
     # Finalization

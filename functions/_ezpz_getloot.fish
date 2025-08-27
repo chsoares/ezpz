@@ -242,25 +242,27 @@ Examples:
 
         # Process .sam file
         if test -f "$secretsdump_output_base.sam"
-            ezpz_info "Parsing SAM hashes from $secretsdump_output_base.sam..."
-            cat "$secretsdump_output_base.sam" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+            ezpz_info "Printing SAM hashes"
+            cat "$secretsdump_output_base.sam" | awk -F: '{print $1":"$4}' | tee -a "$tmp_this_target_collection"
         end
 
         # Process .secrets file (LSA Secrets)
         if test -f "$secretsdump_output_base.secrets"
-            ezpz_info "Parsing LSA secrets from $secretsdump_output_base.secrets..."
-            cat "$secretsdump_output_base.secrets" | grep -oP '^\w+:\d+:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+            ezpz_info "Printing LSA secrets"
+            cat "$secretsdump_output_base.secrets"
+            # Filter and collect NTLM hashes for consolidation (improved regex to catch special chars)
+            cat "$secretsdump_output_base.secrets" | grep -oE '^[^:]+:[^:]*:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
         end
 
         # Process .ntds file (NTDS.DIT hashes)
         if test -f "$secretsdump_output_base.ntds"
-            ezpz_info "Parsing NTDS hashes from $secretsdump_output_base.ntds..."
-            cat "$secretsdump_output_base.ntds" | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+            ezpz_info "Printing NTDS hashes"
+            cat "$secretsdump_output_base.ntds" | awk -F: '{print $1":"$4}' | tee -a "$tmp_this_target_collection"
         end
 
         # Consolidate all hashes collected for this target
         if test -s "$tmp_this_target_collection"
-            sort -u "$tmp_this_target_collection" | tee "$this_target_parsed_file"
+            sort -u "$tmp_this_target_collection" > "$this_target_parsed_file"
             ezpz_cmd "Parsed hashes for $target saved to '$this_target_parsed_file'."
         else
             ezpz_warn "No hashes extracted or found for $target in SAM/LSA/NTDS files."

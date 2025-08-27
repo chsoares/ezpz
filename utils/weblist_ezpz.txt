@@ -34977,3 +34977,5 @@ graphql
 .DS_STORE
 certsrv
 .well-known
+robots.txt
+web.config
