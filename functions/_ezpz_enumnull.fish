@@ -277,10 +277,12 @@ Examples:
                 
                 # Show and save hash lines if found
                 if test -n "$spn_hash_lines"
+                    # Convert hashes to user:hash format
+                    set kerb_formatted (mktemp)
                     for hash in $spn_hash_lines
-                        echo $hash
+                        echo $hash | sed -E 's/\$krb5tgs\$23\$\*([^$]+)\$.*$/\1:&/'
                     end
-                    printf '%s\n' $spn_hash_lines > $kerb_file
+                    printf '%s\n' $spn_hash_lines | sed -E 's/\$krb5tgs\$23\$\*([^$]+)\$.*$/\1:&/' > $kerb_file
                     ezpz_info "Saving hashes to $kerb_file"
                 end
             end

