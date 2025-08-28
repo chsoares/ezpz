@@ -24,7 +24,7 @@ function ezpz
 
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
-    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell wordlister
+    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell wordlister selfrelay
 
     if test (count $argv) -eq 0
         ezpz_show_menu
@@ -85,6 +85,7 @@ function ezpz_show_menu
     echo "  secretsparse - Parse secretsdump.py output"
     echo "  getflag      - Read flags from compromised hosts"
     echo "  getshell     - Get reverse shell from compromised hosts"
+    echo "  selfrelay    - NTLM self-relay attack chain"
     echo ""
     ezpz_info "Usage: ezpz <command> [options]"
     echo "For help on a specific command: ezpz <command> --help"

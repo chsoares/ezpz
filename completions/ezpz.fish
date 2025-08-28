@@ -20,6 +20,31 @@ function __ezpz_get_ips
     # No output if no files exist - completion will be empty
 end
 
+# Helper function to get IPs including tun0 interface (for listener options)
+function __ezpz_get_listener_ips
+    # Get tun0 IP if available
+    set -l tun0_ip (ip addr show tun0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+    if test -n "$tun0_ip"
+        echo $tun0_ip
+    end
+    
+    # Include only IPs from files, not filenames
+    __ezpz_get_dns_ips
+end
+
+# Helper function to get only IPs from files (no filenames) for DNS servers
+function __ezpz_get_dns_ips
+    # Use find to avoid wildcard expansion errors
+    set -l ip_files (find . -maxdepth 1 -name "*_ips.txt" -type f 2>/dev/null)
+    
+    # Only list the IPs inside the files, not the filenames
+    for file in $ip_files
+        if test -f "$file"
+            cat "$file" 2>/dev/null | string match -r '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+        end
+    end
+end
+
 # Helper function to get usernames from creds.txt
 function __ezpz_get_users
     if test -f creds.txt
@@ -82,29 +107,30 @@ complete -c ezpz -f -n '__fish_use_subcommand' -a 'secretsparse' -d 'Parse secre
 complete -c ezpz -f -n '__fish_use_subcommand' -a 'getflag' -d 'Read flags from compromised hosts'
 complete -c ezpz -f -n '__fish_use_subcommand' -a 'getshell' -d 'Get reverse shell from compromised hosts'
 complete -c ezpz -f -n '__fish_use_subcommand' -a 'credspray' -d 'Password spraying using kerbrute'
+complete -c ezpz -f -n '__fish_use_subcommand' -a 'selfrelay' -d 'NTLM self-relay attack chain'
 
 # Target flag with IP completion from *_ips.txt files - requires argument
 # All commands that take targets
-complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell credspray' -s t -l target -r -a '(__ezpz_get_ips)' -d 'Target IP or hostname'
+complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell credspray selfrelay' -s t -l target -r -a '(__ezpz_get_ips)' -d 'Target IP or hostname'
 
 # Authentication options - for commands that support auth
 # Username completion from creds.txt
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s u -l user -r -a '(__ezpz_get_users)' -d 'Username'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s u -l user -r -a '(__ezpz_get_users)' -d 'Username'
 
 # Password completion based on selected user
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s p -l password -r -a '(__ezpz_get_creds_for_user (__ezpz_get_current_user))' -d 'Password for authentication'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s p -l password -r -a '(__ezpz_get_creds_for_user (__ezpz_get_current_user))' -d 'Password for authentication'
 
 # Hash completion based on selected user
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s H -l hash -r -a '(__ezpz_get_creds_for_user (__ezpz_get_current_user))' -d 'NTLM hash for pass-the-hash'
 
 # Domain option with hostname completion from *_etchosts.txt files
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot credspray' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot credspray selfrelay' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
 
 # Kerberos authentication
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s k -l kerb -d 'Use Kerberos authentication'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s k -l kerb -d 'Use Kerberos authentication'
 
 # Help option - for all commands
-complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot secretsparse getflag getshell credspray' -s h -l help -d 'Show help message'
+complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns enumnull enumdomain enumuser enumshares enumsqli testcreds getloot secretsparse getflag getshell credspray selfrelay' -s h -l help -d 'Show help message'
 
 # Specific options for individual commands
 # testcreds specific
@@ -115,6 +141,13 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s x -l protocols
 complete -c ezpz -f -n '__fish_seen_subcommand_from enumsqli' -s F -l fast -d 'Skip DBMS enumeration and interactive prompts'
 
 # credspray specific
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s u -l usersfile -r -a '(find . -maxdepth 1 -name "*users.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'File with usernames (one per line)'
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s p -l password -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Password to spray (string or file)'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s u -l usersfile -r -a '(find . -maxdepth 1 -name "*users.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'File with usernames'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s p -l password -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Password to spray'
 complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s c -l credsfile -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'File with user:pass credentials'
+
+# selfrelay specific
+complete -c ezpz -f -n '__fish_seen_subcommand_from selfrelay' -s l -l listener -r -a '(__ezpz_get_listener_ips)' -d 'Listener IP'
+complete -c ezpz -f -n '__fish_seen_subcommand_from selfrelay' -l dns -r -a '(__ezpz_get_dns_ips)' -d 'DNS Server IP'
+complete -c ezpz -f -n '__fish_seen_subcommand_from selfrelay' -s m -l method -r -a 'PetitPotam Printerbug DFSCoerce ALL' -d 'Coercion method'
+complete -c ezpz -f -n '__fish_seen_subcommand_from selfrelay' -s x -l cmd -r -d 'Custom command to execute'
+complete -c ezpz -f -n '__fish_seen_subcommand_from selfrelay' -l modify -d 'Use modify action instead of add for DNS record'
