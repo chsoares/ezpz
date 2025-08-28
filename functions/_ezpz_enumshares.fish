@@ -169,11 +169,7 @@ Examples:
             gsub(/^[ \t]+|[ \t]+$/, "", share)
             gsub(/^[ \t]+|[ \t]+$/, "", desc)
             
-            # Filter out default shares completely
-            if (share !~ /^(IPC\$|C\$|ADMIN\$)$/) {
-                # Store for sorting
-                shares[++count] = sprintf("%d|%-20s %-15s %s", perm_order, share, perm, desc)
-            }
+            shares[++count] = sprintf("%d|%-20s %-15s %s", perm_order, share, perm, desc)
         }
         END {
             # Sort by permission order and print
@@ -199,9 +195,7 @@ Examples:
             if (match(line, /WRITE/)) {
                 share = substr(line, 1, RSTART-1)
                 gsub(/^[ \t]+|[ \t]+$/, "", share)
-                if (share !~ /^(IPC\$|C\$|ADMIN\$)$/) {
-                    print share
-                }
+                print share
             }
         }')
 

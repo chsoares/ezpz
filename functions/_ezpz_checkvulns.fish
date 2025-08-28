@@ -145,6 +145,14 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
             ezpz_warn "Timeout reached while testing MS17-010 on $target"
         end
 
+        # Zerologon (CVE-2020-1472)
+        ezpz_header "Zerologon (CVE-2020-1472)"
+        ezpz_cmd "nxc smb $target $auth_string -M zerologon"
+        timeout 300 nxc smb $target $auth_string -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing Zerologon on $target"
+        end
+
         # PrintNightmare (CVE-2021-34527)
         ezpz_header "PrintNightmare (CVE-2021-34527)"
         ezpz_cmd "nxc smb $target $auth_string -M printnightmare"
@@ -173,20 +181,20 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
             ezpz_warn "Timeout reached while testing Coerce on $target"
         end
 
-        # SMBGhost (CVE-2020-0796)
-        ezpz_header "SMBGhost (CVE-2020-0796)"
-        ezpz_cmd "nxc smb $target $auth_string -M smbghost"
-        timeout $timeout_secs nxc smb $target $auth_string -M smbghost | grep -a 'SMBGHOST' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing SMBGhost on $target"
-        end
-
         # Remove MIC (CVE-2019-1040)
         ezpz_header "Remove MIC (CVE-2019-1040)"
         ezpz_cmd "nxc smb $target $auth_string -M remove-mic"
         timeout $timeout_secs nxc smb $target $auth_string -M remove-mic | grep -a 'REMOVE-MIC' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing Remove MIC on $target"
+        end
+
+        # SMBGhost (CVE-2020-0796)
+        ezpz_header "SMBGhost (CVE-2020-0796)"
+        ezpz_cmd "nxc smb $target $auth_string -M smbghost"
+        timeout $timeout_secs nxc smb $target $auth_string -M smbghost | grep -a 'SMBGHOST' | tr -s " " | cut -d " " -f 5-
+        if test $status -eq 124
+            ezpz_warn "Timeout reached while testing SMBGhost on $target"
         end
 
         # BadSuccessor
@@ -196,20 +204,13 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing BadSuccessor on $target"
         end
-
-        # Zerologon (CVE-2020-1472)
-        ezpz_header "Zerologon (CVE-2020-1472)"
-        ezpz_cmd "nxc smb $target $auth_string -M zerologon"
-        timeout $timeout_secs nxc smb $target $auth_string -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing Zerologon on $target"
-        end
     end
 
     # Process target(s)
     if test -f "$_flag_target"
         while read -l target
             _check_single_target $target $auth_args
+            echo ""
         end < $_flag_target
     else
         _check_single_target $_flag_target $auth_args
