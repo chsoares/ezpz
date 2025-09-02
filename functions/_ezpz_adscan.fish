@@ -86,7 +86,7 @@ Usage: ezpz adscan <target>
                 | string replace -a "NTLM:False" (set_color red --bold)"NTLM:False"(set_color normal)
 
     ezpz_cmd "nxc ldap $input"
-    timeout 10 nxc ldap $input > $output
+    timeout 30 nxc ldap $input > $output
     cat $output | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*' \
                 | string replace -a "signing:None" (set_color red --bold)"signing:None"(set_color normal) \
                 | string replace -a "channel binding:No TLS cert" (set_color cyan)"channel binding:No TLS cert"(set_color normal)
