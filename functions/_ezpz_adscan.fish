@@ -89,7 +89,11 @@ Usage: ezpz adscan <target>
     timeout 30 nxc ldap $input > $output
     cat $output | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*' \
                 | string replace -a "signing:None" (set_color red --bold)"signing:None"(set_color normal) \
-                | string replace -a "channel binding:No TLS cert" (set_color cyan)"channel binding:No TLS cert"(set_color normal)
+                | string replace -a "channel binding:No TLS cert" (set_color cyan)"channel binding:No TLS cert"(set_color normal) \
+                | string replace -a "channel binding:Never" (set_color cyan)"channel binding:Never"(set_color normal)
+
+    ezpz_cmd "nxc winrm $input"
+    nxc winrm $input | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*'
 
     # Remove duplicates from hosts file
     if test -f "$hostsfile"
