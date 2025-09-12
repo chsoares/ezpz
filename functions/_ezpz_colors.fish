@@ -1,36 +1,36 @@
 # special symbols
 
 function ezpz_header
-    echo (set_color yellow --bold)"  "$argv(set_color normal)
+    echo (set_color yellow --bold)"  "$argv(set_color normal)
 end
 function ezpz_info
-    echo (set_color cyan)"  "$argv(set_color normal)
+    echo (set_color cyan)"  "$argv(set_color normal)
 end
 function ezpz_cmd
-    echo (set_color blue)"  "$argv(set_color normal)
+    echo (set_color blue)"  "$argv(set_color normal)
 end
 function ezpz_error
-    echo (set_color red --bold)"  "$argv(set_color normal)
+    echo (set_color red --bold)"  "$argv(set_color normal)
 end
 function ezpz_warn
-    echo (set_color red)"  "$argv(set_color normal)
+    echo (set_color magenta --bold)"  "$argv(set_color normal)
 end
 function ezpz_success
-    echo (set_color magenta --bold)"  "$argv(set_color normal)
+    echo (set_color magenta --bold)" "$argv(set_color normal)
 end
 function ezpz_question
-    echo (set_color cyan)"  "$argv(set_color normal)
+    echo (set_color cyan)"  "$argv(set_color normal)
 end
 function ezpz_title
-    echo (set_color magenta --bold)"  "$argv(set_color normal)
+    echo (set_color magenta --bold)"  "$argv(set_color normal)
 end
 
 
 function ezpz_banner
     if test (count $argv) -gt 0
-        gum style --foreground 5 --border-foreground 6 --border rounded --padding "0 4" " ezpz $argv v0.fish"
+        gum style --foreground 5 --border-foreground 6 --border rounded --padding "0 4" " ezpz $argv v0.fish"
     else
-        gum style --foreground 5 --border-foreground 6 --border rounded --padding "0 4" " ezpz v0.fish"
+        gum style --foreground 5 --border-foreground 6 --border rounded --padding "0 4" " ezpz v0.fish"
     end
 end
 function ezpz_input
