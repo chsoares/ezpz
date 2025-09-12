@@ -31,7 +31,7 @@ Usage: ezpz adscan <target>
     set input $argv[1]
 
     # Prerequisites check
-    for tool in fping nxc
+    for tool in nxc
         if not command -v $tool >/dev/null 2>&1
             ezpz_error "Required tool not found: $tool"
             return 1
@@ -68,7 +68,7 @@ Usage: ezpz adscan <target>
     ezpz_header "Running NetExec on target network"
     ezpz_cmd "nxc smb $input"
     set output (mktemp)
-    nxc smb "$input" --generate-hosts-file "$hostsfile" > $output
+    ezpz_spin nxc smb "$input" --generate-hosts-file "$hostsfile" > $output
     if test $status -ne 0
         ezpz_error "NetExec failed."
         return 1
@@ -81,14 +81,14 @@ Usage: ezpz adscan <target>
                 | string replace -a "NTLM:False" (set_color red --bold)"NTLM:False"(set_color normal)
 
     ezpz_cmd "nxc ldap $input"
-    timeout 30 nxc ldap $input > $output
+    ezpz_spin timeout 30 nxc ldap $input > $output
     cat $output | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*' \
                 | string replace -a "signing:None" (set_color red --bold)"signing:None"(set_color normal) \
                 | string replace -a "channel binding:No TLS cert" (set_color cyan)"channel binding:No TLS cert"(set_color normal) \
                 | string replace -a "channel binding:Never" (set_color cyan)"channel binding:Never"(set_color normal)
 
     ezpz_cmd "nxc winrm $input"
-    nxc winrm $input | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*'
+    ezpz_spin nxc winrm $input | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*'
 
     # Remove duplicates from hosts file
     if test -f "$hostsfile"
@@ -101,12 +101,10 @@ Usage: ezpz adscan <target>
         cat "$hostsfile"
         
         ezpz_question "Add hosts information to /etc/hosts? [append/overwrite/no]"
-        read -l choice
-        or set choice "append"
-        set choice (string trim $choice)
+        set choice (ezpz_choose_one append overwrite no)
         
         switch "$choice"
-            case "append" "" "a"
+            case "append"
                 # Append mode (default) - merge hosts for existing IPs
                 while read -l line
                     test -n "$line"; or continue
@@ -146,7 +144,7 @@ Usage: ezpz adscan <target>
                     end
                 end < "$hostsfile"
                 
-            case "overwrite" "o" "ow"
+            case "overwrite"
                 # Overwrite mode - create new /etc/hosts with localhost + generated content
                 set temp_hosts (mktemp)
                 echo "127.0.0.1    localhost" > "$temp_hosts"
@@ -167,18 +165,12 @@ Usage: ezpz adscan <target>
 
     # KRB5 Configuration
     ezpz_header "Trying to generate KRB5 config file"
-    nxc smb "$input" --generate-krb5-file "$krb5file" > /dev/null
+    ezpz_spin nxc smb "$input" --generate-krb5-file "$krb5file" > /dev/null
 
     if test -f "$krb5file"
         cat $krb5file | awk /./
         ezpz_info "KRB5.conf generated at $krb5file and exported to \$KRB5_CONFIG"
         set -gx KRB5_CONFIG "$krb5file"
-    end
-
-    # Responder Suggestion
-    if test -f "$hostsfile"
-        ezpz_title "Consider using Responder to capture hashes from Windows hosts!"
-        #ezpz_cmd "sudo responder -dwv -I tun0"
     end
 
     # Finalization
