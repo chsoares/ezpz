@@ -1,12 +1,7 @@
 function _ezpz_credspray
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
-    # ASCII art banner
-    echo ''
-    echo '                    |'(set_color magenta --bold)'   __|  _ \ _ \    \ \ \  / '(set_color normal)
-    echo '   _|   _| -_)   _` |'(set_color magenta --bold)' \__ \  __/   /   _ \ \  /  '(set_color normal)
-    echo ' \__| _| \___| \__,_|'(set_color magenta --bold)' ____/ _|  _|_\ _/  _\ _|  '(set_color normal)
-    echo ''
+    ezpz_banner credspray
     
     # Usage message
     set usage "

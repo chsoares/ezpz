@@ -2,6 +2,8 @@ function _ezpz_wordlister --description "Generate mutated wordlists for CTF"
     # Source color functions
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
+    ezpz_banner wordlister
+
     # Check for help flag
     if contains -- --help $argv; or contains -- -h $argv
         ezpz_info "EZPZ Wordlist Generator"

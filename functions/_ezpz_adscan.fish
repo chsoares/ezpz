@@ -7,12 +7,7 @@ Usage: ezpz adscan <target>
   <target> can be a CIDR range (e.g., 10.10.10.0/24), a single IP, or a file with targets.
   This function attempts to write to /etc/hosts and may require sudo.
 "
-    # ASCII art banner
-    echo ''
-    echo '             |'(set_color magenta --bold)'   __|   __|    \     \ | '(set_color normal)
-    echo '   _` |   _` |'(set_color magenta --bold)' \__ \  (      _ \   .  | '(set_color normal)
-    echo ' \__,_| \__,_|'(set_color magenta --bold)' ____/ \___| _/  _\ _|\_| '(set_color normal)
-    echo ''
+    ezpz_banner adscan
 
     # Variables
     set input ""

@@ -1,12 +1,7 @@
 function _ezpz_checkvulns
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
-    # ASCII banner
-    echo ''
-    echo '       |                |   '(set_color magenta --bold)'            |            '(set_color normal)
-    echo '   _|    \    -_)   _|  | / '(set_color magenta --bold)'\ \ / |  |  |    \  (_-< '(set_color normal)
-    echo ' \__| _| _| \___| \__| _\_\ '(set_color magenta --bold)' \_/ \_,_| _| _| _| ___/ '(set_color normal)
-    echo ''
+    ezpz_banner checkvulns
 
     # Usage message
     set usage "

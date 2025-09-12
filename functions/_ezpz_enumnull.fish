@@ -1,19 +1,7 @@
 function _ezpz_enumnull
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
-    # ASCII banner
-    echo ''
-    echo '                         '(set_color magenta --bold)'   \ |  |  | |     |    '(set_color normal)
-    echo '   -_)    \   |  |   ` \ '(set_color magenta --bold)'  .  |  |  | |     |    '(set_color normal)
-    echo ' \___| _| _| \_,_| _|_|_|'(set_color magenta --bold)' _|\_| \__/ ____| ____| '(set_color normal)
-    echo ''
-
-
-
-
-                                                 
-
-
+    ezpz_banner enumnull
 
     # Usage message
     set usage "

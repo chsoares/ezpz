@@ -1,12 +1,7 @@
 function _ezpz_enumdomain
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
-    # ASCII banner
-    echo ''
-    echo '                           '(set_color yellow --bold)'  _ \   _ \   \  |    \   _ _|   \ | '(set_color normal)
-    echo '     -_)    \   |  |   ` \ '(set_color yellow --bold)'  |  | (   | |\/ |   _ \    |   .  | '(set_color normal)
-    echo '   \___| _| _| \_,_| _|_|_|'(set_color yellow --bold)' ___/ \___/ _|  _| _/  _\ ___| _|\_| '(set_color normal)
-    echo ''
+    ezpz_banner enumdomain
 
     # Usage message
     set usage "

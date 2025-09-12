@@ -1,13 +1,7 @@
 function _ezpz_secretsparse
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
-    # ASCII art banner
-    echo ''
-    echo '                                |  '(set_color magenta --bold)'   __|   __|    \     \ | '(set_color normal)
-    echo '   -_)  -_)  _ \   -_)   _ \   _|'(set_color magenta --bold)' \__ \  (      _ \   .  | '(set_color normal)
-    echo ' \___| \___| .__/ \___| .__/ \__|'(set_color magenta --bold)' ____/ \___| _/  _\ _|\_| '(set_color normal)
-    echo '           _|         _|          '
-    echo ''
+    ezpz_banner secretsparse
 
     # Usage message
     set usage "

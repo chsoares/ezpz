@@ -1,6 +1,8 @@
 function _ezpz_getflag
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
+    ezpz_banner getflag
+
     set -l options 't/target=' 'u/username=' 'p/password=' 'H/hash=' 'd/domain=' 'k/kerberos' 'x/protocol=' 'h/help'
     
     if not argparse $options -- $argv

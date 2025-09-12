@@ -62,13 +62,7 @@ function ezpz
 end
 
 function ezpz_show_menu
-    echo ''
-    echo '       __  /' (set_color magenta --bold)'      __  / '(set_color normal)
-    echo '   -_)    / ' (set_color magenta --bold)'  _ \    /  '(set_color normal)
-    echo ' \___| ____|' (set_color magenta --bold)' .__/ ____| '(set_color normal)
-    echo '            ' (set_color magenta --bold)'_|          '(set_color normal)
-    echo ''
-    ezpz_title "ezpz CTF Scripts - v0.fish 🍣"
+    ezpz_banner
     echo ""
     echo "Available commands:"
     echo "  netscan      - Network discovery and port scanning"

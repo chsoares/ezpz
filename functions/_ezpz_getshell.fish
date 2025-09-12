@@ -1,6 +1,8 @@
 function _ezpz_getshell
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
+    ezpz_banner getshell
+
     set -l options 't/target=' 'u/username=' 'p/password=' 'H/hash=' 'd/domain=' 'k/kerberos' 'x/protocol=' 'port=' 'h/help'
     
     if not argparse $options -- $argv

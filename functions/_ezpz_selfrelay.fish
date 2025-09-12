@@ -1,6 +1,8 @@
 function _ezpz_selfrelay
     source "$EZPZ_HOME/functions/_ezpz_colors.fish"
     
+    ezpz_banner selfrelay
+
     set -l STATIC_DNS_RECORD "localhost1UWhRCAAAAAAAAAAAAAAAAAAAAAAAAAAAAwbEAYBAAAA"
     
     set -l options 't/target=' 'u/user=' 'p/pass=' 'k/kerberos' 'd/domain=' 'l/listener=' 'dns=' 'm/method=' 'x/cmd=' 'modify' 'h/help'

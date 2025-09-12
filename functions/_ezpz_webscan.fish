@@ -12,12 +12,7 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
                    Default: .php,.txt
 "
 
-    # ASCII art banner
-    echo ''
-    echo '                |    '(set_color magenta --bold)'  __|   __|    \     \ | '(set_color normal)
-    echo ' \ \  \ /  -_)   _ \ '(set_color magenta --bold)'\__ \  (      _ \   .  | '(set_color normal)
-    echo '  \_/\_/ \___| _.__/ '(set_color magenta --bold)'____/ \___| _/  _\ _|\_|  '(set_color normal)
-    echo ''
+    ezpz_banner webscan
 
     # Variables
     set url ""

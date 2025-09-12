@@ -2,12 +2,7 @@ function _ezpz_testcreds
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
 
-    # ASCII art banner
-    echo ''
-    echo '  |               |  '(set_color magenta --bold)'   __|  _ \  __|  _ \    __| '(set_color normal)
-    echo '   _|   -_) (_-<   _|'(set_color magenta --bold)'  (       /  _|   |  | \__ \ '(set_color normal)
-    echo ' \__| \___| ___/ \__|'(set_color magenta --bold)' \___| _|_\ ___| ___/  ____/ '(set_color normal)
-    echo ''
+    ezpz_banner testcreds
     
     # Usage message
     set usage "

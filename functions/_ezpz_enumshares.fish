@@ -1,12 +1,7 @@
 function _ezpz_enumshares
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
-    # ASCII banner
-    echo ''
-    echo '                         '(set_color magenta --bold)'   __|  |  |    \    _ \  __|   __| '(set_color normal)
-    echo '   -_)    \   |  |   ` \ '(set_color magenta --bold)' \__ \  __ |   _ \     /  _|  \__ \ '(set_color normal)
-    echo ' \___| _| _| \_,_| _|_|_|'(set_color magenta --bold)' ____/ _| _| _/  _\ _|_\ ___| ____/ '(set_color normal)
-    echo ''
+    ezpz_banner enumshares
 
     # Usage message
     set usage "

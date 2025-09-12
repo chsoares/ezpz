@@ -9,12 +9,7 @@ Usage: ezpz netscan [-F] <target>
   -F    Fast scan. Performs host discovery and a fast port scan only. Skips full TCP and UDP scans.
 "
 
-    # ASCII art banner
-    echo ''
-    echo '              |  '(set_color magenta --bold)'   __|   __|    \     \ | '(set_color normal)
-    echo '    \    -_)   _|'(set_color magenta --bold)' \__ \  (      _ \   .  | '(set_color normal)
-    echo ' _| _| \___| \__|'(set_color magenta --bold)' ____/ \___| _/  _\ _|\_|  '(set_color normal)
-    echo ''
+    ezpz_banner netscan
 
     # Variables
     set fast_scan 0
