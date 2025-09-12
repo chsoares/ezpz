@@ -45,6 +45,9 @@ Usage: ezpz netscan [-F] <target>
         end
     end
 
+    # Authenticate for sudo command
+    sudo -v >/dev/null
+    
     # Temporary file and trap management
     set targets_tmp (mktemp)
     # Trap for cleanup
@@ -70,7 +73,7 @@ Usage: ezpz netscan [-F] <target>
         # Host discovery with CIDR
         ezpz_header "Running fping on the $target network"
         ezpz_cmd "fping -agq \"$target\""
-        fping -agq "$target" | tee "$targets_tmp"
+        ezpz_spin fping -agq "$target" | tee "$targets_tmp"
         cat "$targets_tmp" >> "$hostsfile" && sort -u -o "$hostsfile" "$hostsfile"
         ezpz_cmd "Saving enumerated hosts to ./$hostsfile"
     else if echo "$target" | grep -qE "$ip_pattern"
@@ -93,8 +96,8 @@ Usage: ezpz netscan [-F] <target>
     ezpz_cmd "sudo nmap -T4 -Pn -F --min-rate 10000 <target_ip>"
     while read -l item
         ezpz_info "Scanning $item..."
-        sudo /usr/bin/nmap -T4 -Pn -F --min-rate 10000 "$item" |
-            sed -n '/PORT/,$p' |
+        ezpz_spin sudo /usr/bin/nmap -T4 -Pn -F --min-rate 10000 "$item" |
+            sed -n '/^PORT/,$p' |
             sed -n '/Nmap done/q;p' |
             grep --color=never -v '^[[:space:]]*$'
     end < "$targets_tmp"
@@ -109,8 +112,8 @@ Usage: ezpz netscan [-F] <target>
     ezpz_cmd "sudo nmap -T4 -Pn -sVC -p- --min-rate 10000 -vv <target_ip>"
     while read -l item
         ezpz_info "Scanning $item..."
-        sudo /usr/bin/nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv 2>/dev/null |
-            sed -n '/PORT/,$p' |
+        ezpz_spin sudo /usr/bin/nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv |
+            sed -n '/^PORT/,$p' |
             sed -n '/Script Post-scanning/q;p' |
             grep --color=never -v '^[[:space:]]*$' |
             sed 's/^|/'(set_color blue)'&/;s/$/'(set_color normal)'/'
@@ -122,8 +125,8 @@ Usage: ezpz netscan [-F] <target>
     ezpz_cmd "sudo nmap -T4 -sU --open --min-rate 10000 <target_ip>"
     while read -l item
         ezpz_info "Scanning $item..."
-        sudo /usr/bin/nmap -T4 -sU --open --min-rate 10000 "$item" |
-            sed -n '/PORT/,$p' |
+        ezpz_spin sudo /usr/bin/nmap -T4 -sU --open --min-rate 10000 "$item" |
+            sed -n '/ŝPORT/,$p' |
             sed -n '/Nmap done/q;p' |
             grep --color=never -v '^[[:space:]]*$'
     end < "$targets_tmp"
