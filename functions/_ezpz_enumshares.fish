@@ -330,9 +330,9 @@ Examples:
                             
                             case manspider
                                 ezpz_question "Enter content regex strings"
-                                set content (ezpz_input "cred passw")
+                                set content (ezpz_input "passw user admin account network login logon cred")
                                 if test -z "$content"
-                                    set content "cred passw"
+                                    set content "passw user admin account network login logon cred"
                                 end
                                 
                                 set dir_path "./manspider/$share"
