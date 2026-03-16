@@ -93,6 +93,7 @@ function install_git_repos
     else
         ezpz_success "krbrelayx (already exists)"
     end
+end
     
 install_git_repos
 
