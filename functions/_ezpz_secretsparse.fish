@@ -64,7 +64,7 @@ Usage: ezpz secretsparse <base_filename>
     if test -f "$base_path_secretsdump.sam"
         ezpz_info "Parsing SAM hashes from $base_path_secretsdump.sam..."
         # Print to screen and redirect to temporary collection file
-        cat "$base_path_secretsdump.sam" | awk -F: '{print $1":"$4}' | tee /dev/tty >> "$tmp_collection_file"
+        cat "$base_path_secretsdump.sam" | awk -F: '{print $1":"$4}' | tee -a "$tmp_collection_file"
         set hashes_found_for_this_run 1
     else
         ezpz_warn "SAM file not found: $base_path_secretsdump.sam"
@@ -75,7 +75,7 @@ Usage: ezpz secretsparse <base_filename>
         ezpz_info "Parsing LSA secrets from $base_path_secretsdump.secrets..."
         # Grep for lines that look like user:id:lm:nt (common secretsdump output)
         # Then awk for user:nt_hash. Print to screen and redirect to temp file.
-        cat "$base_path_secretsdump.secrets" | grep -oP '^\w+:\d+:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' | tee /dev/tty >> "$tmp_collection_file"
+        cat "$base_path_secretsdump.secrets" | grep -oP '^\w+:\d+:[0-9a-f]{32}:[0-9a-f]{32}' | awk -F: '{print $1":"$4}' | tee -a "$tmp_collection_file"
         set hashes_found_for_this_run 1
     else
         ezpz_warn "SECRETS file not found: $base_path_secretsdump.secrets"
@@ -85,7 +85,7 @@ Usage: ezpz secretsparse <base_filename>
     if test -f "$base_path_secretsdump.ntds"
         ezpz_info "Parsing NTDS hashes from $base_path_secretsdump.ntds..."
         # Print to screen and redirect to temporary file
-        cat "$base_path_secretsdump.ntds" | awk -F: '{print $1":"$4}' | tee /dev/tty >> "$tmp_collection_file"
+        cat "$base_path_secretsdump.ntds" | awk -F: '{print $1":"$4}' | tee -a "$tmp_collection_file"
         set hashes_found_for_this_run 1
     else
         ezpz_warn "NTDS file not found: $base_path_secretsdump.ntds"
@@ -94,7 +94,10 @@ Usage: ezpz secretsparse <base_filename>
     # --- Final Consolidation ---
     if test $hashes_found_for_this_run -eq 1 -a -s "$tmp_collection_file"
         ezpz_info "Consolidating and deduplicating hashes for '$base_filename'..."
-        sort -u "$tmp_collection_file" >> "$output_parsed_file"
+        # Merge with a previous run instead of appending duplicates.
+        set parsed_tmp (mktemp)
+        cat "$output_parsed_file" "$tmp_collection_file" 2>/dev/null | sort -u > $parsed_tmp
+        mv $parsed_tmp "$output_parsed_file"
         ezpz_cmd "Parsed hashes for '$base_filename' saved to '$output_parsed_file'."
     else
         ezpz_warn "No hashes found or extracted for '$base_filename'."
@@ -103,10 +106,18 @@ Usage: ezpz secretsparse <base_filename>
     # --- Update all-secrets.parsed ---
     ezpz_info "Updating global 'all-secrets.parsed' with all unique hashes..."
     set all_parsed_hashes_file_root "$base_dir/all-secrets.parsed"
-    # Find all existing <target>-secrets.parsed files in the base directory
-    # Concatenate them, sort -u, and save to all-secrets.parsed
-    find "$base_dir" -maxdepth 1 -type f -name "*-secrets.parsed" -print0 | xargs -0 cat 2>/dev/null | sort -u > "$all_parsed_hashes_file_root"
-    ezpz_cmd "All unique parsed hashes consolidated and saved to '$all_parsed_hashes_file_root'."
+    # Find all existing <target>-secrets.parsed files in the base directory.
+    # Exclude all-secrets.parsed itself and write through a temp file so the
+    # output is not truncated while it is being read.
+    set all_parsed_tmp (mktemp)
+    find "$base_dir" -maxdepth 1 -type f -name "*-secrets.parsed" ! -name "all-secrets.parsed" -print0 | xargs -0 cat 2>/dev/null | sort -u > $all_parsed_tmp
+    if test -s $all_parsed_tmp
+        mv $all_parsed_tmp "$all_parsed_hashes_file_root"
+        ezpz_cmd "All unique parsed hashes consolidated and saved to '$all_parsed_hashes_file_root'."
+    else
+        rm -f $all_parsed_tmp
+        ezpz_warn "No per-target parsed files found; 'all-secrets.parsed' was not updated."
+    end
 
     # Finalization
     ezpz_success "Done."

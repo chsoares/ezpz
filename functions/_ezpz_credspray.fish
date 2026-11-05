@@ -120,7 +120,7 @@ Usage: ezpz credspray -t <target> -u <usersfile> [-p <password>] [-c <credsfile>
     # Run kerbrute for each password
     for password in $passwords
         ezpz_info "Testing password: $password"
-        kerbrute passwordspray --dc $_flag_target -d $_flag_domain $_flag_usersfile $password | grep -oE "VALID LOGIN.*"
+        kerbrute passwordspray --dc $_flag_target -d $_flag_domain $_flag_usersfile $password | grep -aoE "VALID LOGIN.*" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
     end
 
     ezpz_success "Password spray completed."
