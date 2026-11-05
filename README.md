@@ -14,6 +14,7 @@ A Fish Shell-based collection of penetration testing enumeration scripts, refact
 - `enumshares`: SMB share enumeration
 - `enumsqli`: SQL Server enumeration
 - `testcreds`: Credential validation against targets
+- `credspray`: Kerberos password spraying with lockout guard
 - `loot`: Information extraction from compromised Windows hosts
 - `secretsparse`: Parse secretsdump.py output for credentials
 
@@ -77,6 +78,38 @@ ezpz secretsparse /path/to/secretsdump_output.txt
 ```
 
 Use `ezpz --help` or `ezpz <command> --help` for detailed usage information.
+
+## credspray
+
+Kerberos password spraying with `kerbrute`, designed for two workflows:
+
+1. Spray one or more known passwords against a user list.
+2. **Hail mary**: take a `user:pass` creds file, extract users and unique
+   passwords, skip NT hashes, and spray everything.
+
+```fish
+# One password against a user list
+ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \
+    -u users.txt -p 'Winter2024'
+
+# Hail mary from creds.txt
+ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \
+    -c creds.txt --safe --delay 1000
+
+# Hail mary + extra users + username-as-password
+ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \
+    -c creds.txt -u users.txt --user-as-pass --safe
+```
+
+`-c creds.txt` extracts both usernames and passwords. Lines starting with `#`
+are ignored, `DOMAIN\user` / `user@domain` are normalized, and NT hashes
+(32 hex chars) are skipped — use `testcreds` or `nxc -H` for pass-the-hash.
+
+Before spraying, the wrapper queries the domain password policy with the first
+usable credential. If the number of attempts per user reaches the lockout
+threshold, it refuses to continue unless `--force` is supplied. A failed policy
+probe also counts as one attempt for that user. Use `--safe` to abort when
+kerbrute detects a locked account, and `--delay <ms>` to throttle attempts.
 
 ## Requirements
 
