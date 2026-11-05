@@ -248,11 +248,21 @@ Examples:
         }' > $share_names_tmp
 
         # Process each share
-        ezpz_question "Select shares for spidering"
-        set share_options (string join ' ' (cat $share_names_tmp))
+        if not test -s $share_names_tmp
+            ezpz_warn "No readable non-default shares found on $target."
+            continue
+        end
+
+        ezpz_question "Select shares for spidering (x to toggle, Enter to confirm)"
+        set share_options (cat $share_names_tmp)
         set choice (ezpz_choose_many $share_options)
-        
-        for share in (string split ' ' $choice)
+
+        if test -z "$choice[1]"
+            ezpz_warn "No shares selected."
+            continue
+        end
+
+        for share in $choice
             test -z "$share"; and continue
             
             set regex_pattern ".*"
@@ -346,12 +356,10 @@ Examples:
                                 
                             case skip
                                 # Skip this share - no action needed
-                        end
                     end
                 else
                     ezpz_warn "No files found matching the pattern in share '$share'."
                 end
-            end
         end
     end < $hosts_tmp
 

@@ -40,7 +40,8 @@ function ezpz
             set -l log_path (ezpz_get_log_path $subcmd)
             set -l temp_log (mktemp)
             $func_name $argv | tee $temp_log
-            set -l exit_status $status
+            # $status is tee's status; the function's status is pipestatus[1].
+            set -l exit_status $pipestatus[1]
             
             if test $exit_status -eq 0
                 mv $temp_log $log_path
