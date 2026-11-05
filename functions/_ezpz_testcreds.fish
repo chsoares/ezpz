@@ -14,13 +14,14 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
   -u, --user      Username for authentication
   -p, --password  Password for authentication
   -H, --hash      NTLM hash for pass-the-hash authentication
+  -d, --domain    Domain for authentication
   -k, --kerb      Use Kerberos authentication
   -x, --protocols Specific protocols to test (comma-separated)
                   Default: smb,winrm,mssql,rdp,ssh,ftp
 "
 
     # Parse arguments
-    argparse 't/target=' 'f/file=' 'u/user=' 'p/password=' 'H/hash=' 'k/kerb' 'x/protocols=' 'h/help' -- $argv
+    argparse 't/target=' 'f/file=' 'u/user=' 'p/password=' 'H/hash=' 'd/domain=' 'k/kerb' 'x/protocols=' 'h/help' -- $argv
     or begin
         ezpz_error "Failed to parse arguments."
         echo $usage
@@ -69,8 +70,14 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             set line (string trim -- $line)
             test -z "$line" && continue
             
-            set -l user_from_file (string split : $line)[1]
-            set -l pass_or_hash_from_file (string split : $line)[2]
+            set -l user_from_file (string split -m1 : $line)[1]
+            set -l pass_or_hash_from_file (string split -m1 : $line)[2]
+
+            # Apply -d/--domain to bare usernames (domain\\user or user@domain
+            # entries in the file are left untouched).
+            if set -q _flag_domain; and not string match -q '*\\*' -- $user_from_file; and not string match -q '*@*' -- $user_from_file
+                set user_from_file "$_flag_domain\\$user_from_file"
+            end
             
             set cred_count (math $cred_count + 1)
             
@@ -94,7 +101,11 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         end < $_flag_file
     else
         # Use command line credentials - build like enumdomain
-        set -l nxc_auth $_flag_target -u $_flag_user
+        set -l cli_user $_flag_user
+        if set -q _flag_domain; and not string match -q '*\\*' -- $cli_user; and not string match -q '*@*' -- $cli_user
+            set cli_user "$_flag_domain\\$cli_user"
+        end
+        set -l nxc_auth $_flag_target -u $cli_user
         
         if set -q _flag_password
             set -a nxc_auth -p $_flag_password
@@ -106,7 +117,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             set -a nxc_auth -k
         end
         
-        set cred_sets "$_flag_user"
+        set cred_sets "$cli_user"
         set -g cred_1 $nxc_auth
     end
 
@@ -124,14 +135,14 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             
             # Test normal auth - same pattern as enumdomain
             timeout 60s nxc $protocol $cred_args | \
-            grep --text --color=never -E '\+|DISABLED|ERROR' | \
+            grep --text --color=never -E '\+|DISABLED|ERROR|STATUS_|\[-\]' | \
             string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
             string replace -r '\s+' ' '
 
             # Test local auth for supported protocols
             if not contains $protocol ssh ftp
                 timeout 60s nxc $protocol $cred_args --local-auth | \
-                grep --text --color=never + | \
+                grep --text --color=never -E '\+|STATUS_|\[-\]' | \
                 awk '{print $0 " '(set_color blue)'(local auth)'(set_color normal)'"}' | \
                 string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
                 string replace -r '\s+' ' '
