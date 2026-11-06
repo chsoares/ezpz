@@ -73,8 +73,19 @@ Usage: ezpz netscan [-F] <target>
         # Host discovery with CIDR
         ezpz_header "Running fping on the $target network"
         ezpz_cmd "fping -agq \"$target\""
-        ezpz_spin fping -agq "$target" | tee "$targets_tmp"
-        cat "$targets_tmp" >> "$hostsfile" && sort -u -o "$hostsfile" "$hostsfile"
+
+        # Run fping inside the spinner with its output redirected to a temp
+        # file. Streaming it with --show-output makes fping lines collide with
+        # the gum spinner, so buffer and print the sorted result afterwards.
+        set -l fping_tmp (mktemp)
+        gum spin --spinner minidot --title " discovering hosts..." \
+            --spinner.foreground 6 --title.foreground 5 -- \
+            fish -c 'fping -agq $argv[1] > $argv[2]' -- "$target" "$fping_tmp"
+
+        grep --color=never -v '^[[:space:]]*$' "$fping_tmp" | sort -Vu | tee "$targets_tmp"
+        rm -f "$fping_tmp"
+
+        cat "$targets_tmp" >> "$hostsfile" && sort -Vu -o "$hostsfile" "$hostsfile"
         ezpz_cmd "Saving enumerated hosts to ./$hostsfile"
     else if echo "$target" | grep -qE "$ip_pattern"
         # Single IP
