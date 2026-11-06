@@ -176,3 +176,16 @@ rm -f $_tmp
 - Verify `ezpz_input` returns user text and falls back to default on empty
 - Verify `ezpz_confirm` yes/no works in selfrelay
 - Verify piped post-processing still produces correct filtered output
+
+---
+
+## Priority 4: checkvulns audit (2026-11-06)
+
+- [x] Run full `checkvulns` against 10.10.0.0/24 with a TGT
+- [x] Run with a CIFS-only ccache (SMB checks, LDAP/Kerberos failures)
+- [x] Run without credentials (null-session checks)
+- [x] Add one concise result line per module (`No result / not vulnerable`)
+- [x] Deduplicate module output and suppress tracebacks/DNS noise
+- [x] Fix timeout detection (use the spinner's child exit status)
+- [x] Trim/comment/dedupe target files and skip unreachable/auth-failed hosts
+- [ ] Optional: machine-readable summary/JSON output

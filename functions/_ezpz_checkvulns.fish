@@ -1,3 +1,33 @@
+# Run one nxc vulnerability module with a spinner and a concise result.
+function __ezpz_checkvulns_module --argument-names label proto module target
+    set -l auth $argv[5..-1]
+
+    ezpz_header $label
+    ezpz_cmd "nxc $proto $target $auth -M $module"
+
+    set -l tmp (mktemp)
+    ezpz_spin_capture $tmp timeout $timeout_secs nxc $proto $target $auth -M $module
+    set -l rc $status
+    set -l lines (grep -avE '\[\*\]|\[\+\]|\[-\]|\[!\]' $tmp \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' \
+        | grep -aiE 'vulnerable|next step|enabled|found|unable to detect|S-1-5-21|spooler|webdav|petitpotam|printerbug|dfscoerce|mseven|coerce|nopac|badsuccessor|remove.?mic|smbghost' \
+        | grep -avE 'Traceback|File "|^[[:space:]]*[│╭╰]|KDC_ERR|KerberosError|Name or service|Errno|Exception|module:' \
+        | sort -u)
+
+    if test $rc -eq 124
+        ezpz_warn "Timeout reached while testing $label on $target"
+    else if grep -aqE 'KDC_ERR|KerberosError' $tmp
+        echo "  No result / Kerberos realm or authentication error"
+    else if grep -aqE 'Name or service not known|Errno -2' $tmp
+        echo "  No result / DNS resolution error"
+    else if test -n "$lines"
+        printf '  %s\n' $lines
+    else
+        echo "  No result / not vulnerable"
+    end
+    rm -f $tmp
+end
+
 function _ezpz_checkvulns
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
@@ -101,125 +131,54 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
     function _check_single_target
         set target $argv[1]
         set auth_string $argv[2..-1]
-        
 
         ezpz_title "Checking for vulnerabilities on $target"
 
-        # Test SMB connection first
+        # Connectivity/auth preflight.
         set smb_test_output (timeout $timeout_secs nxc smb $target $auth_string 2>/dev/null)
-        
-        # Check if connection failed based on different scenarios
-        set should_skip 0
-        
-        # If no credentials provided, only skip if output is completely empty
         if test (count $auth_string) -eq 0
             if test -z "$smb_test_output"
-                set should_skip 1
                 ezpz_warn "SMB connection failed for $target (no response). Skipping."
+                return
             end
         else
-            # If credentials provided, check for authentication failures
-            if echo "$smb_test_output" | grep -q "\[-\]"
-                set should_skip 1
+            if test -z "$smb_test_output"
+                ezpz_warn "SMB connection failed for $target (no response). Skipping."
+                return
+            else if not string match -qr '\[\+\]' -- $smb_test_output
                 ezpz_warn "SMB authentication failed for $target. Skipping."
-            else if test -z "$smb_test_output"
-                set should_skip 1
-                ezpz_warn "SMB connection failed for $target (no response). Skipping."
+                return
             end
         end
-        
-        if test $should_skip -eq 1
-            return
-        end
 
-        # Print Spooler
-        ezpz_header "Print Spooler"
-        ezpz_cmd "nxc smb $target $auth_string -M spooler"
-        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M spooler | grep -a 'SPOOLER' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing Print Spooler on $target"
-        end
+        __ezpz_checkvulns_module "Print Spooler" smb spooler $target $auth_string
+        __ezpz_checkvulns_module "WebDAV Detection" smb webdav $target $auth_string
+        __ezpz_checkvulns_module "EternalBlue (MS17-010)" smb ms17-010 $target $auth_string
+        __ezpz_checkvulns_module "Zerologon (CVE-2020-1472)" smb zerologon $target $auth_string
+        __ezpz_checkvulns_module "PrintNightmare (CVE-2021-34527)" smb printnightmare $target $auth_string
 
-        # WebDAV Detection
-        ezpz_header "WebDAV Detection"
-        ezpz_cmd "nxc smb $target $auth_string -M webdav"
-        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M webdav | grep -a 'WEBDAV' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing WebDAV on $target"
-        end
-
-        # EternalBlue (MS17-010)
-        ezpz_header "EternalBlue (MS17-010)"
-        ezpz_cmd "nxc smb $target $auth_string -M ms17-010"
-        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M ms17-010 | grep -a 'MS17-010' | tr -s " " | cut -d " " -f 3-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing MS17-010 on $target"
-        end
-
-        # Zerologon (CVE-2020-1472)
-        ezpz_header "Zerologon (CVE-2020-1472)"
-        ezpz_cmd "nxc smb $target $auth_string -M zerologon"
-        ezpz_spin timeout 300 nxc smb $target $auth_string -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing Zerologon on $target"
-        end
-
-        # PrintNightmare (CVE-2021-34527)
-        ezpz_header "PrintNightmare (CVE-2021-34527)"
-        ezpz_cmd "nxc smb $target $auth_string -M printnightmare"
-        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M printnightmare | grep -a 'PRINT' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing PrintNightmare on $target"
-        end
-
-        # NoPac (CVE-2021-42278)
-        ezpz_header "NoPac (CVE-2021-42278)"
         if test (count $auth_string) -eq 0
-            echo "NoPac requires valid credentials to test. Skipping."
+            ezpz_header "NoPac (CVE-2021-42278)"
+            echo "  NoPac requires valid credentials to test. Skipping."
         else
-            ezpz_cmd "nxc smb $target $auth_string -M nopac"
-            ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
-            if test $status -eq 124
-                ezpz_warn "Timeout reached while testing NoPac on $target"
-            end
+            __ezpz_checkvulns_module "NoPac (CVE-2021-42278)" smb nopac $target $auth_string
         end
 
-        # Coerce Attacks (PetitPotam, etc.)
-        ezpz_header "Coerce Attacks (PetitPotam, etc.)"
-        ezpz_cmd "nxc smb $target $auth_string -M coerce_plus"
-        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing Coerce on $target"
-        end
-
-        # Remove MIC (CVE-2019-1040)
-        ezpz_header "Remove MIC (CVE-2019-1040)"
-        ezpz_cmd "nxc smb $target $auth_string -M remove-mic"
-        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M remove-mic | grep -a 'REMOVE-MIC' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing Remove MIC on $target"
-        end
-
-        # SMBGhost (CVE-2020-0796)
-        ezpz_header "SMBGhost (CVE-2020-0796)"
-        ezpz_cmd "nxc smb $target $auth_string -M smbghost"
-        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M smbghost | grep -a 'SMBGHOST' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing SMBGhost on $target"
-        end
-
-        # BadSuccessor
-        ezpz_header "BadSuccessor"
-        ezpz_cmd "nxc ldap $target $auth_string -M badsuccessor"
-        ezpz_spin timeout $timeout_secs nxc ldap $target $auth_string -M badsuccessor | grep -a 'BADSUCCESSOR' | tr -s " " | cut -d " " -f 5-
-        if test $status -eq 124
-            ezpz_warn "Timeout reached while testing BadSuccessor on $target"
-        end
+        __ezpz_checkvulns_module "Coerce Attacks (PetitPotam, etc.)" smb coerce_plus $target $auth_string
+        __ezpz_checkvulns_module "Remove MIC (CVE-2019-1040)" smb remove-mic $target $auth_string
+        __ezpz_checkvulns_module "SMBGhost (CVE-2020-0796)" smb smbghost $target $auth_string
+        __ezpz_checkvulns_module "BadSuccessor" ldap badsuccessor $target $auth_string
     end
 
     # Process target(s)
     if test -f "$_flag_target"
+        set -l seen
         while read -l target
+            set target (string trim -- $target)
+            test -z "$target"; and continue
+            string match -q '#*' -- $target; and continue
+            contains -- $target $seen; and continue
+            set -a seen $target
             _check_single_target $target $auth_args
             echo ""
         end < $_flag_target
