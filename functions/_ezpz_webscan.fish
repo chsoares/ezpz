@@ -108,7 +108,7 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
     ezpz_header "Running WhatWeb on $url"
     ezpz_cmd "whatweb -a3 -v \"$url\""
     echo ""
-    whatweb -a3 -v "$url"
+    ezpz_spin whatweb -a3 -v "$url"
     echo ""
 
     # Directory and file fuzzing with extensions

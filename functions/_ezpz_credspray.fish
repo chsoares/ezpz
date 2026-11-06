@@ -309,12 +309,13 @@ Examples:
         ezpz_info "Testing username as password"
         ezpz_cmd "kerbrute $kb $users_tmp --user-as-pass"
 
+        ezpz_spin_capture $run_tmp kerbrute $kb $users_tmp --user-as-pass
+        set -l rc $status
         if set -q _flag_verbose
-            kerbrute $kb $users_tmp --user-as-pass 2>&1 | tee $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+            cat $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
         else
-            kerbrute $kb $users_tmp --user-as-pass 2>&1 | tee $run_tmp | grep -aEi 'VALID LOGIN|ABORT|locked|error' | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+            grep -aEi 'VALID LOGIN|ABORT|locked|error' $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
         end
-        set -l rc $pipestatus[1]
         grep -aiE 'VALID LOGIN' $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g' >> $valid_tmp
 
         if grep -aqiE 'locked|abort' $run_tmp
@@ -332,12 +333,13 @@ Examples:
         ezpz_info "Testing password: $password"
         ezpz_cmd "kerbrute $kb $users_tmp <PASSWORD>"
 
+        ezpz_spin_capture $run_tmp kerbrute $kb $users_tmp $password
+        set -l rc $status
         if set -q _flag_verbose
-            kerbrute $kb $users_tmp $password 2>&1 | tee $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+            cat $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
         else
-            kerbrute $kb $users_tmp $password 2>&1 | tee $run_tmp | grep -aEi 'VALID LOGIN|ABORT|locked|error' | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+            grep -aEi 'VALID LOGIN|ABORT|locked|error' $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
         end
-        set -l rc $pipestatus[1]
         grep -aiE 'VALID LOGIN' $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g' >> $valid_tmp
 
         if grep -aqiE 'locked|abort' $run_tmp
