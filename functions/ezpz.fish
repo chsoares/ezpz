@@ -16,9 +16,19 @@ function ezpz_get_log_path
 end
 
 function ezpz
-    # Get EZPZ_HOME
-    if not set -q EZPZ_HOME
-        ezpz_error "EZPZ_HOME environment variable not set. Please set it to the ezpz installation directory."
+    # Resolve EZPZ_HOME from the function file when it is not exported.
+    # This makes the dispatcher usable even if the user forgot to export it.
+    if not set -q EZPZ_HOME; or not test -d "$EZPZ_HOME"
+        set -l self (functions --details ezpz 2>/dev/null)
+        if test -n "$self"; and test -f "$self"
+            set self (path resolve $self)
+            set -gx EZPZ_HOME (path dirname (path dirname $self))
+        end
+    end
+
+    if not set -q EZPZ_HOME; or not test -d "$EZPZ_HOME"
+        echo "EZPZ_HOME is not set and could not be resolved from the ezpz function file." >&2
+        echo "Set it with: set -gx EZPZ_HOME /path/to/ezpz" >&2
         return 1
     end
 
