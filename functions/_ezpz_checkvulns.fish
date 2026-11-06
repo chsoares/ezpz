@@ -135,7 +135,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # Print Spooler
         ezpz_header "Print Spooler"
         ezpz_cmd "nxc smb $target $auth_string -M spooler"
-        timeout $timeout_secs nxc smb $target $auth_string -M spooler | grep -a 'SPOOLER' | tr -s " " | cut -d " " -f 5-
+        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M spooler | grep -a 'SPOOLER' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing Print Spooler on $target"
         end
@@ -143,7 +143,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # WebDAV Detection
         ezpz_header "WebDAV Detection"
         ezpz_cmd "nxc smb $target $auth_string -M webdav"
-        timeout $timeout_secs nxc smb $target $auth_string -M webdav | grep -a 'WEBDAV' | tr -s " " | cut -d " " -f 5-
+        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M webdav | grep -a 'WEBDAV' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing WebDAV on $target"
         end
@@ -151,7 +151,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # EternalBlue (MS17-010)
         ezpz_header "EternalBlue (MS17-010)"
         ezpz_cmd "nxc smb $target $auth_string -M ms17-010"
-        timeout $timeout_secs nxc smb $target $auth_string -M ms17-010 | grep -a 'MS17-010' | tr -s " " | cut -d " " -f 3-
+        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M ms17-010 | grep -a 'MS17-010' | tr -s " " | cut -d " " -f 3-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing MS17-010 on $target"
         end
@@ -159,7 +159,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # Zerologon (CVE-2020-1472)
         ezpz_header "Zerologon (CVE-2020-1472)"
         ezpz_cmd "nxc smb $target $auth_string -M zerologon"
-        timeout 300 nxc smb $target $auth_string -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
+        ezpz_spin timeout 300 nxc smb $target $auth_string -M zerologon | grep -a 'ZEROLOGON' | tr -s " " | cut -d " " -f 5- | sed 's/[-]//g' | grep -v "DCERPCException"
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing Zerologon on $target"
         end
@@ -167,7 +167,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # PrintNightmare (CVE-2021-34527)
         ezpz_header "PrintNightmare (CVE-2021-34527)"
         ezpz_cmd "nxc smb $target $auth_string -M printnightmare"
-        timeout $timeout_secs nxc smb $target $auth_string -M printnightmare | grep -a 'PRINT' | tr -s " " | cut -d " " -f 5-
+        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M printnightmare | grep -a 'PRINT' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing PrintNightmare on $target"
         end
@@ -178,7 +178,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
             echo "NoPac requires valid credentials to test. Skipping."
         else
             ezpz_cmd "nxc smb $target $auth_string -M nopac"
-            timeout $timeout_secs nxc smb $target $auth_string -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+            ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M nopac | grep -a 'NOPAC' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
             if test $status -eq 124
                 ezpz_warn "Timeout reached while testing NoPac on $target"
             end
@@ -187,7 +187,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # Coerce Attacks (PetitPotam, etc.)
         ezpz_header "Coerce Attacks (PetitPotam, etc.)"
         ezpz_cmd "nxc smb $target $auth_string -M coerce_plus"
-        timeout $timeout_secs nxc smb $target $auth_string -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
+        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M coerce_plus | grep -a 'COERCE' | tr -s " " | cut -d " " -f 5- | tr -s '\n'
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing Coerce on $target"
         end
@@ -195,7 +195,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # Remove MIC (CVE-2019-1040)
         ezpz_header "Remove MIC (CVE-2019-1040)"
         ezpz_cmd "nxc smb $target $auth_string -M remove-mic"
-        timeout $timeout_secs nxc smb $target $auth_string -M remove-mic | grep -a 'REMOVE-MIC' | tr -s " " | cut -d " " -f 5-
+        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M remove-mic | grep -a 'REMOVE-MIC' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing Remove MIC on $target"
         end
@@ -203,7 +203,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # SMBGhost (CVE-2020-0796)
         ezpz_header "SMBGhost (CVE-2020-0796)"
         ezpz_cmd "nxc smb $target $auth_string -M smbghost"
-        timeout $timeout_secs nxc smb $target $auth_string -M smbghost | grep -a 'SMBGHOST' | tr -s " " | cut -d " " -f 5-
+        ezpz_spin timeout $timeout_secs nxc smb $target $auth_string -M smbghost | grep -a 'SMBGHOST' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing SMBGhost on $target"
         end
@@ -211,7 +211,7 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         # BadSuccessor
         ezpz_header "BadSuccessor"
         ezpz_cmd "nxc ldap $target $auth_string -M badsuccessor"
-        timeout $timeout_secs nxc ldap $target $auth_string -M badsuccessor | grep -a 'BADSUCCESSOR' | tr -s " " | cut -d " " -f 5-
+        ezpz_spin timeout $timeout_secs nxc ldap $target $auth_string -M badsuccessor | grep -a 'BADSUCCESSOR' | tr -s " " | cut -d " " -f 5-
         if test $status -eq 124
             ezpz_warn "Timeout reached while testing BadSuccessor on $target"
         end

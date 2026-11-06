@@ -134,5 +134,5 @@ Examples:
         return 1
     end
     
-    nxc $protocol $nxc_target $auth_args -x $command 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    ezpz_spin nxc $protocol $nxc_target $auth_args -x $command | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
 end

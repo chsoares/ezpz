@@ -53,6 +53,16 @@ function ezpz_spin
     gum spin --spinner minidot --title " $random_verb..." --spinner.foreground 6 --title.foreground 5 --show-output -- $argv
 end
 
+# Run a command behind a spinner and capture stdout+stderr in a file. Useful
+# when the caller needs to parse the output or show errors afterwards without
+# mixing command lines with the spinner.
+function ezpz_spin_capture --argument-names outfile
+    set -l verbs "running" "executing" "processing" "computing" "pwning" "exploiting" "hacking" "cracking" "scanning" "enumerating" "fuzzing" "bruteforcing" "rooting" "escalating" "pivoting" "tunneling" "injecting" "dumping" "decrypting" "reverse-engineering" "brewing" "cooking" "dancing" "vibing" "contemplating" "procrastinating" "caffeinating" "debugging life" "yolo-ing" "memeing" "overthinking" "quantum-leaping" "time-traveling" "teleporting" "summoning chaos" "manifesting packets" "channeling energy" "consulting the void" "awakening the machine"
+    set -l random_verb $verbs[(math (random) % (count $verbs) + 1)]
+    gum spin --spinner minidot --title " $random_verb..." --spinner.foreground 6 --title.foreground 5 -- \
+        fish --no-config -c 'set out $argv[1]; set -e argv[1]; $argv > $out 2>&1' -- $outfile $argv[2..-1]
+end
+
 # Resolve a target IP/hostname to the DC record advertised by a previous
 # `ezpz adscan` run. Searches *_etchosts.txt in the current directory first,
 # then /etc/hosts. Prints "IP<TAB>FQDN<TAB>DOMAIN" for every match.

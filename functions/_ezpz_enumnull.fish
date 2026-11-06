@@ -117,7 +117,7 @@ Examples:
     ezpz_title "Starting enumeration on $target using $auth_desc..."
 
     # Extract domain first (fast)
-    set domain (timeout 60 nxc smb $target 2>/dev/null | grep -a 'domain:' | head -1 | sed -n 's/.*domain:\([^)]*\).*/\1/p')
+    set domain (timeout 60 nxc smb $target | grep -a 'domain:' | head -1 | sed -n 's/.*domain:\([^)]*\).*/\1/p')
     if test $status -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
@@ -143,7 +143,7 @@ Examples:
     # User Enumeration - prioritize --rid-brute over --users
     ezpz_header "Enumerating users with RID Bruteforcing"
     ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
-    nxc smb $nxc_args --rid-brute 10000 2>/dev/null | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+    ezpz_spin nxc smb $nxc_args --rid-brute 10000 | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
     
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
@@ -156,7 +156,7 @@ Examples:
         # Fallback to --users
         ezpz_header "Enumerating users (fallback)"
         ezpz_cmd "nxc smb $nxc_args --users"
-        nxc smb $nxc_args --users 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+        ezpz_spin nxc smb $nxc_args --users | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping."
@@ -215,7 +215,7 @@ Examples:
     ezpz_header "Enumerating shares"
     ezpz_cmd "nxc smb $nxc_args --shares --smb-timeout 999"
     set shares_output (mktemp)
-    timeout 60 nxc smb $nxc_args --shares --smb-timeout 999 2>/dev/null | grep -aE "READ|WRITE|NO ACCESS" | tr -s " " | cut -d " " -f 5- > $shares_output
+    ezpz_spin timeout 60 nxc smb $nxc_args --shares --smb-timeout 999 | grep -aE "READ|WRITE|NO ACCESS" | tr -s " " | cut -d " " -f 5- > $shares_output
     set shares_status $pipestatus[1]
     
     if test $shares_status -eq 124
@@ -264,7 +264,7 @@ Examples:
         set time_file "$domain"_time.hash
     end
     ezpz_cmd "nxc smb $_flag_target -M timeroast"
-    nxc smb $_flag_target -M timeroast 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
+    ezpz_spin nxc smb $_flag_target -M timeroast | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
     if test -s $time_file
         ezpz_info "Saving hashes to $time_file"
     else
@@ -354,7 +354,7 @@ Examples:
                 end
                 
                 ezpz_cmd "$pre2k_cmd"
-                $pre2k_cmd 2>/dev/null | grep -aioE "VALID CREDENTIALS: .*" --color=never
+                $pre2k_cmd | grep -aioE "VALID CREDENTIALS: .*" --color=never
             else
                 ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
             end

@@ -151,5 +151,5 @@ Examples:
     end
     
     ezpz_cmd "nxc $protocol $nxc_target $auth_args -x <b64 encoded revshell>"
-    nxc $protocol $nxc_target $auth_args -X $command 2>/dev/null | tail -n +3 | tr -s " " | cut -d ' ' -f 6-
+    ezpz_spin nxc $protocol $nxc_target $auth_args -X $command | tail -n +3 | tr -s " " | cut -d ' ' -f 6-
 end

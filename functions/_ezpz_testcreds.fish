@@ -178,7 +178,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             # Test normal auth - same pattern as enumdomain
             # Drop generic failures (bad password, timeouts) but keep [-] lines
             # that carry useful account state (disabled, locked, expired, ...).
-            timeout 60s nxc $protocol $cred_args | \
+            ezpz_spin timeout 60s nxc $protocol $cred_args | \
             grep --text --color=never -v -E '\[-\].*(STATUS_LOGON_FAILURE|STATUS_ACCESS_DENIED)' | \
             grep --text --color=never -E '\+|DISABLED|ERROR|EXPIRED|LOCKED|MUST_CHANGE|NOT_GRANTED|RESTRICTION|INVALID_LOGON_HOURS' | \
             string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
@@ -187,7 +187,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             # Test local auth for supported protocols. nxc rejects --local-auth
             # together with -d/-k, so only run it for local credential sets.
             if not contains $protocol ssh ftp; and not contains -- -d $cred_args; and not contains -- -k $cred_args
-                timeout 60s nxc $protocol $cred_args --local-auth | \
+                ezpz_spin timeout 60s nxc $protocol $cred_args --local-auth | \
                 grep --text --color=never -v -E '\[-\].*(STATUS_LOGON_FAILURE|STATUS_ACCESS_DENIED)' | \
                 grep --text --color=never -E '\+|DISABLED|ERROR|EXPIRED|LOCKED|MUST_CHANGE|NOT_GRANTED|RESTRICTION|INVALID_LOGON_HOURS' | \
                 awk '{print $0 " '(set_color blue)'(local auth)'(set_color normal)'"}' | \

