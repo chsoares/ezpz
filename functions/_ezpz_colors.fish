@@ -53,6 +53,78 @@ function ezpz_spin
     gum spin --spinner minidot --title " $random_verb..." --spinner.foreground 6 --title.foreground 5 --show-output -- $argv
 end
 
+# Resolve a target IP/hostname to the DC record advertised by a previous
+# `ezpz adscan` run. Searches *_etchosts.txt in the current directory first,
+# then /etc/hosts. Prints "IP<TAB>FQDN<TAB>DOMAIN" for every match.
+function ezpz_resolve_dc --argument-names target
+    set -l sources
+    set -a sources (find . -maxdepth 1 -name "*_etchosts.txt" -type f 2>/dev/null)
+    test -r /etc/hosts; and set -a sources /etc/hosts
+    test (count $sources) -gt 0; or return
+
+    awk -v target="$target" '
+        BEGIN { t = tolower(target) }
+        /^[[:space:]]*#/ { next }
+        NF < 2 { next }
+        {
+            hit = (tolower($1) == t)
+            if (!hit) {
+                for (i = 2; i <= NF; i++) {
+                    if (tolower($i) == t) { hit = 1; break }
+                }
+            }
+            if (hit && $2 ~ /\./) {
+                n = split($2, labels, ".")
+                domain = labels[2]
+                for (j = 3; j <= n; j++) domain = domain "." labels[j]
+                print $1 "\t" $2 "\t" domain
+            }
+        }
+    ' $sources 2>/dev/null | sort -u
+end
+
+function ezpz_dc_ip --argument-names target
+    set -l lookup (ezpz_resolve_dc $target)
+    printf '%s\n' $lookup | awk -F'\t' 'NF >= 1 && $1 != "" { print $1; exit }'
+end
+
+function ezpz_dc_fqdn --argument-names target
+    set -l lookup (ezpz_resolve_dc $target)
+    printf '%s\n' $lookup | awk -F'\t' 'NF >= 2 && $2 ~ /\./ { print $2; exit }'
+end
+
+function ezpz_kerberos_has_tgt
+    klist 2>/dev/null | string match -qr 'krbtgt/'
+end
+
+function ezpz_kerberos_principal
+    klist 2>/dev/null | awk -F': ' '/Default principal:/ { print $2; exit }'
+end
+
+# Warn/abort when the current ccache cannot support the requested protocol.
+function ezpz_kerberos_check --argument-names protocol
+    if not command -v klist >/dev/null 2>&1
+        ezpz_warn "klist not found; cannot inspect the Kerberos ccache."
+        return 0
+    end
+
+    set -l principal (ezpz_kerberos_principal)
+    if test -z "$principal"
+        ezpz_error "No Kerberos ccache found. Run getTGT.py/kinit or remove -k."
+        return 1
+    end
+
+    ezpz_info "Kerberos principal: $principal"
+    if not ezpz_kerberos_has_tgt
+        ezpz_warn "Kerberos ccache has no TGT (only service tickets)."
+        if test "$protocol" = winrm; or test "$protocol" = ldap
+            ezpz_error "Kerberos $protocol requires a TGT. Get one with getTGT.py/kinit or use -x smb."
+            return 1
+        end
+    end
+    return 0
+end
+
 
 
 

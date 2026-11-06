@@ -68,7 +68,20 @@ Examples:
     set nxc_auth
     if set -q _flag_user
         set user $_flag_user
-        if set -q _flag_domain
+        set -l bare_user $user
+        if string match -q '*\\*' $bare_user
+            set bare_user (string split '\\' $bare_user)[2]
+        end
+        if string match -q '*@*' $bare_user
+            set bare_user (string split '@' $bare_user)[1]
+        end
+
+        if set -q _flag_kerb
+            set -a nxc_auth -u "$bare_user"
+            if set -q _flag_domain
+                set -a nxc_auth -d "$_flag_domain"
+            end
+        else if set -q _flag_domain
             set -a nxc_auth -u "$_flag_domain\\$user"
         else
             set -a nxc_auth -u "$user"
@@ -87,6 +100,7 @@ Examples:
     end
 
     if set -q _flag_kerb
+        ezpz_kerberos_check smb; or return 1
         set -a nxc_auth -k
         if set -q KRB5CCNAME
             set -a nxc_auth --use-kcache

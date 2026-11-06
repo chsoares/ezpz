@@ -46,11 +46,23 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
     
     # Only add authentication if user is provided
     if set -q _flag_user
-        set -a auth_args -u
-        if set -q _flag_domain
-            set -a auth_args "$_flag_domain\\$_flag_user"
+        set -l bare_user $_flag_user
+        if string match -q '*\\*' $bare_user
+            set bare_user (string split '\\' $bare_user)[2]
+        end
+        if string match -q '*@*' $bare_user
+            set bare_user (string split '@' $bare_user)[1]
+        end
+
+        if set -q _flag_kerb
+            set -a auth_args -u "$bare_user"
+            if set -q _flag_domain
+                set -a auth_args -d "$_flag_domain"
+            end
+        else if set -q _flag_domain
+            set -a auth_args -u "$_flag_domain\\$_flag_user"
         else
-            set -a auth_args "$_flag_user"
+            set -a auth_args -u "$_flag_user"
         end
 
         if set -q _flag_password
@@ -65,6 +77,10 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
                 set -a auth_args --use-kcache
                 ezpz_cmd "Using KRB5CCNAME at $KRB5CCNAME"
             end
+        end
+
+        if set -q _flag_kerb; and not ezpz_kerberos_has_tgt
+            ezpz_warn "Kerberos ccache has no TGT; SMB checks may work, but LDAP checks (e.g. badsuccessor) will fail."
         end
     end
 

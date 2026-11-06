@@ -59,10 +59,23 @@ Examples:
     set target $_flag_target
     set user $_flag_user
 
+    # Kerberos ccache principals are matched by bare username + -d domain.
+    set -l bare_user $user
+    if string match -q '*\\*' $bare_user
+        set bare_user (string split '\\' $bare_user)[2]
+    end
+    if string match -q '*@*' $bare_user
+        set bare_user (string split '@' $bare_user)[1]
+    end
+    set user $bare_user
+
     # Extract DC FQDN from /etc/hosts if needed for Kerberos
     set dc_fqdn ""
     if set -q _flag_kerb
-        set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+        set dc_fqdn (ezpz_dc_fqdn $target)
+        if test -z "$dc_fqdn"
+            set dc_fqdn (awk -v target="$target" '$1 == target {max_len=0; fqdn=""; for(i=2; i<=NF; i++) {if(length($i) > max_len) {max_len=length($i); fqdn=$i}} print fqdn; exit}' /etc/hosts)
+        end
         if test -n "$dc_fqdn"
             # Use FQDN instead of IP for Kerberos
             set target $dc_fqdn
@@ -82,7 +95,12 @@ Examples:
 
     # Build nxc authentication arguments
     set nxc_auth $target
-    if set -q _flag_domain
+    if set -q _flag_kerb
+        set -a nxc_auth -u "$user"
+        if set -q _flag_domain
+            set -a nxc_auth -d "$_flag_domain"
+        end
+    else if set -q _flag_domain
         set -a nxc_auth -u "$_flag_domain\\$user"
     else
         set -a nxc_auth -u "$user"
@@ -96,6 +114,7 @@ Examples:
     end
 
     if set -q _flag_kerb
+        ezpz_kerberos_check ldap; or return 1
         set -a nxc_auth -k
         if set -q KRB5CCNAME
             set -a nxc_auth --use-kcache

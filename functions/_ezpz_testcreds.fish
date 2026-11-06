@@ -54,6 +54,16 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         set protocols smb winrm mssql rdp ssh ftp
     end
 
+    # Resolve the DC FQDN for Kerberos SPNs and warn about a CIFS-only ccache.
+    set -l target $_flag_target
+    set -l dc_fqdn (ezpz_dc_fqdn $target)
+    test -n "$dc_fqdn"; or set dc_fqdn $target
+    set -l nxc_target $target
+    if set -q _flag_kerb; and test -n "$dc_fqdn"
+        set nxc_target $dc_fqdn
+        ezpz_kerberos_check smb; or return 1
+    end
+
     # Store credential sets
     set -l cred_sets
 
@@ -73,16 +83,26 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             set -l user_from_file (string split -m1 : $line)[1]
             set -l pass_or_hash_from_file (string split -m1 : $line)[2]
 
-            # Apply -d/--domain to bare usernames (domain\\user or user@domain
-            # entries in the file are left untouched).
-            if set -q _flag_domain; and not string match -q '*\\*' -- $user_from_file; and not string match -q '*@*' -- $user_from_file
-                set user_from_file "$_flag_domain\\$user_from_file"
+            # Split DOMAIN\user or user@domain into bare user + domain. Kerberos
+            # needs -u bare -d domain to match the ccache principal.
+            set -l user_domain ""
+            if string match -q '*\\*' -- $user_from_file
+                set user_domain (string split '\\' $user_from_file)[1]
+                set user_from_file (string split '\\' $user_from_file)[2]
+            else if string match -q '*@*' -- $user_from_file
+                set user_domain (string split '@' $user_from_file)[2]
+                set user_from_file (string split '@' $user_from_file)[1]
+            else if set -q _flag_domain
+                set user_domain $_flag_domain
             end
             
             set cred_count (math $cred_count + 1)
             
             # Build credential arguments like enumdomain does
-            set -l nxc_auth $_flag_target -u $user_from_file
+            set -l nxc_auth $nxc_target -u $user_from_file
+            if test -n "$user_domain"
+                set -a nxc_auth -d "$user_domain"
+            end
             
             # Detect if it's a hash (32 hex chars) or password
             if string match -qr '^[a-fA-F0-9]{32}$' -- $pass_or_hash_from_file
@@ -93,6 +113,9 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             
             if set -q _flag_kerb
                 set -a nxc_auth -k
+                if set -q KRB5CCNAME
+                    set -a nxc_auth --use-kcache
+                end
             end
             
             # Store this credential set
@@ -100,12 +123,23 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             set -g "cred_$cred_count" $nxc_auth
         end < $_flag_file
     else
-        # Use command line credentials - build like enumdomain
+        # Use command line credentials - bare user + -d domain
         set -l cli_user $_flag_user
-        if set -q _flag_domain; and not string match -q '*\\*' -- $cli_user; and not string match -q '*@*' -- $cli_user
-            set cli_user "$_flag_domain\\$cli_user"
+        set -l cli_domain ""
+        if string match -q '*\\*' -- $cli_user
+            set cli_domain (string split '\\' $cli_user)[1]
+            set cli_user (string split '\\' $cli_user)[2]
+        else if string match -q '*@*' -- $cli_user
+            set cli_domain (string split '@' $cli_user)[2]
+            set cli_user (string split '@' $cli_user)[1]
+        else if set -q _flag_domain
+            set cli_domain $_flag_domain
         end
-        set -l nxc_auth $_flag_target -u $cli_user
+
+        set -l nxc_auth $nxc_target -u $cli_user
+        if test -n "$cli_domain"
+            set -a nxc_auth -d "$cli_domain"
+        end
         
         if set -q _flag_password
             set -a nxc_auth -p $_flag_password
@@ -115,6 +149,9 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         
         if set -q _flag_kerb
             set -a nxc_auth -k
+            if set -q KRB5CCNAME
+                set -a nxc_auth --use-kcache
+            end
         end
         
         set cred_sets "$cli_user"
@@ -132,17 +169,27 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
 
         for protocol in $protocols
             ezpz_info "Trying "(string upper $protocol)"..."
+
+            if set -q _flag_kerb; and not ezpz_kerberos_has_tgt; and contains $protocol winrm mssql rdp ldap
+                ezpz_warn "Skipping "(string upper $protocol)": Kerberos needs a TGT (ccache only has service tickets)."
+                continue
+            end
             
             # Test normal auth - same pattern as enumdomain
+            # Drop generic failures (bad password, timeouts) but keep [-] lines
+            # that carry useful account state (disabled, locked, expired, ...).
             timeout 60s nxc $protocol $cred_args | \
-            grep --text --color=never -E '\+|DISABLED|ERROR|STATUS_|\[-\]' | \
+            grep --text --color=never -v -E '\[-\].*(STATUS_LOGON_FAILURE|STATUS_ACCESS_DENIED)' | \
+            grep --text --color=never -E '\+|DISABLED|ERROR|EXPIRED|LOCKED|MUST_CHANGE|NOT_GRANTED|RESTRICTION|INVALID_LOGON_HOURS' | \
             string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
             string replace -r '\s+' ' '
 
-            # Test local auth for supported protocols
-            if not contains $protocol ssh ftp
+            # Test local auth for supported protocols. nxc rejects --local-auth
+            # together with -d/-k, so only run it for local credential sets.
+            if not contains $protocol ssh ftp; and not contains -- -d $cred_args; and not contains -- -k $cred_args
                 timeout 60s nxc $protocol $cred_args --local-auth | \
-                grep --text --color=never -E '\+|STATUS_|\[-\]' | \
+                grep --text --color=never -v -E '\[-\].*(STATUS_LOGON_FAILURE|STATUS_ACCESS_DENIED)' | \
+                grep --text --color=never -E '\+|DISABLED|ERROR|EXPIRED|LOCKED|MUST_CHANGE|NOT_GRANTED|RESTRICTION|INVALID_LOGON_HOURS' | \
                 awk '{print $0 " '(set_color blue)'(local auth)'(set_color normal)'"}' | \
                 string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
                 string replace -r '\s+' ' '

