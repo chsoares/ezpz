@@ -19,7 +19,7 @@ function install_yay_packages
     if test (count $packages) -gt 0
         ezpz_header "Installing yay packages..."
         for package in $packages
-            _ezpz_spin yay -S --needed --noconfirm $package
+            ezpz_spin yay -S --needed --noconfirm $package
             if test $status -eq 0
                 ezpz_success "$package"
             else
@@ -35,9 +35,9 @@ function install_pipx_packages
     
     if test (count $packages) -gt 0
         ezpz_header "Installing pipx packages..."
-        _ezpz_spin pipx ensurepath
+        ezpz_spin pipx ensurepath
         for package in $packages
-            _ezpz_spin pipx install $package
+            ezpz_spin pipx install $package
             if test $status -eq 0
                 ezpz_success "$package"
             else
@@ -66,33 +66,50 @@ install_pipx_packages \
     bloodyad \
     "git+https://github.com/Pennyw0rth/NetExec"
 
-# Function to install git repositories to /opt
+# Function to install git repositories in the user's local data directory.
+# No sudo and no /opt: dependencies stay in a dedicated venv and wrappers are
+# exposed through ~/.local/bin, matching the pipx-managed tools.
 function install_git_repos
     ezpz_header "Installing git repositories..."
-    sudo -v >/dev/null
-    
-    # Create /opt if it doesn't exist
-    if not test -d /opt
-        sudo mkdir -p /opt
-    end
-    
-    # Change to /opt directory
-    cd /opt
-    
-    # Install krbrelayx (used by some ezpz functions)
-    if not test -d /opt/krbrelayx
-        _ezpz_spin sudo git clone https://github.com/dirkjanm/krbrelayx.git
-        if test $status -eq 0
-            sudo chown -R $USER:$USER /opt/krbrelayx
-            sudo chmod +x /opt/krbrelayx/*.py
-            fish_add_path /opt/krbrelayx/
-            ezpz_success "krbrelayx"
-        else
-            ezpz_error "Failed to install krbrelayx"
+
+    set -l data_dir "$HOME/.local/share"
+    set -l bin_dir "$HOME/.local/bin"
+    set -l repo "$data_dir/krbrelayx"
+    set -l venv "$repo/.venv"
+
+    mkdir -p $data_dir $bin_dir
+
+    if not test -d "$repo/.git"
+        ezpz_spin git clone https://github.com/dirkjanm/krbrelayx.git $repo
+        if test $status -ne 0
+            ezpz_error "Failed to clone krbrelayx"
+            return 1
         end
+        ezpz_success "krbrelayx"
     else
         ezpz_success "krbrelayx (already exists)"
     end
+
+    if not test -x "$venv/bin/python"
+        ezpz_spin python3 -m venv --system-site-packages $venv
+        if test $status -ne 0
+            ezpz_error "Failed to create krbrelayx venv"
+            return 1
+        end
+    end
+
+    ezpz_spin "$venv/bin/pip" install --quiet --disable-pip-version-check ldap3-ad-auth
+    if test $status -ne 0
+        ezpz_error "Failed to install ldap3-ad-auth"
+        return 1
+    end
+
+    for script in dnstool.py krbrelayx.py addspn.py printerbug.py
+        set -l wrapper "$bin_dir/$script"
+        printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$venv/bin/python" "$repo/$script" > $wrapper
+        chmod +x $wrapper
+    end
+    ezpz_success "krbrelayx wrappers in $bin_dir"
 end
     
 install_git_repos
