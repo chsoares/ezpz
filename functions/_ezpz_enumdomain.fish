@@ -446,7 +446,23 @@ Examples:
     set -l adcs_lines (grep -avE '\[\*\]|\[-\]' $adcs_tmp \
         | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//; s/^\[[!+*?-]\][[:space:]]*//; s/\[!\] //g' \
         | grep -aiE 'Certificate Authorities|CA Name|DNS Name|Web Enrollment|Enabled|ESC[0-9]+|Vulnerabilities|Certificate Templates' \
-        | sort -u)
+        | sort -u \
+        | awk '
+        {
+            line = $0
+            gsub(/^[ \t]+|[ \t]+$/, "", line)
+            if (line == "") next
+            pos = index(line, ":")
+            if (pos > 0 && line !~ /^https?:/) {
+                key = substr(line, 1, pos - 1)
+                val = substr(line, pos + 1)
+                gsub(/^[ \t]+|[ \t]+$/, "", key)
+                gsub(/^[ \t]+|[ \t]+$/, "", val)
+                printf "%-34s : %s\n", key, val
+            } else {
+                print line
+            }
+        }')
     if test -n "$adcs_lines"
         printf '  %s\n' $adcs_lines
     else
