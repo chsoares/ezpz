@@ -27,11 +27,15 @@ end
 
 
 function ezpz_banner
+    set -l label " ezpz"
     if test (count $argv) -gt 0
-        gum style --foreground 5 --border-foreground 6 --border rounded --padding "0 4" " ezpz $argv v0.fish"
-    else
-        gum style --foreground 5 --border-foreground 6 --border rounded --padding "0 4" " ezpz v0.fish"
+        set label "$label $argv"
     end
+    set label "$label v0.fish"
+
+    # The dispatcher pipes output through tee, so gum sees a non-TTY and
+    # otherwise drops all color. Keep the banner colorful like ctf.fish.
+    env CLICOLOR_FORCE=1 gum style --foreground 5 --border-foreground 6 --border rounded --padding "0 4" "$label"
 end
 function ezpz_input
     gum input --prompt "❯  " --placeholder "$argv" --prompt.foreground 5 --cursor.foreground 6
