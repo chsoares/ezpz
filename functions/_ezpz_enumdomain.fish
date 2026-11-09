@@ -443,26 +443,36 @@ Examples:
     ezpz_cmd "nxc ldap $nxc_auth -M certipy-find"
     set -l adcs_tmp (mktemp)
     ezpz_spin_capture $adcs_tmp nxc ldap $nxc_auth -M certipy-find
-    set -l adcs_lines (grep -avE '\[\*\]|\[-\]' $adcs_tmp \
-        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//; s/^\[[!+*?-]\][[:space:]]*//; s/\[!\] //g' \
-        | grep -aiE 'Certificate Authorities|CA Name|DNS Name|Web Enrollment|Enabled|ESC[0-9]+|Vulnerabilities|Certificate Templates' \
-        | sort -u \
+    # Keep the complete CERTIPY-FIND block in order. The nxc prefix width
+    # varies with the target hostname, so derive it from the first module line
+    # and cut exactly that much, preserving the module's own indentation.
+    set -l adcs_lines (grep -a 'CERTIPY-' $adcs_tmp \
         | awk '
         {
-            line = $0
-            gsub(/^[ \t]+|[ \t]+$/, "", line)
-            if (line == "") next
-            pos = index(line, ":")
-            if (pos > 0 && line !~ /^https?:/) {
-                key = substr(line, 1, pos - 1)
-                val = substr(line, pos + 1)
+            if (base == 0) {
+                tmp = $0
+                sub(/^([^[:space:]]+[[:space:]]+){4}[[:space:]]*/, "", tmp)
+                base = length($0) - length(tmp)
+            }
+
+            line = substr($0, base + 1)
+            match(line, /^[ \t]*/)
+            indent = substr(line, 1, RLENGTH)
+            body = substr(line, RLENGTH + 1)
+            if (body == "") next
+
+            pos = index(body, ":")
+            if (pos > 0 && body !~ /^https?:/) {
+                key = substr(body, 1, pos - 1)
+                val = substr(body, pos + 1)
                 gsub(/^[ \t]+|[ \t]+$/, "", key)
                 gsub(/^[ \t]+|[ \t]+$/, "", val)
-                printf "%-34s : %s\n", key, val
+                printf "%s%-34s : %s\n", indent, key, val
             } else {
                 print line
             }
-        }')
+        }' \
+        | sed -E 's/^([[:space:]]*)\[[!*+-]\][[:space:]]*/\1/; s/\[!\] //g')
     if test -n "$adcs_lines"
         printf '  %s\n' $adcs_lines
     else
