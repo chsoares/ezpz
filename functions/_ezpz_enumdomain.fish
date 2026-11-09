@@ -28,6 +28,136 @@ function __ezpz_enumdomain_resolve --argument-names target
     ' $sources 2>/dev/null | sort -u
 end
 
+function __ezpz_acl_members --argument-names name
+    set -l auth $argv[2..-1]
+    test -n "$name"; or return
+    # Avoid building LDAP filters from names with filter metacharacters.
+    string match -qr '[*()]' -- $name; and return
+
+    set -l dn_out (timeout 30 nxc ldap $auth --query "(sAMAccountName=$name)" distinguishedName 2>/dev/null)
+    set -l dn (printf '%s\n' $dn_out | sed -nE 's/.*Response for object: (.*)$/\1/p' | head -1)
+    test -n "$dn"; or return
+
+    set -l mem_out (timeout 30 nxc ldap $auth --query "(memberOf:1.2.840.113556.1.4.1941:=$dn)" sAMAccountName 2>/dev/null)
+    set -l members (printf '%s\n' $mem_out | sed -nE 's/.*sAMAccountName[[:space:]]+([^[:space:]]+).*/\1/p' | sort -u)
+    if test -n "$members"
+        string join ', ' $members
+    end
+end
+
+function __ezpz_acl_scan_target --argument-names label target_dn
+    set -l auth $argv[3..-1]
+    set -l tmp (mktemp)
+    ezpz_spin_capture $tmp timeout 60 nxc ldap $auth -M daclread -o TARGET_DN="$target_dn" ACTION=read
+    set -l rc $status
+    if test $rc -eq 124
+        rm -f $tmp
+        ezpz_warn "Timeout while reading ACLs for $label" >&2
+        return
+    end
+
+    set -l hits (sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' $tmp | awk '
+    function trim(s) {
+        gsub(/^[ \t]+|[ \t]+$/, "", s)
+        return s
+    }
+    function flush(   key, name, marker, right) {
+        if (!inace || ace !~ /ACCESS_ALLOWED/) return
+        if (mask == "") return
+
+        if (mask ~ /ControlAccess/) {
+            if (obj ~ /^UNKNOWN/) {
+                right = obj
+            } else {
+                right = obj
+                sub(/ \(.*/, "", right)
+            }
+            if (right == "") right = "ControlAccess"
+        } else if (mask ~ /GenericAll|FullControl/) {
+            right = "GenericAll (implies Reanimate-Tombstones)"
+        } else if (mask ~ /WriteDACL/) {
+            right = "WriteDACL (can grant Reanimate-Tombstones)"
+        } else if (mask ~ /WriteOwner/) {
+            right = "WriteOwner (can grant Reanimate-Tombstones)"
+        } else if (mask ~ /GenericWrite/) {
+            right = "GenericWrite (review for Reanimate-Tombstones)"
+        } else if (mask ~ /AllExtendedRights/) {
+            right = "AllExtendedRights (implies Reanimate-Tombstones)"
+        } else {
+            return
+        }
+
+        name = trust
+        sub(/ \(S-.*/, "", name)
+        name = trim(name)
+
+        if (tolower(name) in hide) return
+        if (index(toupper(name), "BUILTIN") == 1 && right !~ /Reanimate|UNKNOWN/) return
+        if (name == "UNKNOWN" && right !~ /Reanimate|UNKNOWN/) return
+
+        key = tolower(right)
+        if (mask ~ /ControlAccess/ && (key in skip)) return
+
+        # Broad groups are expected to have a few default control-access
+        # rights; only surface them for the non-BloodHound extended rights.
+        if (mask ~ /ControlAccess/ && key !~ /reanimate-tombstones|ds-replication-manage-topology|ds-replication-synchronize|migrate-sid-history|unknown/) {
+            if (name ~ /^(Everyone|Authenticated Users|Domain Users|Domain Computers)$/) return
+        }
+
+        marker = ""
+        if (flags ~ /INHERITED_ACE/) marker = " [inherited]"
+        print right "|" name "|" marker
+    }
+    BEGIN {
+        split("Administrators|Domain Admins|Enterprise Admins|Schema Admins|SYSTEM|Local System|Domain Controllers|Enterprise Domain Controllers|Key Admins|Enterprise Key Admins|Cloneable Domain Controllers|Account Operators|Server Operators|Backup Operators|Print Operators|Principal Self|Creator Owner|Creator Group|OWNER RIGHTS", hide_list, "|")
+        for (i in hide_list) hide[tolower(hide_list[i])] = 1
+
+        # Rights already modeled by BloodHound (or default password bits).
+        split("User-Force-Change-Password|DS-Replication-Get-Changes|DS-Replication-Get-Changes-All|WriteMembers|User-Change-Password|Enable-Per-User-Reversibly-Encrypted-Password|Unexpire-Password|Update-Password-Not-Required-Bit", skip_list, "|")
+        for (i in skip_list) skip[tolower(skip_list[i])] = 1
+    }
+    /^ACE\[[0-9]+\] info/ {
+        flush()
+        inace = 1
+        ace = mask = flags = obj = trust = ""
+        next
+    }
+    inace && /^[[:space:]]*[^:]+[[:space:]]*:/ {
+        line = $0
+        sub(/^[[:space:]]+/, "", line)
+        pos = index(line, ":")
+        if (!pos) next
+        key = trim(substr(line, 1, pos - 1))
+        val = trim(substr(line, pos + 1))
+        if (key == "ACE Type") ace = val
+        else if (key == "Access mask") mask = val
+        else if (key == "ACE flags") flags = val
+        else if (key == "Object type (GUID)") obj = val
+        else if (key == "Trustee (SID)") trust = val
+    }
+    END { flush() }')
+    rm -f $tmp
+
+    test -n "$hits"; or return
+
+    echo "  $label"
+    for hit in $hits
+        set -l parts (string split '|' -- $hit)
+        set -l right $parts[1]
+        set -l trustee $parts[2]
+        set -l marker $parts[3]
+        set -l members
+        if test "$trustee" != UNKNOWN
+            set members (__ezpz_acl_members "$trustee" $auth)
+        end
+        if test -n "$members"
+            printf '    %s : %s (members: %s)%s\n' "$right" "$trustee" "$members" "$marker"
+        else
+            printf '    %s : %s%s\n' "$right" "$trustee" "$marker"
+        end
+    end
+end
+
 function _ezpz_enumdomain
     source $EZPZ_HOME/functions/_ezpz_colors.fish
 
@@ -527,6 +657,45 @@ Examples:
     end
     ezpz_cmd "nxc ldap $nxc_auth -M daclread -o TARGET_DN=\"$target_dn\" ACTION=read RIGHTS=DCSync"
     ezpz_spin nxc ldap $nxc_auth -M daclread -o TARGET_DN="$target_dn" ACTION=read RIGHTS=DCSync | grep -a "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//'
+
+    # Deliberately narrow: BloodHound already models the common edges
+    # (ForceChangePassword, DCSync, AddMember, GenericAll, etc.). Surface only
+    # extended rights it does not model, plus GenericAll/Write as an implied
+    # Reanimate-Tombstones path.
+    ezpz_header "Enumerating non-standard ACL rights"
+    ezpz_cmd "nxc ldap $nxc_auth -M daclread -o TARGET_DN=<root|OU|AdminSDHolder|Deleted Objects> ACTION=read"
+
+    # Collect OUs so an ACL granted on a container (and inherited by its
+    # children) is not missed; root/AdminSDHolder/Deleted Objects are always
+    # included.
+    set -l ou_tmp (mktemp)
+    ezpz_spin_capture $ou_tmp timeout 60 nxc ldap $nxc_auth --query "(objectClass=organizationalUnit)" distinguishedName
+    set -l ou_dns (sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' $ou_tmp \
+        | sed -nE 's/^distinguishedName[[:space:]]+(.+)$/\1/p' \
+        | sort -u)
+    rm -f $ou_tmp
+
+    set -l acl_targets "Domain root|$target_dn" \
+        "AdminSDHolder|CN=AdminSDHolder,CN=System,$target_dn" \
+        "Deleted Objects|CN=Deleted Objects,$target_dn"
+    for ou in $ou_dns
+        set -a acl_targets "$ou|$ou"
+    end
+
+    set -l acl_hits 0
+    for entry in $acl_targets
+        set -l parts (string split '|' -- $entry)
+        set -l label $parts[1]
+        set -l dn $parts[2]
+        set -l out (__ezpz_acl_scan_target "$label" "$dn" $nxc_auth)
+        if test -n "$out"
+            printf '%s\n' $out
+            set acl_hits 1
+        end
+    end
+    if test $acl_hits -eq 0
+        ezpz_info "No non-standard extended rights found."
+    end
 
     ezpz_header "Searching for credentials in Group Policy Preferences (GPP)"
     ezpz_cmd "nxc smb $nxc_auth -M gpp_password -M gpp_autologin"
