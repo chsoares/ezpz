@@ -203,29 +203,6 @@ Examples:
     # Add DC IP for impacket commands
     set -a imp_auth -dc-ip $dc_ip
 
-    # Build bloodyAD authentication
-    if command -v bloodyAD >/dev/null 2>&1
-        if set -q _flag_kerb
-            set bloody_auth --host $dc_fqdn -dc-ip $dc_ip -d $domain -u $bare_user
-        else
-            set bloody_auth --host $dc_ip -d $domain -u $bare_user
-        end
-        
-        if set -q _flag_password
-            set -a bloody_auth -p "$_flag_password"
-        else if set -q _flag_hash
-            set -a bloody_auth -p ":$_flag_hash"
-        end
-        
-        if set -q _flag_kerb
-            if set -q KRB5CCNAME
-                set -a bloody_auth -k "ccache=$KRB5CCNAME"
-            else
-                set -a bloody_auth -k
-            end
-        end
-    end
-
     # Create temporary file for users
     set users_tmp (mktemp)
     trap 'rm -f "$users_tmp"' EXIT TERM
@@ -341,6 +318,18 @@ Examples:
     ezpz_cmd "nxc ldap $nxc_auth -M get-desc-users"
     ezpz_spin nxc ldap $nxc_auth -M get-desc-users | grep -a --color=never -o "User:.*" | awk -F'description: ' '{user=$1; sub(/^User: /, "", user); print user " ||| " $2}' | column -s '|||' -t
 
+    ezpz_header "Enumerating user info fields"
+    ezpz_cmd "nxc ldap $nxc_auth -M get-info-users"
+    set -l info_tmp (mktemp)
+    ezpz_spin_capture $info_tmp nxc ldap $nxc_auth -M get-info-users
+    set -l info_lines (grep -avE '\[\*\]|\[\+\]|\[-\]' $info_tmp | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' | grep -aiE 'User:|Info:' | sort -u)
+    if test -n "$info_lines"
+        printf '  %s\n' $info_lines
+    else
+        ezpz_info "No user info fields found."
+    end
+    rm -f $info_tmp
+
     ezpz_title "Looking for exploitable accounts..."
 
     ezpz_header "Searching for AS-REProastable accounts"
@@ -451,8 +440,19 @@ Examples:
     ezpz_title "Looking for interesting domain configuration and services..."
 
     ezpz_header "Searching for PKI Enrollment Services (ADCS)"
-    ezpz_cmd "nxc ldap $nxc_auth -M adcs"
-    ezpz_spin nxc ldap $nxc_auth -M adcs | grep -a 'ADCS' | tr -s " " | cut -d ' ' -f 6-
+    ezpz_cmd "nxc ldap $nxc_auth -M certipy-find"
+    set -l adcs_tmp (mktemp)
+    ezpz_spin_capture $adcs_tmp nxc ldap $nxc_auth -M certipy-find
+    set -l adcs_lines (grep -avE '\[\*\]|\[-\]' $adcs_tmp \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//; s/^\[[!+*?-]\][[:space:]]*//; s/\[!\] //g' \
+        | grep -aiE 'Certificate Authorities|CA Name|DNS Name|Web Enrollment|Enabled|ESC[0-9]+|Vulnerabilities|Certificate Templates' \
+        | sort -u)
+    if test -n "$adcs_lines"
+        printf '  %s\n' $adcs_lines
+    else
+        ezpz_warn "No ADCS data returned."
+    end
+    rm -f $adcs_tmp
 
     ezpz_header "Searching for trust relationships"
     if set -q nxc_auth_ip
@@ -507,69 +507,81 @@ Examples:
     ezpz_spin nxc smb $nxc_auth -M gpp_password | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never
     ezpz_spin nxc smb $nxc_auth -M gpp_autologin | grep -aioE "Found credentials .*|Usernames: .*|Passwords: .*" --color=never
 
+    # Domain GPO user-rights assignments (GptTmpl.inf). This is a potential
+    # map: the module does not evaluate GPO links/filters or local policy on
+    # member servers, so treat it as leads, not effective privileges.
+    ezpz_header "Enumerating GPO-delegated user rights"
+    ezpz_cmd "nxc smb $nxc_auth -M gpp_privileges"
+    set -l gpp_priv_tmp (mktemp)
+    ezpz_spin_capture $gpp_priv_tmp timeout 120 nxc smb $nxc_auth -M gpp_privileges
+    set -l gpp_priv_rc $status
+    set -l gpp_priv_lines (grep -avE '\[\*\]|\[-\]' $gpp_priv_tmp \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//; s/^\[[!+*?-]\][[:space:]]*//' \
+        | grep -aE '^Se[A-Za-z0-9]+(Privilege|Right):|^Found .*GptTmpl\.inf|No GptTmpl' \
+        | sed -E 's/(GptTmpl\.inf): .*/\1/' \
+        | sort -u)
+    if test $gpp_priv_rc -eq 124
+        ezpz_warn "Operation timed out. Skipping."
+    else if test -n "$gpp_priv_lines"
+        printf '  %s\n' $gpp_priv_lines
+    else
+        ezpz_info "No GPO-delegated user rights found."
+    end
+    rm -f $gpp_priv_tmp
+
     ezpz_title "DNS enumeration..."
 
-    # DNS Dump using bloodyAD
-    if command -v bloodyAD >/dev/null 2>&1
-        ezpz_header "Enumerating DNS records"
-        ezpz_cmd "bloodyAD $bloody_auth get dnsDump"
-        ezpz_spin timeout 60 bloodyAD $bloody_auth get dnsDump | awk '
+    # DNS enumeration using nxc get-network (replaces bloodyAD dnsDump).
+    # get-network writes its records to a timestamped log under ~/.nxc/logs
+    # and prints the path; extract that path and render a hostname/IP table.
+    ezpz_header "Enumerating DNS records"
+    ezpz_cmd "nxc ldap $nxc_auth -M get-network -o ALL=true"
+    set -l dns_tmp (mktemp)
+    ezpz_spin_capture $dns_tmp nxc ldap $nxc_auth -M get-network -o ALL=true
+    set -l dns_rc $status
+    set -l dns_log (grep -aoE '/[^ ]+_network_[^ ]+\.log' $dns_tmp | tail -1)
+    if test $dns_rc -eq 124
+        ezpz_warn "Operation timed out. Skipping."
+    else if test -n "$dns_log" -a -f "$dns_log" -a -s "$dns_log"
+        printf "%-40s %s\n" "HOSTNAME" "IP ADDRESS(ES)"
+        printf "%-40s %s\n" "--------" "-------------"
+        awk -F'\t' '
         {
-            if (/^recordName:/) {
-                current_record = $2
-            } else if (/^A:/ && current_record != "") {
-                gsub(/^A: /, "", $0)
-                gsub(/; /, ", ", $0)
-                print current_record " -> " $0
-                current_record = ""
-            } else if (/^$/) {
-                current_record = ""
-            }
-        }' | sort | uniq | awk '
-        BEGIN { 
-            printf "%-35s %s\n", "HOSTNAME", "IP ADDRESS(ES)"
-            printf "%-35s %s\n", "--------", "-------------"
-        }
-        {
-            split($0, parts, " -> ")
-            printf "%-35s %s\n", parts[1], parts[2]
-        }'
-        
-        if test $pipestatus[1] -eq 124
-            ezpz_warn "Operation timed out. Skipping."
-        end
+            gsub(/^[ \t]+|[ \t]+$/, "", $1)
+            gsub(/^[ \t]+|[ \t]+$/, "", $2)
+            if ($1 ~ /^@\./ || $1 == "" || $2 == "") next
+            printf "%-40s %s\n", $1, $2
+        }' "$dns_log"
     else
-        ezpz_warn "bloodyAD not found. Skipping DNS enumeration."
+        ezpz_warn "No DNS records returned."
     end
+    rm -f $dns_tmp
 
     ezpz_title "Starting data collection..."
 
-    ezpz_header "Ingesting AD data for BloodHound"
+    # Keep this step quiet: nxc is extremely verbose here and none of its
+    # output is actionable on success. Only report the saved file or a
+    # concise error.
     set bh_tmp (mktemp)
-    ezpz_cmd "nxc ldap $nxc_auth --bloodhound --collection All --dns-server $dc_ip"
     ezpz_spin_capture $bh_tmp nxc ldap $nxc_auth --bloodhound --collection All --dns-server $dc_ip
     set bh_status $status
-    # nxc can emit NUL bytes from LDAP errors. Strip them and show the tail so
-    # collection failures are visible instead of silently swallowed.
-    tr -d '\0' < $bh_tmp | tail -n 12
-    # -a is required because the NUL bytes make grep treat the stream as binary.
+    # -a is required because nxc can emit NUL bytes from LDAP errors.
     set zip_path (grep -aoE '[^[:space:]]+_bloodhound\.zip' $bh_tmp | tail -1)
-    rm -f $bh_tmp
-    if test $bh_status -ne 0
-        ezpz_warn "BloodHound collection exited with status $bh_status."
-    end
     if test -n "$zip_path" -a -f "$zip_path"
         set dest_zip "./$file_domain"_bloodhound.zip
         mv $zip_path $dest_zip
-        ezpz_info "Saving data to $dest_zip"
-        
-        # Remove JSON files created in the last minute (BloodHound artifacts)
+        ezpz_success "BloodHound data saved to $dest_zip"
+
+        # Remove JSON files created by the collector in the current directory.
         find . -maxdepth 1 -name "*.json" -mmin -1 -delete 2>/dev/null
-        # Also remove any files matching BloodHound naming pattern
         find . -maxdepth 1 -name "*_*_*_*_*.json" -delete 2>/dev/null
     else
-        ezpz_error "Could not find BloodHound zip output!"
+        ezpz_error "BloodHound collection failed (status $bh_status)."
+        tr -d '\0' < $bh_tmp \
+            | grep -aE '\[-\]|Error|Traceback|noSuchObject|KDC_ERR' \
+            | tail -n 3
     end
+    rm -f $bh_tmp
 
     ezpz_success "Done."
 end
