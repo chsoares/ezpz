@@ -529,7 +529,7 @@ Examples:
     end
     rm -f $gpp_priv_tmp
 
-    ezpz_title "DNS enumeration..."
+    ezpz_title "Collecting domain data..."
 
     # DNS enumeration using nxc get-network (replaces bloodyAD dnsDump).
     # get-network writes its records to a timestamped log under ~/.nxc/logs
@@ -557,7 +557,7 @@ Examples:
     end
     rm -f $dns_tmp
 
-    ezpz_title "Starting data collection..."
+    ezpz_header "Starting BloodHound data collection"
 
     # Keep this step quiet: nxc is extremely verbose here and none of its
     # output is actionable on success. Only report the saved file or a
@@ -570,7 +570,7 @@ Examples:
     if test -n "$zip_path" -a -f "$zip_path"
         set dest_zip "./$file_domain"_bloodhound.zip
         mv $zip_path $dest_zip
-        ezpz_success "BloodHound data saved to $dest_zip"
+        ezpz_info "Saving BloodHound data to $dest_zip"
 
         # Remove JSON files created by the collector in the current directory.
         find . -maxdepth 1 -name "*.json" -mmin -1 -delete 2>/dev/null
