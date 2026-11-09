@@ -515,17 +515,74 @@ Examples:
     set -l gpp_priv_tmp (mktemp)
     ezpz_spin_capture $gpp_priv_tmp timeout 120 nxc smb $nxc_auth -M gpp_privileges
     set -l gpp_priv_rc $status
-    set -l gpp_priv_lines (grep -avE '\[\*\]|\[-\]' $gpp_priv_tmp \
+    set -l gpp_priv_output (grep -avE '\[\*\]|\[-\]' $gpp_priv_tmp \
         | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//; s/^\[[!+*?-]\][[:space:]]*//' \
-        | grep -aE '^Se[A-Za-z0-9]+(Privilege|Right):|^Found .*GptTmpl\.inf|No GptTmpl' \
-        | sed -E 's/(GptTmpl\.inf): .*/\1/' \
-        | sort -u)
+        | awk '
+        BEGIN {
+            n = split("Administrators,Users,Guests,Power Users,Account Operators,Server Operators,Print Operators,Backup Operators,Replicators,Domain Admins,Enterprise Admins,Schema Admins,Domain Controllers,Enterprise Domain Controllers,Read-only Domain Controllers,Enterprise Read-only Domain Controllers,Cloneable Domain Controllers,Cert Publishers,Group Policy Creator Owners,Protected Users,Key Admins,Enterprise Key Admins,Domain Users,Domain Guests,Domain Computers,DnsAdmins,DnsUpdateProxy,RAS and IAS Servers,Authenticated Users,Everyone,NT Authority,Local System,System,Local Service,Network Service,Pre-Windows 2000 Compatible Access,Remote Desktop Users,Network Configuration Operators,Performance Monitor Users,Performance Log Users,Windows Authorization Access Group,Terminal Server License Servers,Distributed COM Users,Cryptographic Operators,Event Log Readers,Certificate Service DCOM Access,RDS Remote Access Servers,RDS Endpoint Servers,RDS Management Servers,Hyper-V Administrators,Access Control Assistance Operators,Remote Management Users,Incoming Forest Trust Builders,Storage Replica Administrators,Allowed RODC Password Replication Group,Denied RODC Password Replication Group,Creator Owner,Creator Group,Owner Rights,Self,Restricted Code,Terminal Server Users,Remote Interactive Logon,This Organization,IUSR,Proxy,Dialup,Network,Batch,Interactive,Service,Anonymous Logon,Window Manager Group,All Services,NTLM Authentication,SChannel Authentication,Digest Authentication", names, ",")
+            for (i = 1; i <= n; i++) builtin[tolower(names[i])] = 1
+        }
+        /^No GptTmpl/ {
+            print "  " $0
+            found = 1
+            next
+        }
+        /^Found .*GptTmpl\.inf/ {
+            gpo = $0
+            sub(/GptTmpl\.inf:.*/, "GptTmpl.inf", gpo)
+            next
+        }
+        /^Se[A-Za-z0-9]+(Privilege|Right):/ {
+            priv = $0
+            sub(/: .*/, "", priv)
+            rest = $0
+            sub(/^[^:]+: /, "", rest)
+
+            count = split(rest, principals, ", ")
+            keep = ""
+            for (i = 1; i <= count; i++) {
+                p = principals[i]
+                gsub(/^[ \t]+|[ \t]+$/, "", p)
+                if (p == "") continue
+
+                key = tolower(p)
+                if (index(key, "builtin") == 1) key = substr(key, 9)
+
+                if (p ~ /^S-1-/ || (key in builtin)) {
+                    hidden++
+                    continue
+                }
+                keep = keep (keep == "" ? "" : ", ") p
+            }
+
+            if (keep != "") {
+                if (!seen[gpo]) {
+                    print "  " gpo
+                    seen[gpo] = 1
+                }
+                print "  " priv ": " keep
+                found = 1
+            }
+        }
+        END {
+            if (!found) print "NO_CUSTOM"
+            else if (hidden > 0) print "HIDDEN " hidden
+        }')
     if test $gpp_priv_rc -eq 124
         ezpz_warn "Operation timed out. Skipping."
-    else if test -n "$gpp_priv_lines"
-        printf '  %s\n' $gpp_priv_lines
+    else if contains -- NO_CUSTOM $gpp_priv_output
+        ezpz_info "No custom GPO-delegated user rights found."
+    else if test -n "$gpp_priv_output"
+        for line in $gpp_priv_output
+            if string match -q 'HIDDEN *' -- $line
+                set -l hidden (string replace -r '^HIDDEN ' '' -- $line)
+                ezpz_info "$hidden default assignment(s) hidden."
+            else
+                echo $line
+            end
+        end
     else
-        ezpz_info "No GPO-delegated user rights found."
+        ezpz_info "No custom GPO-delegated user rights found."
     end
     rm -f $gpp_priv_tmp
 
