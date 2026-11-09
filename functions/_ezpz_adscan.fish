@@ -41,7 +41,6 @@ Usage: ezpz adscan <target>
     # Generate hosts file name from target
     set target_clean (echo "$input" | sed 's/[\/:]/_/g')
     set hostsfile "$target_clean"_etchosts.txt
-    set krb5file "$target_clean"_krb5conf.txt
 
     # Trap for cleanup
     trap "rm -f '$targets_tmp'" EXIT TERM INT
@@ -79,6 +78,10 @@ Usage: ezpz adscan <target>
                 | string replace -a "signing:False" (set_color cyan)"signing:False"(set_color normal) \
                 | string replace -a "SMBv1:True" (set_color cyan)"SMBv1:True"(set_color normal) \
                 | string replace -a "NTLM:False" (set_color red --bold)"NTLM:False"(set_color normal)
+
+    # Keep the domain controllers found in the SMB scan: the KRB5 config is
+    # generated per domain, so we need every DC before $output is reused below.
+    set -l dc_records (grep --text -F '(DC:True)' $output)
 
     ezpz_cmd "nxc ldap $input"
     ezpz_spin timeout 30 nxc ldap $input > $output
@@ -164,13 +167,60 @@ Usage: ezpz adscan <target>
     end
 
     # KRB5 Configuration
-    ezpz_header "Trying to generate KRB5 config file"
-    ezpz_spin nxc smb "$input" --generate-krb5-file "$krb5file" > /dev/null
+    # Generate one config per domain advertised by a DC on the scanned range.
+    ezpz_header "Generating KRB5 config files"
+    set -l krb5_files
+    set -l krb5_domains
 
-    if test -f "$krb5file"
-        cat $krb5file | awk /./
-        ezpz_info "KRB5.conf generated at $krb5file and exported to \$KRB5_CONFIG"
-        set -gx KRB5_CONFIG "$krb5file"
+    for record in $dc_records
+        set -l domain (string match -r '\(domain:([^)]+)\)' -- $record)[2]
+        set -l dc_name (string match -r '\(name:([^)]+)\)' -- $record)[2]
+        test -n "$domain"; or continue
+        test -n "$dc_name"; or continue
+        contains -- $domain $krb5_domains; and continue
+
+        set -a krb5_domains $domain
+        set -l krb5file "$domain"_krb5conf.txt
+        set -a krb5_files $krb5file
+
+        set -l realm (string upper $domain)
+        set -l kdc (string lower $dc_name).$domain
+
+        printf '%s\n' \
+            '[libdefaults]' \
+            '    dns_lookup_kdc = false' \
+            '    dns_lookup_realm = false' \
+            "    default_realm = $realm" \
+            '' \
+            '[realms]' \
+            "    $realm = {" \
+            "        kdc = $kdc" \
+            "        admin_server = $kdc" \
+            "        default_domain = $domain" \
+            '    }' \
+            '' \
+            '[domain_realm]' \
+            "    .$domain = $realm" \
+            "    $domain = $realm" > $krb5file
+    end
+
+    switch (count $krb5_files)
+        case 0
+            ezpz_warn "No domain controller found. No KRB5 config generated."
+        case 1
+            cat $krb5_files[1]
+            ezpz_info "KRB5.conf generated at $krb5_files[1] and exported to \$KRB5_CONFIG"
+            set -gx KRB5_CONFIG $krb5_files[1]
+        case '*'
+            ezpz_info "Multiple domains found. Generated one KRB5 config per domain:"
+            for krb5file in $krb5_files
+                printf '  %s\n' "$PWD/$krb5file"
+            end
+            ezpz_warn "KRB5_CONFIG not exported. Choose a domain and run:"
+            printf '  export KRB5_CONFIG=%s\n' "$PWD/$krb5_files[1]"
+            if set -q KRB5_CONFIG
+                ezpz_warn "KRB5_CONFIG is still set to a previous value: $KRB5_CONFIG"
+            end
     end
 
     # Finalization
