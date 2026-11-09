@@ -189,3 +189,36 @@ rm -f $_tmp
 - [x] Fix timeout detection (use the spinner's child exit status)
 - [x] Trim/comment/dedupe target files and skip unreachable/auth-failed hosts
 - [ ] Optional: machine-readable summary/JSON output
+
+---
+
+## Priority 5: nxc module backlog (audited 2026-11-09, nxc 1.5.1)
+
+Tested against `winterfell.north.sevenkingdoms.local` with a fresh Administrator TGT.
+
+High value, tested and working:
+- [ ] `checkvulns`: `enum_cve` (OS/UBR CVEs incl. 2025/2026), `wcc` (Windows
+      security config), `enum_av` (AV/EDR), `ntlmv1`, `dns-nonsecure`, `obsolete`
+- [ ] `enumdomain`: `certipy-find` (ADCS misconfigs; found ESC8), `gpp_privileges`,
+      `dump-computers`, `get-network`, `get-info-users`, `whoami`
+- [ ] `enumuser`: `whoami`, `get-info-users`, `user-desc`, `get-userPassword`,
+      `get-unixUserPassword`
+- [ ] `enumnull` / `adscan`: `enum_av`, `enum_cve`, `enum_ca` (low-priv/anonymous)
+- [ ] `getloot`: module-driven loot (replace noisy PowerShell):
+      `iis`, `powershell_history`, `notepad`, `notepad++`, `putty`, `winscp`,
+      `mobaxterm`, `mremoteng`, `rdcman`, `vnc`, `wifi`, `aws-credentials`,
+      `rclone`, `veeam`, `teams_localdb`, `snipped`, `recyclebin`,
+      `security-questions`, `reg-winlogon`, `eventlog_creds`, `dpapi_hash`,
+      `lsassy`, `ntds-dump-raw`
+- [ ] `enumshares`: `spider_plus` (requires nxc >= 1.5.1 due to arbitrary-write
+      fix), `drop-library-ms`, `drop-sc`, `scuffy`
+- [ ] New MSSQL function: `enum_impersonate`, `enum_links`, `enum_logins`,
+      `mssql_priv`, `mssql_dumper`
+
+Notes:
+- `presence` currently errors (`'ImageName'`); skip until fixed upstream.
+- `sccm`/`sccm-recon6` and `entra-id` returned no data in this lab but are
+  cheap to include where SCCM/Entra may exist.
+- `subnets` errored on the north child domain (`noSuchObject`); needs a guard.
+- `enum_ca` returned nothing here despite `certipy-find` finding ESC8; keep
+  `certipy-find` as the primary ADCS check.
