@@ -10,6 +10,18 @@ function __ezpz_enumnull_has_data --argument-names target user pass
         return 0
     end
 
+    # SAMR user enumeration and the password policy can work even when shares,
+    # RID brute force and LDAP are denied.
+    set -l passpol (timeout 30 nxc smb $target -u "$user" -p "$pass" --pass-pol 2>/dev/null)
+    if string match -qr 'Minimum password length' -- $passpol
+        return 0
+    end
+
+    set -l users (timeout 30 nxc smb $target -u "$user" -p "$pass" --users 2>/dev/null)
+    if printf '%s\n' $users | grep -aqE '^[^[]*[A-Za-z0-9._$-]+[[:space:]]+\['
+        return 0
+    end
+
     set -l groups (timeout 30 nxc ldap $target -u "$user" -p "$pass" --groups 2>/dev/null)
     if string match -qr 'membercount|Administrators|Domain Admins' -- $groups
         return 0
