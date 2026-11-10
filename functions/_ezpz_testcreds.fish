@@ -1,3 +1,13 @@
+# RDP/MSSQL logins without Pwn3d only prove the password is valid; they do not
+# give administrative access. Keep those protocols focused on actionable hits.
+function __ezpz_testcreds_filter --argument-names protocol
+    if contains -- $protocol rdp mssql
+        grep --text --color=never -a 'Pwn3d!'
+    else
+        cat
+    end
+end
+
 function _ezpz_testcreds
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
@@ -182,7 +192,8 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             grep --text --color=never -v -E '\[-\].*(STATUS_LOGON_FAILURE|STATUS_ACCESS_DENIED)' | \
             grep --text --color=never -E '\+|DISABLED|ERROR|EXPIRED|LOCKED|MUST_CHANGE|NOT_GRANTED|RESTRICTION|INVALID_LOGON_HOURS' | \
             string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
-            string replace -r '\s+' ' '
+            string replace -r '\s+' ' ' | \
+            __ezpz_testcreds_filter $protocol
 
             # Test local auth for supported protocols. nxc rejects --local-auth
             # together with -d/-k, so only run it for local credential sets.
@@ -192,7 +203,8 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
                 grep --text --color=never -E '\+|DISABLED|ERROR|EXPIRED|LOCKED|MUST_CHANGE|NOT_GRANTED|RESTRICTION|INVALID_LOGON_HOURS' | \
                 awk '{print $0 " '(set_color blue)'(local auth)'(set_color normal)'"}' | \
                 string replace -a "Pwn3d!" (set_color red --bold)"Pwn3d!"(set_color normal) | \
-                string replace -r '\s+' ' '
+                string replace -r '\s+' ' ' | \
+                __ezpz_testcreds_filter $protocol
             end
         end
         
