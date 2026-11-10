@@ -51,7 +51,7 @@ function ezpz_confirm --argument-names prompt
     if test -z "$prompt"
         set prompt "Select option"
     end
-    gum confirm "$prompt" --prompt.foreground 240 --selected.background 5 --selected.foreground 255
+    gum confirm "$prompt" --default=false --prompt.foreground 240 --selected.background 5 --selected.foreground 255
 end
 
 function ezpz_spin
