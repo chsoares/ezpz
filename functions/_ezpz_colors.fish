@@ -44,13 +44,7 @@ function ezpz_choose_one
     gum choose --limit=1 --cursor.foreground 5 --selected.foreground 6 --cursor "❯ " --header "" $argv
 end
 function ezpz_choose_many
-    # gum 2.0.2 only toggles with x/tab. Use the patched binary when present
-    # so Space toggles too, while x/tab keep working.
-    set -l choose_bin gum
-    if command -q gum-space
-        set choose_bin gum-space
-    end
-    $choose_bin choose --no-limit --cursor.foreground 5 --selected.foreground 6 --cursor "❯ " --header "" $argv
+    gum choose --no-limit --cursor.foreground 5 --selected.foreground 6 --cursor "❯ " --header "" $argv
 end
 
 function ezpz_confirm --argument-names prompt
