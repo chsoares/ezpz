@@ -14,6 +14,7 @@ A Fish Shell-based collection of penetration testing enumeration scripts, refact
 - `enumshares`: SMB share enumeration
 - `enumsqli`: SQL Server enumeration
 - `testcreds`: Credential validation against targets
+- `certspray`: Per-credential ADCS ESC enumeration
 - `credspray`: Kerberos password spraying with lockout guard
 - `loot`: Information extraction from compromised Windows hosts
 - `secretsparse`: Parse secretsdump.py output for credentials

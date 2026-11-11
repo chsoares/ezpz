@@ -34,7 +34,7 @@ function ezpz
 
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
-    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell wordlister selfrelay
+    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds certspray enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell wordlister selfrelay
 
     if test (count $argv) -eq 0
         ezpz_show_menu
@@ -86,6 +86,7 @@ function ezpz_show_menu
     echo "  enumshares   - Share enumeration"
     echo "  enumsqli     - SQL Server enumeration"
     echo "  testcreds    - Test credentials against targets"
+    echo "  certspray    - Spray credentials against ADCS"
     echo "  getloot      - Extract information from Windows hosts"
     echo "  secretsparse - Parse secretsdump.py output"
     echo "  getflag      - Read flags from compromised hosts"
