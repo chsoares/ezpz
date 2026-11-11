@@ -91,8 +91,8 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
         set db_choice "current"
         ezpz_info "Fast mode: using current database"
     else
-        ezpz_question "Select database (all/current/name) [current]: "
-        set db_choice (bash -c 'read -r input; echo "$input"')
+        ezpz_question "Select database:"
+        set db_choice (ezpz_input "all, current, or a database name (blank=current)")
         if test -z "$db_choice"
             set db_choice "current" # Default to current if no input
         end
@@ -133,8 +133,8 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
         set table_choice "all"
         ezpz_info "Fast mode: dumping all tables"
     else
-        ezpz_question "Select tables (all/names): [all] "
-        set table_choice (bash -c 'read -r input; echo "$input"')
+        ezpz_question "Select tables:"
+        set table_choice (ezpz_input "all or comma-separated table names (blank=all)")
         if test -z "$table_choice"
             set table_choice "all" # Default to all if no input
         end
@@ -163,8 +163,8 @@ Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
                     set column_choice "all"
                     ezpz_info "Fast mode: dumping all columns from table '$table'"
                 else
-                    ezpz_question "Select columns (all/names): [all] "
-                    set column_choice (bash -c 'read -r input; echo "$input"')
+                    ezpz_question "Select columns:"
+                    set column_choice (ezpz_input "all or comma-separated column names (blank=all)")
                     if test -z "$column_choice"
                         set column_choice "all" # Default to all if no input
                     end

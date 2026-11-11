@@ -304,6 +304,9 @@ Examples:
         ezpz_question "Select shares for spidering:"
         set share_options (cat $share_names_tmp)
         set choice (ezpz_choose_many $share_options)
+        if test -n "$choice[1]"
+            ezpz_info "Selected shares: "(string join ', ' $choice)
+        end
 
         if test -z "$choice[1]"
             ezpz_warn "No shares selected."
@@ -328,10 +331,13 @@ Examples:
 
                 if test -s $files_tmp
                     ezpz_question "Select follow-up action:"
-                    set action (ezpz_choose_one 'download all' manspider skip)
-                    
+                    set action (ezpz_choose_one 'Download all' 'Run manspider' 'Skip')
+                    if test -n "$action"
+                        ezpz_info "Selected: $action"
+                    end
+
                     switch $action
-                        case 'download all'
+                        case 'Download all'
                             # Skip download operations for Kerberos
                             if set -q _flag_kerb
                                 ezpz_warn "Download operations skipped for Kerberos authentication."
@@ -386,7 +392,7 @@ Examples:
                                     end
                                 end
                             
-                            case manspider
+                            case 'Run manspider'
                                 ezpz_question "Enter content regex strings"
                                 set content (ezpz_input "passw user admin account network login logon cred")
                                 if test -z "$content"
@@ -402,7 +408,7 @@ Examples:
                                 
                                 manspider $target $manspider_auth --sharenames $share -c $content -l $dir_path --threads 512
                                 
-                            case skip
+                            case '' 'Skip'
                                 # Skip this share - no action needed
                     end
                 else

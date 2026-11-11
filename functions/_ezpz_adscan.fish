@@ -104,11 +104,14 @@ Usage: ezpz adscan <target>
         ezpz_info "Hosts file generated at $hostsfile"
         cat "$hostsfile"
         
-        ezpz_question "Add hosts information to /etc/hosts? [append/overwrite/no]"
-        set choice (ezpz_choose_one append overwrite no)
-        
+        ezpz_question "Select follow-up action:"
+        set choice (ezpz_choose_one 'Append to /etc/hosts' 'Overwrite /etc/hosts' 'Skip')
+        if test -n "$choice"
+            ezpz_info "Selected: $choice"
+        end
+
         switch "$choice"
-            case "append"
+            case "Append to /etc/hosts"
                 # Append mode (default) - merge hosts for existing IPs
                 while read -l line
                     test -n "$line"; or continue
@@ -148,7 +151,7 @@ Usage: ezpz adscan <target>
                     end
                 end < "$hostsfile"
                 
-            case "overwrite"
+            case "Overwrite /etc/hosts"
                 # Overwrite mode - create new /etc/hosts with localhost + generated content
                 set temp_hosts (mktemp)
                 echo "127.0.0.1    localhost" > "$temp_hosts"
@@ -156,12 +159,12 @@ Usage: ezpz adscan <target>
                 sudo tee /etc/hosts < "$temp_hosts" >/dev/null
                 rm -f "$temp_hosts"
                 ezpz_info "Overwritten /etc/hosts with localhost + generated hosts"
-                
-            case "no"
+
+            case "" "Skip"
                 ezpz_info "Hosts file not added to /etc/hosts"
-                
+
             case "*"
-                ezpz_error "Invalid choice. Use 'append', 'overwrite', or 'no'"
+                ezpz_error "Invalid selection: $choice"
         end
     else
         ezpz_warn "No hosts file was generated"

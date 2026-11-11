@@ -122,19 +122,11 @@ function _ezpz_selfrelay
     end
     ezpz_cmd "$ntlmrelayx_cmd"
    
-    while true
-        ezpz_question "Proceed with coercion attack? [y/n]: "
-        read -l response
-        switch $response
-            case y Y yes YES
-                break
-            case n N no NO
-                ezpz_warn "Attack cancelled by user"
-                return 0
-            case '*'
-                continue
-        end
+    if not ezpz_confirm "Proceed with coercion attack?"
+        ezpz_warn "Attack cancelled by user"
+        return 0
     end
+    ezpz_info "Selected: Proceed with coercion attack"
     echo
     
     # Step 4: Execute coercion
