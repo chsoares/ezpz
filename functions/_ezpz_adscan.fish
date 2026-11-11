@@ -75,8 +75,9 @@ Usage: ezpz adscan <target>
 
     cat $output | grep --color=never -oE '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]).*' \
                 | string replace -a "Null Auth:True" (set_color red --bold)"Null Auth:True"(set_color normal) \
-                | string replace -a "signing:False" (set_color cyan)"signing:False"(set_color normal) \
+                | string replace -a "signing:False" (set_color red --bold)"signing:False"(set_color normal) \
                 | string replace -a "SMBv1:True" (set_color cyan)"SMBv1:True"(set_color normal) \
+                | string replace -a "DC:True" (set_color cyan)"DC:True"(set_color normal) \
                 | string replace -a "NTLM:False" (set_color red --bold)"NTLM:False"(set_color normal)
 
     # Keep the domain controllers found in the SMB scan: the KRB5 config is
