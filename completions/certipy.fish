@@ -48,17 +48,7 @@ end
 
 # Helper function to get domains/hostnames from *_etchosts.txt files
 function __certipy_get_domains
-    # Use find to avoid wildcard expansion errors
-    set -l hosts_files (find . -maxdepth 1 -name "*_etchosts.txt" -type f 2>/dev/null)
-    
-    for file in $hosts_files
-        if test -f "$file"
-            # Extract all hostnames from etchosts format (IP hostname1 hostname2 ...)
-            # Skip comments and empty lines, remove first column (IP), print all remaining hostnames
-            cat "$file" 2>/dev/null | string match -v '^#*' | string match -v '^[[:space:]]*$' | awk '{for(i=2;i<=NF;i++) print $i}' | string match -v '' | sort -u
-        end
-    end
-    # No output if no files exist - completion will be empty
+    __ezpz_completion_domains
 end
 
 # Helper function to create user@domain combinations
@@ -96,7 +86,7 @@ complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca
 complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -l dc-ip -r -a '(__certipy_get_ips)' -d 'Domain Controller IP address'
 
 # Target FQDN completion
-complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -l target -r -a '(__certipy_get_domains)' -d 'Target FQDN'
+complete -c certipy -f --keep-order -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -l target -r -a '(__certipy_get_domains)' -d 'Target FQDN'
 
 # Common options
 complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -l debug -d 'Enable debug output'

@@ -45,13 +45,7 @@ end
 
 # Helper function to get domains/hostnames from *_etchosts.txt files
 function __bloodyad_get_domains
-    set -l hosts_files (find . -maxdepth 1 -name "*_etchosts.txt" -type f 2>/dev/null)
-    
-    for file in $hosts_files
-        if test -f "$file"
-            cat "$file" 2>/dev/null | string match -v '^#*' | string match -v '^[[:space:]]*$' | awk '{for(i=2;i<=NF;i++) print $i}' | string match -v '' | sort -u
-        end
-    end
+    __ezpz_completion_domains
 end
 
 # Helper function to get all IPs and FQDNs for target completion
@@ -110,7 +104,7 @@ complete -c bloodyAD -f -s u -l username -r -a '(__bloodyad_get_users)' -d 'User
 complete -c bloodyAD -f -s p -l password -r -a '(__bloodyad_get_creds_for_user (__bloodyad_get_current_user))' -d 'Password for authentication (or :hash for pass-the-hash)'
 
 # Domain option with hostname completion from *_etchosts.txt files
-complete -c bloodyAD -f -s d -l domain -r -a '(__bloodyad_get_domains)' -d 'Domain name'
+complete -c bloodyAD -f --keep-order -s d -l domain -r -a '(__bloodyad_get_domains)' -d 'Domain name'
 
 # Host option with IP/FQDN completion
 complete -c bloodyAD -f -l host -r -a '(__bloodyad_get_targets)' -d 'Target host IP or FQDN'

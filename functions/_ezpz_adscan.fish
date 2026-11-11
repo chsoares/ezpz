@@ -204,6 +204,15 @@ Usage: ezpz adscan <target>
             "    $domain = $realm" > $krb5file
     end
 
+    # Keep a clean domain list for -d completion, independent of hostnames.
+    set -l domains_file "$target_clean"_domains.txt
+    if test (count $krb5_domains) -gt 0
+        printf '%s\n' $krb5_domains | sort -u > $domains_file
+        ezpz_info "Domains file generated at $domains_file"
+    else
+        ezpz_warn "No domains found. No domains file generated."
+    end
+
     switch (count $krb5_files)
         case 0
             ezpz_warn "No domain controller found. No KRB5 config generated."

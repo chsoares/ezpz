@@ -78,17 +78,7 @@ end
 
 # Helper function to get domains/hostnames from *_etchosts.txt files
 function __ezpz_get_domains
-    # Use find to avoid wildcard expansion errors
-    set -l hosts_files (find . -maxdepth 1 -name "*_etchosts.txt" -type f 2>/dev/null)
-    
-    for file in $hosts_files
-        if test -f "$file"
-            # Extract all hostnames from etchosts format (IP hostname1 hostname2 ...)
-            # Skip comments and empty lines, remove first column (IP), print all remaining hostnames
-            cat "$file" 2>/dev/null | string match -v '^#*' | string match -v '^[[:space:]]*$' | awk '{for(i=2;i<=NF;i++) print $i}' | string match -v '' | sort -u
-        end
-    end
-    # No output if no files exist - completion will be empty
+    __ezpz_completion_domains
 end
 
 # Main ezpz commands
@@ -124,7 +114,7 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcr
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s H -l hash -r -a '(__ezpz_get_creds_for_user (__ezpz_get_current_user))' -d 'NTLM hash for pass-the-hash'
 
 # Domain option with hostname completion from *_etchosts.txt files
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot credspray selfrelay' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
+complete -c ezpz -f --keep-order -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot credspray selfrelay' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
 
 # Kerberos authentication
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s k -l kerb -d 'Use Kerberos authentication'
