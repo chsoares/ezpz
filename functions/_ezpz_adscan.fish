@@ -227,7 +227,7 @@ Usage: ezpz adscan <target>
                 printf '  %s\n' "$PWD/$krb5file"
             end
             ezpz_warn "KRB5_CONFIG not exported. Choose a domain and run:"
-            printf '  set -gx KRB5_CONFIG %s\n' "$PWD/$krb5_files[1]"
+            ezpz_cmd "set -gx KRB5_CONFIG $PWD/$krb5_files[1]"
             if set -q KRB5_CONFIG
                 ezpz_warn "KRB5_CONFIG is still set to a previous value: $KRB5_CONFIG"
             end
