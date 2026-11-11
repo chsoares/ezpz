@@ -115,6 +115,7 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcr
 
 # Domain option with hostname completion from *_etchosts.txt files
 complete -c ezpz -f --keep-order -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot credspray selfrelay' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
+complete -c ezpz -f --keep-order -n '__fish_seen_subcommand_from enumdomain' -l target-domain -r -a '(__ezpz_get_domains)' -d 'Target domain'
 
 # Kerberos authentication
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s k -l kerb -d 'Use Kerberos authentication'
