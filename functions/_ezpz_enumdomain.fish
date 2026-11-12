@@ -581,9 +581,9 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     set -l ca_dns (printf '%s\n' $adcs_info | sed -n 's/^CADNS|//p' | head -1)
     set -l adcs_escs (printf '%s\n' $adcs_info | grep -a '^ESC|' | sed 's/^ESC|//')
     if test -n "$ca_name"
-        printf '  %-34s : %s\n' "CA Name" "$ca_name"
+        printf '%-34s : %s\n' "CA Name" "$ca_name"
         if test -n "$ca_dns"
-            printf '  %-34s : %s\n' "DNS Name" "$ca_dns"
+            printf '%-34s : %s\n' "DNS Name" "$ca_dns"
         end
         if test -n "$adcs_escs"
             for finding in $adcs_escs
@@ -592,13 +592,13 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
                 set -l scope $parts[2]
                 set -l object $parts[3]
                 set -l desc $parts[4]
-                printf '   %-6s %s: %s — %s\n' "$esc" "$scope" "$object" "$desc"
+                printf '%-6s %s: %s — %s\n' "$esc" "$scope" "$object" "$desc"
             end
         else
             ezpz_info "No ESC findings."
         end
     else
-        echo "  No CA found in this domain."
+        echo "No CA found in this domain."
     end
     rm -f $adcs_tmp
 

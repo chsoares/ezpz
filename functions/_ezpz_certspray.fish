@@ -169,7 +169,7 @@ or a 32-character NTLM hash in place of the password.
                 set -l scope $parts[2]
                 set -l object $parts[3]
                 set -l desc $parts[4]
-                printf '   %-6s %s: %s — %s\n' "$esc" "$scope" "$object" "$desc"
+                printf '%-6s %s: %s — %s\n' "$esc" "$scope" "$object" "$desc"
                 printf '%s|%s\n' "$esc" "$label" >> $summary_tmp
             end
         end
@@ -192,7 +192,7 @@ or a 32-character NTLM hash in place of the password.
             }
         }' | sort -V | while read -l entry
             set -l parts (string split '|' -- $entry)
-            printf '  %-6s %s\n' "$parts[1]" "$parts[2]"
+            printf '%-6s %s\n' "$parts[1]" "$parts[2]"
         end
     else
         ezpz_info "No ESC findings."
