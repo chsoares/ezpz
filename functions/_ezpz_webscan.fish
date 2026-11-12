@@ -156,5 +156,6 @@ Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extension
     echo ""
 
     # Finalization
+    echo
     ezpz_success "Done."
 end 

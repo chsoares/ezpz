@@ -145,5 +145,6 @@ Usage: ezpz netscan [-F] <target>
     end < "$targets_tmp"
 
     # Finalization
+    echo
     ezpz_success "Done."
 end 

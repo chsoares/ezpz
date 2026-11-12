@@ -241,5 +241,6 @@ This function attempts to write to /etc/hosts and may require sudo.
     end
 
     # Finalization
+    echo
     ezpz_success "Done."
 end 

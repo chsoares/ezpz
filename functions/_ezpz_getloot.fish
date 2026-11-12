@@ -368,5 +368,6 @@ ezpz getloot -t 192.168.1.30 -u user -k -d domain.local
     end
 
     # Finalization
+    echo
     ezpz_success "Done."
 end 

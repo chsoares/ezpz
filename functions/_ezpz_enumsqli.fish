@@ -189,5 +189,6 @@ ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
             end
     end
 
+    echo
     ezpz_success "Done."
 end 

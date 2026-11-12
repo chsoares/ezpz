@@ -419,5 +419,6 @@ ezpz enumshares -t 10.10.10.10  # null session
         end
     end
 
+    echo
     ezpz_success "Done."
 end

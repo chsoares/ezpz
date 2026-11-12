@@ -199,5 +199,6 @@ or a 32-character NTLM hash in place of the password.
     end
 
     rm -f $summary_tmp
+    echo
     ezpz_success "Done."
 end

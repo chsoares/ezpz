@@ -255,5 +255,6 @@ Tests credentials against multiple protocols on a target.
         set cred_num (math $cred_num + 1)
     end
 
+    echo
     ezpz_success "Done."
 end

@@ -155,6 +155,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
     end
 
     # User Enumeration - prioritize --rid-brute over --users
+    echo
     ezpz_header "Enumerating users with RID Bruteforcing"
     ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
     ezpz_spin nxc smb $nxc_args --rid-brute 10000 | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
@@ -168,6 +169,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
         ezpz_warn "No users found with --rid-brute. Trying --users as fallback..."
         
         # Fallback to --users
+        echo
         ezpz_header "Enumerating users (fallback)"
         ezpz_cmd "nxc smb $nxc_args --users"
         ezpz_spin nxc smb $nxc_args --users | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
@@ -180,11 +182,12 @@ ezpz enumnull -t dc01.corp.local --guest -k
             cp $users_tmp $users_file_mini
             ezpz_info "Saving enumerated users to $users_file_mini"
         else
-            ezpz_warn "No users found with --users fallback."
+            printf '%s\n' "No users found."
         end
     end
 
     # Groups
+    echo
     ezpz_header "Enumerating groups"
     ezpz_cmd "nxc ldap $nxc_args --groups"
     set groups_out (timeout 60 nxc ldap $nxc_args --groups 2>/dev/null)
@@ -205,11 +208,12 @@ ezpz enumnull -t dc01.corp.local --guest -k
         if test -n "$groups_data"
             printf '%s\n' $groups_rendered
         else
-            ezpz_warn "No groups returned (access denied?)."
+            printf '%s\n' "No groups found (access denied?)."
         end
     end
 
     # Password Policy
+    echo
     ezpz_header "Enumerating password policy"
     ezpz_cmd "nxc smb $nxc_args --pass-pol"
     set passpol_out (timeout 60 nxc smb $nxc_args --pass-pol 2>/dev/null)
@@ -221,11 +225,12 @@ ezpz enumnull -t dc01.corp.local --guest -k
         if test -n "$passpol_rendered"
             printf '%s\n' $passpol_rendered
         else
-            ezpz_warn "No password policy returned (access denied?)."
+            printf '%s\n' "No password policy found (access denied?)."
         end
     end
 
     # Shares Enumeration
+    echo
     ezpz_header "Enumerating shares"
     ezpz_cmd "nxc smb $nxc_args --shares --smb-timeout 999"
     set shares_output (mktemp)
@@ -263,15 +268,17 @@ ezpz enumnull -t dc01.corp.local --guest -k
             printf "%-20s %-15s %s\n", share, perm, desc
         }'
     else
-        ezpz_warn "No shares returned (access denied?)."
+        printf '%s\n' "No shares found (access denied?)."
     end
     
     # Cleanup temp file
     rm -f $shares_output
 
+    echo
     ezpz_title "Looking for exploitable accounts..."
 
     # Timeroast - works without authentication
+    echo
     ezpz_header "Searching for Timeroastable accounts"
     set time_file "$target"_time.hash
     if test -n "$domain"
@@ -283,6 +290,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
         ezpz_info "Saving hashes to $time_file"
     else
         rm -f $time_file
+        printf '%s\n' "No Timeroastable accounts found."
     end
 
     # Test for exploitable accounts if user files exist
@@ -301,6 +309,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
     end
 
     if test -n "$active_users_file"
+        echo
         ezpz_header "Searching for AS-REProastable accounts"
         set asrep_file "$target"_asrep.hash
         if test -n "$domain"
@@ -328,6 +337,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
             # Extract first AS-REP roastable user for Kerberoasting
             set asrep_user (printf '%s\n' $hash_lines[1] | grep -aoE '\$[^@]+@[^:]+' | cut -d'@' -f1 | cut -d'$' -f4)
             if test -n "$asrep_user"
+                echo
                 ezpz_header "Searching for Kerberoastable accounts using AS-REP user"
                 set kerb_file "$target"_kerb.hash
                 if test -n "$domain"
@@ -348,13 +358,18 @@ ezpz enumnull -t dc01.corp.local --guest -k
                     # Convert hashes to user:hash format
                     printf '%s\n' $spn_hash_lines | sed -E 's/\$krb5tgs\$23\$\*([^$]+)\$.*$/\1:&/' | tee $kerb_file
                     ezpz_info "Saving hashes to $kerb_file"
+                else
+                    printf '%s\n' "No Kerberoastable accounts found."
                 end
             end
+        else
+            printf '%s\n' "No AS-REP roastable accounts found."
         end
 
         # Test pre2k only if we have the full users file (not mini)
         if test "$active_users_file" = "$users_file_full" -a -s "$active_users_file"
             if command -v pre2k >/dev/null 2>&1
+                echo
                 ezpz_header "Searching for pre-Win2k compatible computer accounts (NoPac)"
                 
                 # Build pre2k command
@@ -368,12 +383,18 @@ ezpz enumnull -t dc01.corp.local --guest -k
                 end
                 
                 ezpz_cmd "$pre2k_cmd"
-                $pre2k_cmd | grep -aioE "VALID CREDENTIALS: .*" --color=never
+                set -l pre2k_out ($pre2k_cmd | grep -aioE "VALID CREDENTIALS: .*" --color=never)
+                if test -n "$pre2k_out"
+                    printf '%s\n' $pre2k_out
+                else
+                    printf '%s\n' "No pre-Win2k compatible computer accounts found."
+                end
             else
                 ezpz_warn "pre2k not found. Skipping pre-Win2k computer account enumeration."
             end
         end
     end
 
+    echo
     ezpz_success "Done."
 end

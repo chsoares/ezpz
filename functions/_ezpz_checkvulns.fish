@@ -210,5 +210,6 @@ Usage: ezpz checkvulns -t <target> [-d <domain>] -u <user> [-p <password> | -H <
         _check_single_target $_flag_target $auth_args
     end
 
+    echo
     ezpz_success "Done."
 end 

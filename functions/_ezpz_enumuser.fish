@@ -228,5 +228,6 @@ ezpz enumuser -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local
     end
     rm -f $recent_tmp
 
+    echo
     ezpz_success "Done."
 end

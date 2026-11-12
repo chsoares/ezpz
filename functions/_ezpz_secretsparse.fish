@@ -123,5 +123,6 @@ and consolidates them into a single, deduplicated .parsed file.
     end
 
     # Finalization
+    echo
     ezpz_success "Done."
 end 
