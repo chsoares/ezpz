@@ -596,7 +596,7 @@ Examples:
             ezpz_info "No ESC findings."
         end
     else
-        ezpz_warn "No CA found in this domain."
+        echo "  No CA found in this domain."
     end
     rm -f $adcs_tmp
 
