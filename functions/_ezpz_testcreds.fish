@@ -1,10 +1,14 @@
 # RDP/MSSQL logins without Pwn3d only prove the password is valid; they do not
 # give administrative access. Keep those protocols focused on actionable hits.
+#
+# Some domains enable the guest account and accept any password for it. NetExec
+# reports that as [+] even though it proves nothing, so drop guest successes.
 function __ezpz_testcreds_filter --argument-names protocol
     if contains -- $protocol rdp mssql
-        grep --text --color=never -a 'Pwn3d!'
+        grep --text --color=never -a 'Pwn3d!' | \
+        grep --text --color=never -a -viE '\[\+\].*([\\/]|[[:space:]])guest([^[:alnum:]_]|$)'
     else
-        cat
+        grep --text --color=never -a -viE '\[\+\].*([\\/]|[[:space:]])guest([^[:alnum:]_]|$)'
     end
 end
 
