@@ -72,8 +72,8 @@ Usage: ezpz credspray -t <target> -d <domain> [-u <user|file>] [-p <password|fil
     kerbrute always runs with --safe, so the spray aborts on the first locked
     account. Before spraying, the domain password policy is read with nxc and
     the password list is trimmed to one attempt below the lockout threshold.
-    The policy probe uses the first line of creds.txt (the ctf.fish standard),
-    falling back to a null session, and is skipped when neither works.
+    The policy probe tries a null session first, then the first line of
+    creds.txt (the ctf.fish standard), and is skipped when neither works.
 
     --force           Spray the whole list, ignoring the policy guard
     --unsafe          Do not pass --safe to kerbrute
@@ -278,9 +278,14 @@ Examples:
         set -l policy_tmp (mktemp)
         set -l threshold ""
 
-        # ctf.fish leaves the known credentials in creds.txt. A pair taken from
-        # the spray list is a guess, so it is not used to read the policy.
-        if test -f creds.txt
+        # Null session first: it costs no authentication attempt.
+        ezpz_spin_capture $policy_tmp timeout 30 nxc smb $_flag_target -u '' -p '' --pass-pol
+        set threshold (__ezpz_credspray_lockout_threshold (cat $policy_tmp))
+
+        # Many DCs refuse anonymous SAMR, so fall back to the known credentials
+        # ctf.fish leaves in creds.txt. A pair taken from the spray list is a
+        # guess and is never used here.
+        if test -z "$threshold"; and test -f creds.txt
             while read -l line
                 set line (string trim -- $line)
                 test -z "$line"; and continue
@@ -299,12 +304,6 @@ Examples:
                 set threshold (__ezpz_credspray_lockout_threshold (cat $policy_tmp))
                 break
             end < creds.txt
-        end
-
-        if test -z "$threshold"
-            # No known credential: try a null session, it costs no attempt.
-            ezpz_spin_capture $policy_tmp timeout 30 nxc smb $_flag_target -u '' -p '' --pass-pol
-            set threshold (__ezpz_credspray_lockout_threshold (cat $policy_tmp))
         end
 
         rm -f $policy_tmp
