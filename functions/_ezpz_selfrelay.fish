@@ -121,7 +121,6 @@ Performs NTLM self-relay attack using DNS poisoning and coercion techniques.
         ezpz_warn "Attack cancelled by user"
         return 0
     end
-    ezpz_info "Selected: Proceed with coercion attack"
     echo
     
     # Step 4: Execute coercion
