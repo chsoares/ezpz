@@ -162,7 +162,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
 
     # User Enumeration - prioritize --rid-brute over --users
     ezpz_header "Enumerating users with RID Bruteforcing"
-    ezpz_cmd "nxc smb $nxc_args --rid-brute 10000"
+    ezpz_cmd nxc smb $nxc_args --rid-brute 10000
     ezpz_spin nxc smb $nxc_args --rid-brute 10000 | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
     
     if test $pipestatus[1] -eq 124
@@ -176,7 +176,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
         
         # Fallback to --users
         ezpz_header "Enumerating users (fallback)"
-        ezpz_cmd "nxc smb $nxc_args --users"
+        ezpz_cmd nxc smb $nxc_args --users
         ezpz_spin nxc smb $nxc_args --users | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
         
         if test $pipestatus[1] -eq 124
@@ -193,7 +193,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
 
     # Groups
     ezpz_header "Enumerating groups"
-    ezpz_cmd "nxc ldap $nxc_args --groups"
+    ezpz_cmd nxc ldap $nxc_args --groups
     set -l groups_tmp (mktemp)
     ezpz_spin_capture $groups_tmp timeout 60 nxc ldap $nxc_args --groups
     set groups_status $status
@@ -221,7 +221,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
 
     # Password Policy
     ezpz_header "Enumerating password policy"
-    ezpz_cmd "nxc smb $nxc_args --pass-pol"
+    ezpz_cmd nxc smb $nxc_args --pass-pol
     set -l passpol_tmp (mktemp)
     ezpz_spin_capture $passpol_tmp timeout 60 nxc smb $nxc_args --pass-pol
     set passpol_status $status
@@ -240,7 +240,7 @@ ezpz enumnull -t dc01.corp.local --guest -k
 
     # Shares Enumeration
     ezpz_header "Enumerating shares"
-    ezpz_cmd "nxc smb $nxc_args --shares --smb-timeout 999"
+    ezpz_cmd nxc smb $nxc_args --shares --smb-timeout 999
     set shares_output (mktemp)
     ezpz_spin timeout 60 nxc smb $nxc_args --shares --smb-timeout 999 | grep -aE "READ|WRITE|NO ACCESS" | tr -s " " | cut -d " " -f 5- > $shares_output
     set shares_status $pipestatus[1]

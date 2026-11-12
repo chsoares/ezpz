@@ -11,7 +11,15 @@ function ezpz_info
     echo (set_color cyan)"  "$argv(set_color normal)
 end
 function ezpz_cmd
-    echo (set_color blue)"  "$argv(set_color normal)
+    set -l parts
+    for arg in $argv
+        if test -z "$arg"
+            set -a parts "''"
+        else
+            set -a parts $arg
+        end
+    end
+    echo (set_color blue)"  "(string join -- ' ' $parts)(set_color normal)
 end
 function ezpz_error
     echo (set_color red --bold)"  "$argv(set_color normal)
