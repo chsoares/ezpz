@@ -360,7 +360,8 @@ Examples:
 
         ezpz_spin_capture $run_tmp kerbrute $kb $users_tmp $password
 
-        set -l hits (grep -aiE 'VALID LOGIN' $run_tmp | __ezpz_credspray_logfmt)
+        set -l hits (grep -aiE 'VALID LOGIN' $run_tmp | __ezpz_credspray_logfmt \
+            | sed -E 's/^\[[+]\][[:space:]]*//; s/^(VALID LOGIN( WITH ERROR)?):[[:space:]]*/\1: /')
         if test (count $hits) -gt 0
             printf '%s\n' $hits
             set found (math $found + (count $hits))

