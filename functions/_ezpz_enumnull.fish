@@ -1,32 +1,40 @@
 # Return success if a null/guest session can read something useful.
 function __ezpz_enumnull_has_data --argument-names target user pass
-    set -l shares (timeout 30 nxc smb $target -u "$user" -p "$pass" --shares --smb-timeout 25 2>/dev/null)
-    if string match -qr '(READ|WRITE|NO ACCESS)' -- $shares
+    set -l tmp (mktemp)
+
+    ezpz_spin_capture $tmp timeout 30 nxc smb $target -u "$user" -p "$pass" --shares --smb-timeout 25
+    if string match -qr '(READ|WRITE|NO ACCESS)' -- (cat $tmp)
+        rm -f $tmp
         return 0
     end
 
-    set -l users (timeout 30 nxc smb $target -u "$user" -p "$pass" --rid-brute 100 2>/dev/null)
-    if string match -qr 'SidTypeUser' -- $users
+    ezpz_spin_capture $tmp timeout 30 nxc smb $target -u "$user" -p "$pass" --rid-brute 100
+    if string match -qr 'SidTypeUser' -- (cat $tmp)
+        rm -f $tmp
         return 0
     end
 
     # SAMR user enumeration and the password policy can work even when shares,
     # RID brute force and LDAP are denied.
-    set -l passpol (timeout 30 nxc smb $target -u "$user" -p "$pass" --pass-pol 2>/dev/null)
-    if string match -qr 'Minimum password length' -- $passpol
+    ezpz_spin_capture $tmp timeout 30 nxc smb $target -u "$user" -p "$pass" --pass-pol
+    if string match -qr 'Minimum password length' -- (cat $tmp)
+        rm -f $tmp
         return 0
     end
 
-    set -l users (timeout 30 nxc smb $target -u "$user" -p "$pass" --users 2>/dev/null)
-    if printf '%s\n' $users | grep -aqE '^[^[]*[A-Za-z0-9._$-]+[[:space:]]+\['
+    ezpz_spin_capture $tmp timeout 30 nxc smb $target -u "$user" -p "$pass" --users
+    if printf '%s\n' (cat $tmp) | grep -aqE '^[^[]*[A-Za-z0-9._$-]+[[:space:]]+\['
+        rm -f $tmp
         return 0
     end
 
-    set -l groups (timeout 30 nxc ldap $target -u "$user" -p "$pass" --groups 2>/dev/null)
-    if string match -qr 'membercount|Administrators|Domain Admins' -- $groups
+    ezpz_spin_capture $tmp timeout 30 nxc ldap $target -u "$user" -p "$pass" --groups
+    if string match -qr 'membercount|Administrators|Domain Admins' -- (cat $tmp)
+        rm -f $tmp
         return 0
     end
 
+    rm -f $tmp
     return 1
 end
 
@@ -91,11 +99,9 @@ ezpz enumnull -t dc01.corp.local --guest -k
         set auth_pass ""
         set auth_desc "null session"
 
-        ezpz_spin __ezpz_enumnull_has_data $target "" ""
-        if test $status -ne 0
+        if not __ezpz_enumnull_has_data $target "" ""
             ezpz_warn "Null session returned no data. Trying guest account..."
-            ezpz_spin __ezpz_enumnull_has_data $target "guest" ""
-            if test $status -eq 0
+            if __ezpz_enumnull_has_data $target "guest" ""
                 set auth_user "guest"
                 set auth_desc "guest account (null session returned nothing)"
             else
