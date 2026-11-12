@@ -108,6 +108,12 @@ passwords and sprays all of them against each other. Lines starting with `#` are
 ignored, `DOMAIN\user` / `user@domain` are normalized to the bare username, and
 NT hashes (32 hex chars) are skipped — use `testcreds -H` for pass-the-hash.
 
+Accounts that never authenticate are dropped: `krbtgt`, machine accounts ending
+in `$`, and the built-in placeholders (`Guest`, `DefaultAccount`,
+`DefaultUser`, `WDAGUtilityAccount`). A disabled account comes back as
+`KRB_ERR_CLIENT_REVOKED`, which `--safe` reads as a lockout, so leaving `krbtgt`
+in the list would abort every spray.
+
 Output is one command template plus a line per password, so the run is
 reproducible.
 

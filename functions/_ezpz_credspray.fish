@@ -24,6 +24,12 @@ function __ezpz_credspray_is_hash --argument-names value
     string match -qr '^[a-fA-F0-9]{32}$' -- $value
 end
 
+# kerbrute logs "2026/11/12 09:27:04 >  [+] ..." with color codes; keep just the
+# message so the output stays readable.
+function __ezpz_credspray_logfmt
+    sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g; s/^[0-9]{4}\/[0-9]{2}\/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} > +//'
+end
+
 # Pull the lockout threshold out of `nxc --pass-pol` output.
 function __ezpz_credspray_lockout_threshold
     set -l line (printf '%s\n' $argv | grep -aoE 'Account Lockout Threshold: [A-Za-z0-9]+' | head -1)
@@ -57,7 +63,9 @@ Usage: ezpz credspray -t <target> -d <domain> [-u <user|file>] [-p <password|fil
   Input handling:
     Lines starting with # are ignored. DOMAIN\\user and user@domain are
     normalized to the bare username. NT hashes (32 hex chars) are skipped; use
-    testcreds -H for pass-the-hash.
+    testcreds -H for pass-the-hash. Accounts that never authenticate (krbtgt,
+    machine accounts ending in \$, built-in placeholders) are dropped: --safe
+    would read their disabled state as a lockout and abort the spray.
 
   Lockout protection:
     kerbrute always runs with --safe, so the spray aborts on the first locked
@@ -222,10 +230,42 @@ Examples:
         end < $_flag_file
     end
 
+    # Accounts that can never authenticate. kerbrute --safe treats a disabled
+    # account (KRB_ERR_CLIENT_REVOKED) as a lockout and aborts the whole spray,
+    # so krbtgt or a machine account would kill every run.
+    set -l sprayable
+    set -l skipped_users 0
+    for user in $users
+        set -l lower (string lower -- $user)
+        if test "$lower" = krbtgt
+            set skipped_users (math $skipped_users + 1)
+            continue
+        end
+        if string match -q '*$' -- $user
+            set skipped_users (math $skipped_users + 1)
+            continue
+        end
+        if contains -- $lower guest defaultaccount defaultuser wdagutilityaccount
+            set skipped_users (math $skipped_users + 1)
+            continue
+        end
+        set -a sprayable $user
+    end
+    set users $sprayable
+
+    if test -n "$probe_user"; and not contains -- $probe_user $users
+        set probe_user ""
+        set probe_pass ""
+    end
+
     if test (count $users) -eq 0
-        ezpz_error "No usernames found. Use -u or -f with a user:pass file."
+        ezpz_error "No sprayable usernames found. Use -u or -f with a user:pass file."
         echo $usage
         return 1
+    end
+
+    if test $skipped_users -gt 0
+        ezpz_warn "Skipped $skipped_users non-logon account(s) (krbtgt, machine, built-in)."
     end
 
     if test (count $passwords) -eq 0
@@ -316,24 +356,25 @@ Examples:
 
         ezpz_spin_capture $run_tmp kerbrute $kb $users_tmp $password
 
-        set -l hits (grep -aiE 'VALID LOGIN' $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+        set -l hits (grep -aiE 'VALID LOGIN' $run_tmp | __ezpz_credspray_logfmt)
         if test (count $hits) -gt 0
             printf '%s\n' $hits
             set found (math $found + (count $hits))
         end
 
         # kerbrute --safe logs: [!] user@REALM:pass - USER LOCKED OUT and safe
-        # mode on! Aborting...
-        set -l locked (grep -aiE 'USER LOCKED OUT' $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+        # mode on! Aborting... The prefix carries a timestamp, so cut at the
+        # marker instead of anchoring to the start of the line.
+        set -l locked (grep -aiE 'USER LOCKED OUT' $run_tmp | __ezpz_credspray_logfmt)
         if test (count $locked) -gt 0
-            set -l account (printf '%s\n' $locked[1] | sed -E 's/^\[[!]\] *//; s/@.*//')
-            ezpz_error "Lockout detected on $account. Spraying stopped."
+            set -l account (printf '%s\n' $locked[1] | sed -E 's/^.*\[[!]\] +//; s/@.*//')
+            ezpz_error "Lockout detected on $account (locked, disabled or expired). Spraying stopped."
             set aborted true
             break
         end
 
         if grep -aqiE 'NETWORK ERROR|WRONG REALM' $run_tmp
-            grep -aiE '^\[!\]' $run_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+            grep -aiE '\[!\]' $run_tmp | __ezpz_credspray_logfmt
             ezpz_warn "Spraying stopped."
             set aborted true
             break
