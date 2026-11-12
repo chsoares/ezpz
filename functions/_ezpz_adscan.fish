@@ -110,7 +110,7 @@ This function attempts to write to /etc/hosts and may require sudo.
         
         ezpz_question "Select follow-up action:"
         set choice (ezpz_choose_one 'Append to /etc/hosts' 'Overwrite /etc/hosts' 'Skip')
-        if test "$choice" = "Skip"
+        if test -n "$choice"
             ezpz_cmd "Selected: $choice"
         end
         switch "$choice"

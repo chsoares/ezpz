@@ -237,7 +237,7 @@ ezpz enumshares -t 10.10.10.10  # null session
             ezpz_header "Found writeable shares: "(string join ', ' $write_shares)
             ezpz_question "Select follow-up action:"
             set lnk_action (ezpz_choose_one 'Create malicious LNK file' 'Skip')
-            if test "$lnk_action" = "Skip"
+            if test -n "$lnk_action"
                 ezpz_cmd "Selected: $lnk_action"
             end
             if test "$lnk_action" = 'Create malicious LNK file'
@@ -333,7 +333,7 @@ ezpz enumshares -t 10.10.10.10  # null session
                 if test -s $files_tmp
                     ezpz_question "Select follow-up action:"
                     set action (ezpz_choose_one 'Download all' 'Run manspider' 'Skip')
-                    if test "$action" = "Skip"
+                    if test -n "$action"
                         ezpz_cmd "Selected: $action"
                     end
                     switch $action
