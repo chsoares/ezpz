@@ -152,37 +152,8 @@ or a 32-character NTLM hash in place of the password.
             continue
         end
 
-        set -l findings (sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' $tmp | awk '
-        function trim(s) {
-            gsub(/^[ \t]+|[ \t]+$/, "", s)
-            return s
-        }
-        /^[ \t]*Certificate Authorities[ \t]*$/ { section = "CA"; next }
-        /^[ \t]*Certificate Templates[ \t]*$/ { section = "Template"; next }
-        /^[ \t]*CA Name[ \t]*:/ {
-            section = "CA"
-            name = trim(substr($0, index($0, ":") + 1))
-            next
-        }
-        /^[ \t]*Template Name[ \t]*:/ {
-            section = "Template"
-            name = trim(substr($0, index($0, ":") + 1))
-            next
-        }
-        /^[ \t]*ESC[0-9]+[ \t]*:/ {
-            line = $0
-            sub(/^[ \t]+/, "", line)
-            pos = index(line, ":")
-            esc = trim(substr(line, 1, pos - 1))
-            desc = trim(substr(line, pos + 1))
-            gsub(/\|/, "/", desc)
-            if (section == "" || name == "") next
-            key = section SUBSEP name SUBSEP esc
-            if (!(key in seen)) {
-                seen[key] = 1
-                print esc "|" section "|" name "|" desc
-            }
-        }')
+        set -l findings (__ezpz_adcs_parse < $tmp | grep -a '^ESC|' | sed 's/^ESC|//')
+
         rm -f $tmp
 
         if test -n "$findings"

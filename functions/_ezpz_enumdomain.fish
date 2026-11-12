@@ -573,40 +573,30 @@ Examples:
     ezpz_cmd "nxc ldap $nxc_auth -M certipy-find"
     set -l adcs_tmp (mktemp)
     ezpz_spin_capture $adcs_tmp nxc ldap $nxc_auth -M certipy-find
-    # Keep the complete CERTIPY-FIND block in order. The nxc prefix width
-    # varies with the target hostname, so derive it from the first module line
-    # and cut exactly that much, preserving the module's own indentation.
-    set -l adcs_lines (grep -a 'CERTIPY-' $adcs_tmp \
-        | awk '
-        {
-            if (base == 0) {
-                tmp = $0
-                sub(/^([^[:space:]]+[[:space:]]+){4}[[:space:]]*/, "", tmp)
-                base = length($0) - length(tmp)
-            }
-
-            line = substr($0, base + 1)
-            match(line, /^[ \t]*/)
-            indent = substr(line, 1, RLENGTH)
-            body = substr(line, RLENGTH + 1)
-            if (body == "") next
-
-            pos = index(body, ":")
-            if (pos > 0 && body !~ /^https?:/) {
-                key = substr(body, 1, pos - 1)
-                val = substr(body, pos + 1)
-                gsub(/^[ \t]+|[ \t]+$/, "", key)
-                gsub(/^[ \t]+|[ \t]+$/, "", val)
-                printf "%s%-34s : %s\n", indent, key, val
-            } else {
-                print line
-            }
-        }' \
-        | sed -E 's/^([[:space:]]*)\[[!*+-]\][[:space:]]*/\1/; s/\[!\] //g')
-    if test -n "$adcs_lines"
-        printf '  %s\n' $adcs_lines
+    # Keep only the actionable ADCS data: CA identity and ESC findings.
+    set -l adcs_info (__ezpz_adcs_parse < $adcs_tmp)
+    set -l ca_name (printf '%s\n' $adcs_info | sed -n 's/^CANAME|//p' | head -1)
+    set -l ca_dns (printf '%s\n' $adcs_info | sed -n 's/^CADNS|//p' | head -1)
+    set -l adcs_escs (printf '%s\n' $adcs_info | grep -a '^ESC|' | sed 's/^ESC|//')
+    if test -n "$ca_name"
+        printf '  %-34s : %s\n' "CA Name" "$ca_name"
+        if test -n "$ca_dns"
+            printf '  %-34s : %s\n' "DNS Name" "$ca_dns"
+        end
+        if test -n "$adcs_escs"
+            for finding in $adcs_escs
+                set -l parts (string split '|' -- $finding)
+                set -l esc $parts[1]
+                set -l scope $parts[2]
+                set -l object $parts[3]
+                set -l desc $parts[4]
+                printf '   %-6s %s: %s — %s\n' "$esc" "$scope" "$object" "$desc"
+            end
+        else
+            ezpz_info "No ESC findings."
+        end
     else
-        ezpz_warn "No ADCS data returned."
+        ezpz_warn "No CA found in this domain."
     end
     rm -f $adcs_tmp
 
