@@ -114,10 +114,11 @@ reproducible.
 Lockout protection is on by default: kerbrute always runs with `--safe`, so the
 spray stops on the first locked account and names it. Before spraying, the
 domain password policy is read with `nxc --pass-pol` (null session first, then a
-known credential) and the run is refused when the password count reaches the
-lockout threshold.
+known credential) and the password list is trimmed to one attempt below the
+lockout threshold — the attempt that reaches the threshold is the one that
+locks the account.
 
-- `--force` skips that pre-flight policy check but keeps `--safe`.
+- `--force` sprays the whole list, ignoring the policy guard.
 - `--unsafe` drops `--safe`, so kerbrute keeps spraying after a lockout.
 
 Throttling stays with kerbrute (`--delay`, `--threads`).

@@ -62,10 +62,9 @@ Usage: ezpz credspray -t <target> -d <domain> [-u <user|file>] [-p <password|fil
   Lockout protection:
     kerbrute always runs with --safe, so the spray aborts on the first locked
     account. Before spraying, the domain password policy is read with nxc and
-    the run is refused when the number of passwords per user reaches the
-    lockout threshold.
+    the password list is trimmed to one attempt below the lockout threshold.
 
-    --force           Ignore the password-policy guard (--safe still applies)
+    --force           Spray the whole list, ignoring the policy guard
     --unsafe          Do not pass --safe to kerbrute
 
 Examples:
@@ -266,15 +265,25 @@ Examples:
         end
 
         if test -n "$threshold"
-            set -l guard $per_user
+            if test $threshold -gt 0
+                # One bad password below the threshold keeps every account
+                # clear; the attempt that reaches the threshold locks it.
+                set -l limit (math $threshold - 1)
 
-            if test $threshold -gt 0 -a $guard -ge $threshold
-                ezpz_error "Lockout threshold is $threshold; $guard attempt(s) per user would lock accounts."
-                ezpz_warn "Reduce the password list or use --force to ignore the guard."
-                return 1
+                if test $limit -lt 1
+                    ezpz_error "Lockout threshold is $threshold; a single wrong password locks every account."
+                    ezpz_warn "Use --force to spray anyway."
+                    return 1
+                end
+
+                if test $per_user -gt $limit
+                    set -l dropped (math $per_user - $limit)
+                    ezpz_warn "Lockout threshold $threshold: spraying the first $limit of $per_user passwords per user ($dropped dropped, --force to spray all)."
+                    set passwords $passwords[1..$limit]
+                else
+                    ezpz_info "Lockout policy: threshold $threshold, $per_user attempt(s) per user."
+                end
             end
-
-            test $threshold -gt 0; and ezpz_info "Lockout policy: threshold $threshold, $guard attempt(s) per user."
         else
             ezpz_warn "Could not read the lockout threshold; --safe stays on."
         end
