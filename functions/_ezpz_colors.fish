@@ -1,6 +1,7 @@
 # special symbols
 
 function ezpz_header
+    echo
     echo (set_color yellow --bold)"  "$argv(set_color normal)
 end
 function ezpz_info
@@ -22,6 +23,7 @@ function ezpz_question
     echo (set_color cyan)"  "$argv(set_color normal)
 end
 function ezpz_title
+    echo
     echo (set_color magenta --bold)"  "$argv(set_color normal)
 end
 
