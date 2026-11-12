@@ -257,6 +257,10 @@ ezpz enumshares -t 10.10.10.10  # null session
                     set listener $listener_ip
                 end
 
+                if test -n "$listener"
+                    ezpz_cmd "Selected: $listener"
+                end
+
                 if test -z "$listener"
                     ezpz_warn "Could not determine listener IP address. Skipping LNK file creation."
                 else
@@ -398,6 +402,7 @@ ezpz enumshares -t 10.10.10.10  # null session
                                 if test -z "$content"
                                     set content "passw user admin account network login logon cred"
                                 end
+                                ezpz_cmd "Selected: $content"
                                 
                                 set dir_path "./manspider/$share"
                                 mkdir -p $dir_path

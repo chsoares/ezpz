@@ -99,6 +99,7 @@ ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
         end
         set db_choice (string trim $db_choice)
     end
+    ezpz_cmd "Selected: $db_choice"
 
     switch $db_choice
         case "" "current"
@@ -141,6 +142,7 @@ ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
         end
         set table_choice (string trim $table_choice)
     end
+    ezpz_cmd "Selected: $table_choice"
 
     switch $table_choice
         case "" "all"
@@ -171,6 +173,7 @@ ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
                     end
                     set column_choice (string trim $column_choice)
                 end
+                ezpz_cmd "Selected: $column_choice"
 
                 switch $column_choice
                     case "" "all"
