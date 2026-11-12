@@ -21,7 +21,7 @@ Usage: ezpz netscan [-F] <target>
 
     if set -q _flag_help
         echo $usage
-        return 1
+        return 0
     end
 
     if set -q _flag_fast

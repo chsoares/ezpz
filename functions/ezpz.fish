@@ -44,9 +44,20 @@ function ezpz
     set -l subcmd $argv[1]
     set -e argv[1]
 
+    # Help is not a run: do not create a log for `ezpz <cmd> -h`.
+    set -l wants_help 0
+    if contains -- -h $argv; or contains -- --help $argv
+        set wants_help 1
+    end
+
     if contains -- $subcmd $commands
         set -l func_name _ezpz_$subcmd
         if functions -q $func_name
+            if test $wants_help -eq 1
+                $func_name $argv
+                return $status
+            end
+
             set -l log_path (ezpz_get_log_path $subcmd)
             set -l temp_log (mktemp)
             $func_name $argv | tee $temp_log

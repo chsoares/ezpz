@@ -18,7 +18,7 @@ Usage: ezpz adscan <target>
 
     if set -q _flag_help
         echo $usage
-        return 1
+        return 0
     end
 
     # Check for exactly one positional argument

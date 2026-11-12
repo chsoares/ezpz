@@ -58,7 +58,7 @@ Examples:
     
     if set -q _flag_help
         echo $usage
-        return 1
+        return 0
     end
     
     if not set -q _flag_target

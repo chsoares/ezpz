@@ -44,7 +44,7 @@ Usage: ezpz testcreds -t <target> [-d <domain>] [[-f <file>] | [-u <user>] [-p <
 
     if set -q _flag_help
         echo $usage
-        return 1
+        return 0
     end
 
     # Validate required target
