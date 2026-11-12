@@ -107,7 +107,12 @@ Usage: ezpz netscan [-F] <target>
     # Port Scanning - Fast TCP Scan
     ezpz_header "Running FAST TCP SCAN on discovered hosts"
     ezpz_cmd "sudo nmap -T4 -Pn -F --min-rate 10000 <target_ip>"
+    set -l first_host 1
     while read -l item
+        if test $first_host -eq 0
+            echo
+        end
+        set first_host 0
         ezpz_info "Scanning $item..."
         ezpz_spin sudo /usr/bin/nmap -T4 -Pn -F --min-rate 10000 "$item" |
             sed -n '/^PORT/,$p' |
@@ -116,14 +121,20 @@ Usage: ezpz netscan [-F] <target>
     end < "$targets_tmp"
 
     if test $fast_scan -eq 1
-        ezpz_warn "Fast scan complete."
+        echo
+        ezpz_success "Done."
         return 0
     end
 
     # Full TCP Scan
     ezpz_header "Running FULL TCP SCAN on discovered hosts"
     ezpz_cmd "sudo nmap -T4 -Pn -sVC -p- --min-rate 10000 -vv <target_ip>"
+    set -l first_host 1
     while read -l item
+        if test $first_host -eq 0
+            echo
+        end
+        set first_host 0
         ezpz_info "Scanning $item..."
         ezpz_spin sudo /usr/bin/nmap -T4 -Pn -sVC -p- "$item" --min-rate 10000 -vv |
             sed -n '/^PORT/,$p' |
@@ -136,7 +147,12 @@ Usage: ezpz netscan [-F] <target>
     # UDP Scan
     ezpz_header "Running UDP SCAN on discovered hosts"
     ezpz_cmd "sudo nmap -T4 -sU --open --min-rate 10000 <target_ip>"
+    set -l first_host 1
     while read -l item
+        if test $first_host -eq 0
+            echo
+        end
+        set first_host 0
         ezpz_info "Scanning $item..."
         ezpz_spin sudo /usr/bin/nmap -T4 -sU --open --min-rate 10000 "$item" |
             sed -n '/ŝPORT/,$p' |
