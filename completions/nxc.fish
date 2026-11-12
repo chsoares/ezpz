@@ -53,7 +53,7 @@ complete -c nxc -f -n '__fish_use_subcommand' -a 'ldap' -d 'LDAP protocol'
 complete -c nxc -f -n '__fish_use_subcommand' -a 'vnc' -d 'VNC protocol'
 
 # Target completion with IP completion from *_ips.txt files
-complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -a '(__nxc_get_ips)' -d 'Target IP or hostname'
+complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -a '(__nxc_get_ips)'
 
 # Authentication options
 # Username completion from creds.txt

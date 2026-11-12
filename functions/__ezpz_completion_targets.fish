@@ -35,7 +35,12 @@ function __ezpz_completion_targets
 
     if test $include_files -eq 1
         for file in $ip_files
-            printf '%s\t%s\n' (basename -- "$file") "IP list"
+            set -l count (awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { n++ } END { print n + 0 }' "$file")
+            set -l desc "$count target"
+            if test "$count" -ne 1
+                set desc "$count targets"
+            end
+            printf '%s\t%s\n' (basename -- "$file") "$desc"
         end
     end
 

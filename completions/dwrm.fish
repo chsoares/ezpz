@@ -43,7 +43,7 @@ function __dwrm_get_domains
 end
 
 # Target IP completion - first positional argument
-complete -c dwrm -f -n 'not __fish_seen_subcommand_from (dwrm --help 2>/dev/null | grep -o "\-[a-zA-Z]")' -a '(__dwrm_get_ips)' -d 'Target IP address'
+complete -c dwrm -f -n 'not __fish_seen_subcommand_from (dwrm --help 2>/dev/null | grep -o "\-[a-zA-Z]")' -a '(__dwrm_get_ips)'
 
 # Username completion from creds.txt
 complete -c dwrm -f -s u -l user -r -a '(__ezpz_creds_completion_users)' -d 'Username for authentication'

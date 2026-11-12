@@ -80,7 +80,7 @@ complete -c ezpz -f -n '__fish_use_subcommand' -a 'selfrelay' -d 'NTLM self-rela
 
 # Target flag with IP completion from *_ips.txt files - requires argument
 # All commands that take targets
-complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns certspray enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell credspray selfrelay' -s t -l target -r -a '(__ezpz_get_ips)' -d 'Target IP or hostname'
+complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns certspray enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell credspray selfrelay' -s t -l target -r -a '(__ezpz_get_ips)'
 
 # Authentication options - for commands that support auth
 # Username completion from creds.txt
@@ -104,19 +104,19 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan check
 
 # Specific options for individual commands
 # testcreds specific
-complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s f -l file -r -d 'File containing credentials in user:pass/hash format'
-complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s x -l protocols -r -a 'smb,winrm,mssql,rdp,ssh,ftp' -d 'Protocol'
+complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s f -l file -r -a '(__ezpz_completion_creds_files)' -d 'File containing credentials in user:pass/hash format'
+complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s x -l protocols -r -a '(__ezpz_completion_protocols)' -d 'Protocols (comma-separated)'
 
 # certspray specific
-complete -c ezpz -f -n '__fish_seen_subcommand_from certspray' -s f -l file -r -a '(find . -maxdepth 1 -name "*creds*.txt" -type f 2>/dev/null | sed "s|^./||")' -d 'Credentials file'
+complete -c ezpz -f -n '__fish_seen_subcommand_from certspray' -s f -l file -r -a '(__ezpz_completion_creds_files)' -d 'Credentials file'
 
 # enumsqli specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from enumsqli' -s F -l fast -d 'Skip DBMS enumeration and interactive prompts'
 
 # credspray specific
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s u -l user -r -a '(find . -maxdepth 1 -name "*users*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Username, username file, or user:pass file'
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s p -l password -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Password, password file, or user:pass file'
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s f -l file -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Hail mary: user:pass credential file'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s u -l user -r -a '(__ezpz_completion_creds_files)' -d 'Username, username file, or user:pass file'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s p -l password -r -a '(__ezpz_completion_creds_files)' -d 'Password, password file, or user:pass file'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s f -l file -r -a '(__ezpz_completion_creds_files)' -d 'Hail mary: user:pass credential file'
 complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s F -l force -d 'Ignore the password-policy lockout guard'
 complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -l unsafe -d 'Do not pass --safe to kerbrute'
 
