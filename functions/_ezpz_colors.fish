@@ -10,16 +10,60 @@ end
 function ezpz_info
     echo (set_color cyan)"  "$argv(set_color normal)
 end
+function __ezpz_cmd_quote_arg --argument-names value
+    if test -z "$value"
+        echo "''"
+        return
+    end
+    if string match -q "'*'" -- $value
+        echo $value
+        return
+    end
+    if string match -q '<*' -- $value
+        echo $value
+        return
+    end
+
+    set -l escaped (string replace -a -- "'" "'\\''" $value)
+    echo "'$escaped'"
+end
+
 function ezpz_cmd
-    set -l parts
-    for arg in $argv
-        if test -z "$arg"
-            set -a parts "''"
-        else
-            set -a parts $arg
+    set -l parts $argv
+    set -l from_list 0
+    if test (count $parts) -gt 1
+        set from_list 1
+    else
+        set parts (string split -n ' ' -- $parts[1])
+    end
+
+    set -l out
+    set -l quote_next 0
+    set -l auth_flags -u --user --username -p --password --pass -H --hash -hashes --hashes
+
+    for arg in $parts
+        if test $quote_next -eq 1
+            if test $from_list -eq 0; and string match -q -- '-*' $arg
+                set -a out "''"
+                set quote_next 0
+            else
+                set -a out (__ezpz_cmd_quote_arg $arg)
+                set quote_next 0
+                continue
+            end
+        end
+
+        set -a out $arg
+        if contains -- $arg $auth_flags
+            set quote_next 1
         end
     end
-    echo (set_color blue)"  "(string join -- ' ' $parts)(set_color normal)
+
+    if test $quote_next -eq 1
+        set -a out "''"
+    end
+
+    echo (set_color blue)"  "(string join -- ' ' $out)(set_color normal)
 end
 function ezpz_error
     echo (set_color red --bold)"  "$argv(set_color normal)
