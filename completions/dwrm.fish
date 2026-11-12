@@ -3,15 +3,7 @@
 
 # Helper function to get IPs from *_ips.txt files in current directory
 function __dwrm_get_ips
-    # Use find to avoid wildcard expansion errors
-    set -l ip_files (find . -maxdepth 1 -name "*_ips.txt" -type f 2>/dev/null)
-    
-    for file in $ip_files
-        if test -f "$file"
-            cat "$file" 2>/dev/null | string match -r '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
-        end
-    end
-    # No output if no files exist - completion will be empty
+    __ezpz_completion_targets
 end
 
 # Helper function to get usernames from creds.txt
