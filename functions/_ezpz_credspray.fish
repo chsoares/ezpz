@@ -322,7 +322,7 @@ Examples:
 
                 if test $per_user -gt $limit
                     set -l dropped (math $per_user - $limit)
-                    ezpz_warn "Lockout threshold $threshold: spraying the first $limit of $per_user passwords per user ($dropped dropped, --force to spray all)."
+                    ezpz_info "Lockout threshold $threshold: spraying the first $limit of $per_user passwords per user ($dropped dropped, --force to spray all)."
                     set passwords $passwords[1..$limit]
                 else
                     ezpz_info "Lockout policy: threshold $threshold, $per_user attempt(s) per user."
