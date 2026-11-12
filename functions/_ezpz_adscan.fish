@@ -231,7 +231,7 @@ This function attempts to write to /etc/hosts and may require sudo.
         case '*'
             ezpz_info "Multiple domains found. Generated one KRB5 config per domain:"
             for krb5file in $krb5_files
-                printf '  %s\n' "$PWD/$krb5file"
+                printf '%s\n' "$PWD/$krb5file"
             end
             ezpz_warn "KRB5_CONFIG not exported. Choose a domain and run:"
             ezpz_cmd "set -gx KRB5_CONFIG $PWD/$krb5_files[1]"

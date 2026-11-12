@@ -17,13 +17,13 @@ function __ezpz_checkvulns_module --argument-names label proto module target
     if test $rc -eq 124
         ezpz_warn "Timeout reached while testing $label on $target"
     else if grep -aqE 'KDC_ERR|KerberosError' $tmp
-        echo "  No result / Kerberos realm or authentication error"
+        echo "No result / Kerberos realm or authentication error"
     else if grep -aqE 'Name or service not known|Errno -2' $tmp
-        echo "  No result / DNS resolution error"
+        echo "No result / DNS resolution error"
     else if test -n "$lines"
-        printf '  %s\n' $lines
+        printf '%s\n' $lines
     else
-        echo "  No result / not vulnerable"
+        echo "No result / not vulnerable"
     end
     rm -f $tmp
 end
@@ -165,9 +165,9 @@ Usage: ezpz checkvulns -t <target> [-d <domain>] -u <user> [-p <password> | -H <
         if test $cve_rc -eq 124
             ezpz_warn "Timeout reached while testing CVE inventory on $target"
         else if test -n "$cve_lines"
-            printf '  %s\n' $cve_lines
+            printf '%s\n' $cve_lines
         else
-            echo "  No matching CVEs found."
+            echo "No matching CVEs found."
         end
         rm -f $cve_tmp
 
@@ -179,7 +179,7 @@ Usage: ezpz checkvulns -t <target> [-d <domain>] -u <user> [-p <password> | -H <
 
         if test (count $auth_string) -eq 0
             ezpz_header "NoPac (CVE-2021-42278)"
-            echo "  NoPac requires valid credentials to test. Skipping."
+            echo "NoPac requires valid credentials to test. Skipping."
         else
             __ezpz_checkvulns_module "NoPac (CVE-2021-42278)" smb nopac $target $auth_string
         end

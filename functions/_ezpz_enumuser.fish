@@ -192,7 +192,7 @@ ezpz enumuser -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local
     if test $dpapi_rc -eq 124
         ezpz_warn "Operation timed out. Skipping SMB LAPS."
     else if test -n "$dpapi_lines"
-        printf '  %s\n' $dpapi_lines
+        printf '%s\n' $dpapi_lines
     else
         ezpz_info "No LAPS or DPAPI results found."
     end
@@ -222,7 +222,7 @@ ezpz enumuser -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local
     if test $recent_rc -eq 124
         ezpz_warn "Operation timed out. Skipping."
     else if test -n "$recent_lines"
-        printf '  %s\n' $recent_lines
+        printf '%s\n' $recent_lines
     else
         ezpz_info "No recent files found."
     end

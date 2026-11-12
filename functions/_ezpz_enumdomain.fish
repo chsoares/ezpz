@@ -456,7 +456,7 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     ezpz_spin_capture $info_tmp nxc ldap $nxc_auth -M get-info-users
     set -l info_lines (grep -avE '\[\*\]|\[\+\]|\[-\]' $info_tmp | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' | grep -aiE 'User:|Info:' | sort -u)
     if test -n "$info_lines"
-        printf '  %s\n' $info_lines
+        printf '%s\n' $info_lines
     else
         ezpz_info "No user info fields found."
     end
