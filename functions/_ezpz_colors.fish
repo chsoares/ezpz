@@ -1,7 +1,10 @@
 # special symbols
 
 function ezpz_header
-    echo
+    if set -q __ezpz_header_seen; and test "$__ezpz_header_seen" -eq 1
+        echo
+    end
+    set -g __ezpz_header_seen 1
     echo (set_color yellow --bold)"  "$argv(set_color normal)
 end
 function ezpz_info
@@ -23,12 +26,16 @@ function ezpz_question
     echo (set_color cyan)"  "$argv(set_color normal)
 end
 function ezpz_title
-    echo
+    if set -q __ezpz_header_seen; and test "$__ezpz_header_seen" -eq 1
+        echo
+    end
+    set -g __ezpz_header_seen 1
     echo (set_color magenta --bold)"  "$argv(set_color normal)
 end
 
 
 function ezpz_banner
+    set -g __ezpz_header_seen 0
     set -l label " ezpz"
     if test (count $argv) -gt 0
         set label "$label $argv"

