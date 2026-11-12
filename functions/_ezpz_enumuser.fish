@@ -5,14 +5,14 @@ function _ezpz_enumuser
 
     # Usage message
     set usage "
-Usage: ezpz enumuser -t <target> -u <user> [-p <password> | -H <hash>] [-d <domain>] [-k]
+Usage: ezpz enumuser -t <target> [-d <domain>] -u <user> [-p <password> | -H <hash>] [-k]
   Enumerates a specific user's groups, rights, and potential access.
 
   -t, --target    Target Domain Controller IP or hostname (Required)
+  -d, --domain    Domain for authentication (optional)
   -u, --user      Username to enumerate (Required)
   -p, --password  Password for authentication
   -H, --hash      NTLM hash for pass-the-hash authentication
-  -d, --domain    Domain for authentication (optional)
   -k, --kerb      Use Kerberos authentication (requires a valid TGT)
 
 Examples:

@@ -98,10 +98,10 @@ complete -c bloodyAD -f -n '__fish_seen_subcommand_from set' -a 'restore' -d 'Re
 
 # Authentication options - for all commands
 # Username completion from creds.txt
-complete -c bloodyAD -f -s u -l username -r -a '(__bloodyad_get_users)' -d 'Username for authentication'
+complete -c bloodyAD -f -s u -l username -r -a '(__ezpz_creds_completion_users)' -d 'Username for authentication'
 
 # Password completion based on selected user
-complete -c bloodyAD -f -s p -l password -r -a '(__bloodyad_get_creds_for_user (__bloodyad_get_current_user))' -d 'Password for authentication (or :hash for pass-the-hash)'
+complete -c bloodyAD -f -s p -l password -r -a '(__ezpz_creds_completion_secrets)' -d 'Password for authentication (or :hash for pass-the-hash)'
 
 # Domain option with hostname completion from *_etchosts.txt files
 complete -c bloodyAD -f --keep-order -s d -l domain -r -a '(__bloodyad_get_domains)' -d 'Domain name'

@@ -53,12 +53,19 @@ end
 
 # Helper function to create user@domain combinations
 function __certipy_get_user_domain_combos
-    set -l users (__certipy_get_users)
     set -l domains (__certipy_get_domains)
-    
-    for user in $users
-        for domain in $domains
+
+    for entry in (__ezpz_creds_completion_entries)
+        set -l fields (string split \t -- $entry)
+        set -l user $fields[1]
+        set -l domain $fields[2]
+        string match -q 'local*' -- $domain; and continue
+        if test -n "$domain"
             echo "$user@$domain"
+        else
+            for d in $domains
+                echo "$user@$d"
+            end
         end
     end
 end
@@ -77,10 +84,10 @@ complete -c certipy -f -n '__fish_use_subcommand' -a 'shadow' -d 'Shadow credent
 complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -s u -l username -r -a '(__certipy_get_user_domain_combos)' -d 'Username in user@domain format'
 
 # Password completion based on selected user
-complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -s p -l password -r -a '(__certipy_get_creds_for_user (__certipy_get_current_user))' -d 'Password for authentication'
+complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -s p -l password -r -a '(__ezpz_creds_completion_passwords)' -d 'Password for authentication'
 
 # Hash completion based on selected user (format: lm:ntlm)
-complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -l hashes -r -a '(__certipy_get_creds_for_user (__certipy_get_current_user))' -d 'NTLM hashes in lm:ntlm format'
+complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -l hashes -r -a '(__ezpz_creds_completion_hashes)' -d 'NTLM hashes in lm:ntlm format'
 
 # Domain Controller IP completion
 complete -c certipy -f -n '__fish_seen_subcommand_from find req auth template ca relay shadow' -l dc-ip -r -a '(__certipy_get_ips)' -d 'Domain Controller IP address'

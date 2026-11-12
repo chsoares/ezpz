@@ -65,13 +65,13 @@ complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp l
 
 # Authentication options
 # Username completion from creds.txt
-complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -s u -l username -r -a '(__nxc_get_users)' -d 'Username for authentication'
+complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -s u -l username -r -a '(__ezpz_creds_completion_users)' -d 'Username for authentication'
 
 # Password completion based on selected user
-complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -s p -l password -r -a '(__nxc_get_creds_for_user (__nxc_get_current_user))' -d 'Password for authentication'
+complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -s p -l password -r -a '(__ezpz_creds_completion_passwords)' -d 'Password for authentication'
 
 # Hash completion based on selected user (NTLM hash)
-complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -s H -l hash -r -a '(__nxc_get_creds_for_user (__nxc_get_current_user))' -d 'NTLM hash for pass-the-hash'
+complete -c nxc -f -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -s H -l hash -r -a '(__ezpz_creds_completion_hashes)' -d 'NTLM hash for pass-the-hash'
 
 # Domain option with hostname completion from *_etchosts.txt files
 complete -c nxc -f --keep-order -n '__fish_seen_subcommand_from smb winrm mssql rdp ssh ftp ldap vnc' -s d -l domain -r -a '(__nxc_get_domains)' -d 'Domain name'

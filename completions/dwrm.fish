@@ -54,13 +54,13 @@ end
 complete -c dwrm -f -n 'not __fish_seen_subcommand_from (dwrm --help 2>/dev/null | grep -o "\-[a-zA-Z]")' -a '(__dwrm_get_ips)' -d 'Target IP address'
 
 # Username completion from creds.txt
-complete -c dwrm -f -s u -l user -r -a '(__dwrm_get_users)' -d 'Username for authentication'
+complete -c dwrm -f -s u -l user -r -a '(__ezpz_creds_completion_users)' -d 'Username for authentication'
 
 # Password completion based on selected user
-complete -c dwrm -f -s p -l password -r -a '(__dwrm_get_creds_for_user (__dwrm_get_current_user))' -d 'Password for authentication'
+complete -c dwrm -f -s p -l password -r -a '(__ezpz_creds_completion_passwords)' -d 'Password for authentication'
 
 # Hash completion based on selected user (NTLM hash)
-complete -c dwrm -f -s H -l hash -r -a '(__dwrm_get_creds_for_user (__dwrm_get_current_user))' -d 'NTLM hash for pass-the-hash'
+complete -c dwrm -f -s H -l hash -r -a '(__ezpz_creds_completion_hashes)' -d 'NTLM hash for pass-the-hash'
 
 # Domain Controller FQDN completion from *_etchosts.txt files
 complete -c dwrm -f --keep-order -l dc -r -a '(__dwrm_get_domains)' -d 'Domain Controller FQDN'

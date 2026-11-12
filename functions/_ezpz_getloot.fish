@@ -34,12 +34,12 @@ function _ezpz_getloot
     set -l usage "
 getloot - Extract information and secrets from a compromised Windows machine
 
-Usage: ezpz loot -t <target> -u <user> -d <domain> [options]
+Usage: ezpz loot -t <target> -d <domain> -u <user> [options]
 
 Options:
   -t, --target <ip>         Target IP or hostname (Required)
-  -u, --username <user>     Username for authentication (Required)
   -d, --domain <domain>     Domain for authentication (Required)
+  -u, --username <user>     Username for authentication (Required)
   -p, --password <pass>     Password for authentication
   -H, --hash <hash>         NTLM hash for pass-the-hash
   -k, --kerberos            Use Kerberos authentication

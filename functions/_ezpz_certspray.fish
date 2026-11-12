@@ -4,14 +4,14 @@ function _ezpz_certspray
     ezpz_banner certspray
 
     set usage "
-Usage: ezpz certspray -t <target> [-f <credentials>] [-d <domain>]
+Usage: ezpz certspray -t <target> [-d <domain>] [-f <credentials>]
 
 Runs Certipy's ADCS find for every credential in the file and reports the
 ESC findings that apply to each user.
 
   -t, --target    DC IP or hostname (required)
-  -f, --file      Credentials file (default: creds.txt)
   -d, --domain    Default domain for entries without DOMAIN\\user or user@domain
+  -f, --file      Credentials file (default: creds.txt)
   -h, --help      Show this help message
 
 Credential lines are user:password, DOMAIN\\user:password, user@domain:password,
@@ -86,7 +86,7 @@ or a 32-character NTLM hash in place of the password.
 
         set -l user $raw_user
         set -l domain ""
-        if string match -q '*\\*' -- $raw_user
+        if string match -rq '\\\\' -- $raw_user
             set domain (string split '\\' -- $raw_user)[1]
             set user (string split '\\' -- $raw_user)[2]
         else if string match -q '*@*' -- $raw_user
@@ -98,6 +98,11 @@ or a 32-character NTLM hash in place of the password.
 
         if test -z "$user"; or test -z "$domain"
             ezpz_warn "Skipping credential without a domain: $raw_user"
+            continue
+        end
+
+        if string match -q 'local*' -- $domain
+            ezpz_warn "Skipping local credential for ADCS: $raw_user"
             continue
         end
 

@@ -208,6 +208,9 @@ Examples:
             set -l parts (string split -m1 : $line)
             test (count $parts) -ge 2; or continue
 
+            # Local accounts are not domain credentials and cannot be sprayed.
+            string match -rq '@local(\\.|$)' -- $parts[1]; and continue
+
             set -l user (__ezpz_credspray_bare_user $parts[1])
             set -l pass $parts[2]
 
@@ -293,6 +296,7 @@ Examples:
 
                 set -l parts (string split -m1 : $line)
                 test (count $parts) -ge 2; or continue
+                string match -rq '@local(\\.|$)' -- $parts[1]; and continue
 
                 set -l puser (__ezpz_credspray_bare_user $parts[1])
                 set -l ppass $parts[2]

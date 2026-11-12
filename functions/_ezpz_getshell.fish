@@ -16,10 +16,10 @@ Usage: ezpz getshell -t <target> [options]
 
 Options:
   -t, --target <ip>         Target host (Required)
+  -d, --domain <domain>     Domain for authentication
   -u, --username <user>     Username for authentication
   -p, --password <pass>     Password for authentication
   -H, --hash <hash>         NTLM hash for pass-the-hash
-  -d, --domain <domain>     Domain for authentication
   -k, --kerberos            Use Kerberos authentication
   -x, --protocol <proto>    Protocol (smb/winrm/ssh; default: smb with -k, winrm otherwise)
   --port <port>             Reverse shell port (default: 9001)

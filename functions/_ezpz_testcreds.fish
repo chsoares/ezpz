@@ -16,15 +16,15 @@ function _ezpz_testcreds
     
     # Usage message
     set usage "
-Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H <hash>] [-k]] [-x <protocols>]
+Usage: ezpz testcreds -t <target> [-d <domain>] [[-f <file>] | [-u <user>] [-p <password> | -H <hash>] [-k]] [-x <protocols>]
   Tests credentials against multiple protocols on a target.
 
   -t, --target    Target IP or hostname (required)
+  -d, --domain    Domain for authentication
   -f, --file      File containing credentials in user:pass/hash format
   -u, --user      Username for authentication
   -p, --password  Password for authentication
   -H, --hash      NTLM hash for pass-the-hash authentication
-  -d, --domain    Domain for authentication
   -k, --kerb      Use Kerberos authentication
   -x, --protocols Specific protocols to test (comma-separated)
                   Default: smb,winrm,mssql,rdp,ssh,ftp
@@ -96,7 +96,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             # Split DOMAIN\user or user@domain into bare user + domain. Kerberos
             # needs -u bare -d domain to match the ccache principal.
             set -l user_domain ""
-            if string match -q '*\\*' -- $user_from_file
+            if string match -rq '\\\\' -- $user_from_file
                 set user_domain (string split '\\' $user_from_file)[1]
                 set user_from_file (string split '\\' $user_from_file)[2]
             else if string match -q '*@*' -- $user_from_file
@@ -104,6 +104,27 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
                 set user_from_file (string split '@' $user_from_file)[1]
             else if set -q _flag_domain
                 set user_domain $_flag_domain
+            end
+
+            # Local credentials are stored as user@local.<host>. They use
+            # --local-auth instead of -d, and only make sense on that host.
+            set -l local_auth 0
+            set -l local_host ""
+            if string match -q 'local' -- $user_domain
+                set local_auth 1
+                set user_domain ""
+            else if string match -q 'local.*' -- $user_domain
+                set local_auth 1
+                set local_host (string replace -- 'local.' '' $user_domain)
+                set user_domain ""
+            end
+
+            if test -n "$local_host"
+                set -l target_hosts (getent hosts "$target" 2>/dev/null)
+                if not string match -qi "*$local_host*" -- $target "$target_hosts"
+                    ezpz_warn "Skipping $user_from_file@local.$local_host: target $target is not $local_host"
+                    continue
+                end
             end
             
             set cred_count (math $cred_count + 1)
@@ -113,6 +134,9 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             if test -n "$user_domain"
                 set -a nxc_auth -d "$user_domain"
             end
+            if test $local_auth -eq 1
+                set -a nxc_auth --local-auth
+            end
             
             # Detect if it's a hash (32 hex chars) or password
             if string match -qr '^[a-fA-F0-9]{32}$' -- $pass_or_hash_from_file
@@ -121,7 +145,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
                 set -a nxc_auth -p $pass_or_hash_from_file
             end
             
-            if set -q _flag_kerb
+            if set -q _flag_kerb; and test $local_auth -eq 0
                 set -a nxc_auth -k
                 if set -q KRB5CCNAME
                     set -a nxc_auth --use-kcache
@@ -136,7 +160,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
         # Use command line credentials - bare user + -d domain
         set -l cli_user $_flag_user
         set -l cli_domain ""
-        if string match -q '*\\*' -- $cli_user
+        if string match -rq '\\\\' -- $cli_user
             set cli_domain (string split '\\' $cli_user)[1]
             set cli_user (string split '\\' $cli_user)[2]
         else if string match -q '*@*' -- $cli_user
@@ -146,9 +170,21 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             set cli_domain $_flag_domain
         end
 
+        set -l cli_local_auth 0
+        if string match -q 'local' -- $cli_domain
+            set cli_local_auth 1
+            set cli_domain ""
+        else if string match -q 'local.*' -- $cli_domain
+            set cli_local_auth 1
+            set cli_domain ""
+        end
+
         set -l nxc_auth $nxc_target -u $cli_user
         if test -n "$cli_domain"
             set -a nxc_auth -d "$cli_domain"
+        end
+        if test $cli_local_auth -eq 1
+            set -a nxc_auth --local-auth
         end
         
         if set -q _flag_password
@@ -157,7 +193,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
             set -a nxc_auth -H $_flag_hash
         end
         
-        if set -q _flag_kerb
+        if set -q _flag_kerb; and test $cli_local_auth -eq 0
             set -a nxc_auth -k
             if set -q KRB5CCNAME
                 set -a nxc_auth --use-kcache
@@ -197,7 +233,7 @@ Usage: ezpz testcreds -t <target> [[-f <file>] | [-u <user>] [-p <password> | -H
 
             # Test local auth for supported protocols. nxc rejects --local-auth
             # together with -d/-k, so only run it for local credential sets.
-            if not contains $protocol ssh ftp; and not contains -- -d $cred_args; and not contains -- -k $cred_args
+            if not contains $protocol ssh ftp; and not contains -- -d $cred_args; and not contains -- -k $cred_args; and not contains -- --local-auth $cred_args
                 ezpz_spin timeout 60s nxc $protocol $cred_args --local-auth 2>&1 | \
                 grep --text --color=never -v -E '\[-\].*(STATUS_LOGON_FAILURE|STATUS_ACCESS_DENIED)' | \
                 grep --text --color=never -E '\+|DISABLED|ERROR|EXPIRED|LOCKED|MUST_CHANGE|NOT_GRANTED|RESTRICTION|INVALID_LOGON_HOURS' | \

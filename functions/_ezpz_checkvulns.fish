@@ -35,15 +35,15 @@ function _ezpz_checkvulns
 
     # Usage message
     set usage "
-Usage: checkvulns -t <target> -u <user> [-p <password> | -H <hash>] [-k] [-d domain]
+Usage: checkvulns -t <target> [-d <domain>] -u <user> [-p <password> | -H <hash>] [-k]
   <target> can be a single host or a file with one host per line.
 
   -t, --target    Target IP, hostname, or file containing targets.
+  -d, --domain    Domain for authentication (optional).
   -u, --user      Username for authentication.
   -p, --password  Password for authentication.
   -H, --hash      NTLM hash for pass-the-hash authentication.
   -k, --kerb      Use Kerberos authentication (requires a valid TGT).
-  -d, --domain    Domain for authentication (optional).
 "
     # Check if nxc is installed
     if not command -v nxc >/dev/null 2>&1

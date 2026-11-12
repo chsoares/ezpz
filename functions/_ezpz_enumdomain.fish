@@ -165,12 +165,12 @@ function _ezpz_enumdomain
 
     # Usage message
     set usage "
-Usage: ezpz enumdomain -t <target> -u <user> -d <domain> [options]
+Usage: ezpz enumdomain -t <target> -d <domain> -u <user> [options]
   Enumerates an Active Directory domain for users, groups, policies, and misconfigurations.
 
   -t, --target        DC IP or hostname of the domain to enumerate (Required)
-  -u, --user          Username for authentication (Required)  
   -d, --domain        Domain of the supplied credentials (Required)
+  -u, --user          Username for authentication (Required)
   -p, --password      Password for authentication
   -H, --hash          NTLM hash for pass-the-hash authentication
   -k, --kerb          Use Kerberos authentication (requires a valid TGT)

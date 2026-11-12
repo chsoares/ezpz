@@ -5,14 +5,14 @@ function _ezpz_enumshares
 
     # Usage message
     set usage "
-Usage: ezpz enumshares -t <target> [-u <user>] [-p <password> | -H <hash>] [-d <domain>] [-k]
+Usage: ezpz enumshares -t <target> [-d <domain>] [-u <user>] [-p <password> | -H <hash>] [-k]
   Enumerates and spiders SMB shares.
 
   -t, --target    Target host or file with targets (Required)
+  -d, --domain    Domain for authentication (optional)
   -u, --user      Username for authentication (optional, for null session if omitted)
   -p, --password  Password for authentication
   -H, --hash      NTLM hash for pass-the-hash authentication
-  -d, --domain    Domain for authentication (optional)
   -k, --kerb      Use Kerberos authentication
 
 Examples:
