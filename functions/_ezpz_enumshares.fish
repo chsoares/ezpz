@@ -306,11 +306,12 @@ ezpz enumshares -t 10.10.10.10  # null session
             continue
         end
 
+        ezpz_header "Selecting shares for spidering"
         ezpz_question "Select shares for spidering:"
         set share_options (cat $share_names_tmp)
         set choice (ezpz_choose_many $share_options)
         if test -n "$choice[1]"
-            ezpz_info "Selected shares: "(string join ', ' $choice)
+            ezpz_cmd "Selected shares: "(string join ', ' $choice)
         end
 
         if test -z "$choice[1]"
