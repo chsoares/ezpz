@@ -105,7 +105,7 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan check
 # Specific options for individual commands
 # testcreds specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s f -l file -r -a '(__ezpz_completion_creds_files)' -d 'File containing credentials in user:pass/hash format'
-complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s x -l protocols -r -a '(__ezpz_completion_protocols)' -d 'Protocols (comma-separated)'
+complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s x -l protocols -r -a '(__ezpz_completion_protocols)'
 
 # certspray specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from certspray' -s f -l file -r -a '(__ezpz_completion_creds_files)' -d 'Credentials file'

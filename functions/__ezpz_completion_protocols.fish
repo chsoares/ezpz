@@ -12,12 +12,12 @@ function __ezpz_completion_protocols
     end
 
     for entry in \
-        'smb|SMB (445)' \
-        'winrm|WinRM (5985/5986)' \
-        'mssql|MSSQL (1433)' \
-        'rdp|RDP (3389)' \
-        'ssh|SSH (22)' \
-        'ftp|FTP (21)'
+        'smb|445' \
+        'winrm|5985/5986' \
+        'mssql|1433' \
+        'rdp|3389' \
+        'ssh|22' \
+        'ftp|21'
         set -l fields (string split -m1 '|' -- $entry)
         set -l protocol $fields[1]
         contains -- $protocol $selected; and continue
