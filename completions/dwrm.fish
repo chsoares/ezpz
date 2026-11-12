@@ -1,6 +1,11 @@
 # Fish completions for dwrm - WinRM enumeration tool
 # Place this file in ~/.config/fish/completions/ or fish_complete_path directory
 
+# Remove stale auth completions if this file is re-sourced in an existing shell.
+complete -e -c dwrm -s u
+complete -e -c dwrm -s p
+complete -e -c dwrm -s H
+
 # Helper function to get IPs from *_ips.txt files in current directory
 function __dwrm_get_ips
     __ezpz_completion_targets

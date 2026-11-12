@@ -1,6 +1,11 @@
 # Fish completions for ezpz pentesting toolkit
 # Place this file in ~/.config/fish/completions/ or fish_complete_path directory
 
+# Remove stale auth completions if this file is re-sourced in an existing shell.
+complete -e -c ezpz -s u
+complete -e -c ezpz -s p
+complete -e -c ezpz -s H
+
 # Helper function to get IPs from *_ips.txt files in current directory
 function __ezpz_get_ips
     __ezpz_completion_targets --files

@@ -1,6 +1,10 @@
 # Fish completions for bloodyAD - Active Directory privilege escalation framework
 # Place this file in ~/.config/fish/completions/ or fish_complete_path directory
 
+# Remove stale auth completions if this file is re-sourced in an existing shell.
+complete -e -c bloodyAD -s u
+complete -e -c bloodyAD -s p
+
 # Helper function to get IPs from *_ips.txt files in current directory
 function __bloodyad_get_ips
     __ezpz_completion_targets

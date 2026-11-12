@@ -1,6 +1,11 @@
 # Fish completions for certipy - Active Directory Certificate Services enumeration tool
 # Place this file in ~/.config/fish/completions/ or fish_complete_path directory
 
+# Remove stale auth completions if this file is re-sourced in an existing shell.
+complete -e -c certipy -s u
+complete -e -c certipy -s p
+complete -e -c certipy -l hashes
+
 # Helper function to get IPs from *_ips.txt files in current directory
 function __certipy_get_ips
     __ezpz_completion_targets
