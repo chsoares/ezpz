@@ -306,7 +306,7 @@ ezpz enumshares -t 10.10.10.10  # null session
             continue
         end
 
-        ezpz_header "Selecting shares for spidering"
+        ezpz_header "Reading share contents"
         ezpz_question "Select shares for spidering:"
         set share_options (cat $share_names_tmp)
         set choice (ezpz_choose_many $share_options)
