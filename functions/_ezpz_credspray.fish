@@ -46,49 +46,39 @@ function _ezpz_credspray
     set usage "
 Usage: ezpz credspray -t <target> -d <domain> [-u <user|file>] [-p <password|file>] [-f <creds>]
 
-  Password spraying via Kerberos (kerbrute) against Active Directory.
+Password spraying via Kerberos (kerbrute) against Active Directory.
 
-  Required:
-    -t, --target      Domain Controller IP or hostname
-    -d, --domain      Full AD domain (e.g. north.sevenkingdoms.local)
+  -t, --target      Domain Controller IP or hostname
+  -d, --domain      Full AD domain (e.g. north.sevenkingdoms.local)
+  -u, --user        A username, a file with one username per line, or a
+                    user:pass file (only the username part is used).
+  -p, --password    A password, a file with one password per line, or a
+                    user:pass file (only the password part is used).
+  -f, --file        Hail mary: a user:pass file. Usernames and passwords are
+                    split apart and every password is sprayed against every
+                    user.
+  -F, --force       Spray the whole list, ignoring the policy guard
+  --unsafe          Do not pass --safe to kerbrute
+  -h, --help        Show this help message
 
-  Credential sources (need at least one user source and one password source):
-    -u, --user        A username, a file with one username per line, or a
-                      user:pass file (only the username part is used).
-    -p, --password    A password, a file with one password per line, or a
-                      user:pass file (only the password part is used).
-    -f, --file        Hail mary: a user:pass file. Usernames and passwords are
-                      split apart and every password is sprayed against every
-                      user.
+Input handling:
+Lines starting with # are ignored. DOMAIN\\user and user@domain are
+normalized to the bare username. NT hashes (32 hex chars) are skipped; use
+testcreds -H for pass-the-hash. Accounts that never authenticate (krbtgt,
+machine accounts ending in \$, built-in placeholders) are dropped: --safe
+would read their disabled state as a lockout and abort the spray.
 
-  Input handling:
-    Lines starting with # are ignored. DOMAIN\\user and user@domain are
-    normalized to the bare username. NT hashes (32 hex chars) are skipped; use
-    testcreds -H for pass-the-hash. Accounts that never authenticate (krbtgt,
-    machine accounts ending in \$, built-in placeholders) are dropped: --safe
-    would read their disabled state as a lockout and abort the spray.
-
-  Lockout protection:
-    kerbrute always runs with --safe, so the spray aborts on the first locked
-    account. Before spraying, the domain password policy is read with nxc and
-    the password list is trimmed to one attempt below the lockout threshold.
-    The policy probe tries a null session first, then the first line of
-    creds.txt (the ctf.fish standard), and is skipped when neither works.
-
-    --force           Spray the whole list, ignoring the policy guard
-    --unsafe          Do not pass --safe to kerbrute
+Lockout protection:
+kerbrute always runs with --safe, so the spray aborts on the first locked
+account. Before spraying, the domain password policy is read with nxc and
+the password list is trimmed to one attempt below the lockout threshold.
+The policy probe tries a null session first, then the first line of
+creds.txt (the ctf.fish standard), and is skipped when neither works.
 
 Examples:
-  # One password against a user list
-  ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \\
-      -u users.txt -p 'Winter2024'
-
-  # A file with candidate passwords
-  ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \\
-      -u users.txt -p passwords.txt
-
-  # Hail mary: users and passwords come from creds.txt
-  ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local -f creds.txt
+ezpz credspray -t 10.10.0.11 -d corp.local -u users.txt -p 'Winter2024'
+ezpz credspray -t 10.10.0.11 -d corp.local -u users.txt -p passwords.txt
+ezpz credspray -t 10.10.0.11 -d corp.local -f creds.txt
 "
 
     argparse 't/target=' 'u/user=' 'p/password=' 'f/file=' 'd/domain=' \

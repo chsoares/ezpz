@@ -10,11 +10,10 @@ function _ezpz_getshell
     end
     
     set -l usage "
-getshell - Get reverse shell from compromised hosts
-
 Usage: ezpz getshell -t <target> [options]
 
-Options:
+Get a reverse shell from compromised hosts.
+
   -t, --target <ip>         Target host (Required)
   -d, --domain <domain>     Domain for authentication
   -u, --username <user>     Username for authentication
@@ -26,9 +25,9 @@ Options:
   -h, --help                Show this help message
 
 Examples:
-  ezpz getshell -t 192.168.1.10 -u administrator -H hash
-  ezpz getshell -t 192.168.1.20 -u root -p password -x ssh --port 4444
-  ezpz getshell -t 192.168.1.30 -u domain\\user -p pass -x smb -d domain.local
+ezpz getshell -t 192.168.1.10 -u administrator -H hash
+ezpz getshell -t 192.168.1.20 -u root -p password -x ssh --port 4444
+ezpz getshell -t 192.168.1.30 -u domain\\user -p pass -x smb -d domain.local
 "
     
     if set -q _flag_help

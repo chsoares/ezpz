@@ -4,9 +4,11 @@ function _ezpz_netscan
     # Usage message
     set usage "
 Usage: ezpz netscan [-F] <target>
-  <target> can be a CIDR range (e.g., 10.10.10.0/24), a single IP, or a file with targets.
+
+  <target>    CIDR range (e.g., 10.10.10.0/24), a single IP, or a file with targets.
 
   -F    Fast scan. Performs host discovery and a fast port scan only. Skips full TCP and UDP scans.
+  -h    Show this help message
 "
 
     ezpz_banner netscan

@@ -10,11 +10,10 @@ function _ezpz_getflag
     end
     
     set -l usage "
-getflag - Read flags from compromised hosts
-
 Usage: ezpz getflag -t <target> [options]
 
-Options:
+Read flags from compromised hosts.
+
   -t, --target <ip>         Target host (Required)
   -d, --domain <domain>     Domain for authentication
   -u, --username <user>     Username for authentication
@@ -25,9 +24,9 @@ Options:
   -h, --help                Show this help message
 
 Examples:
-  ezpz getflag -t 192.168.1.10 -u administrator -H hash
-  ezpz getflag -t 192.168.1.20 -u root -p password -x ssh
-  ezpz getflag -t 192.168.1.30 -u domain\\user -p pass -x smb -d domain.local
+ezpz getflag -t 192.168.1.10 -u administrator -H hash
+ezpz getflag -t 192.168.1.20 -u root -p password -x ssh
+ezpz getflag -t 192.168.1.30 -u domain\\user -p pass -x smb -d domain.local
 "
     
     if set -q _flag_help

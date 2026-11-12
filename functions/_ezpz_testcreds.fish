@@ -21,7 +21,8 @@ function _ezpz_testcreds
     # Usage message
     set usage "
 Usage: ezpz testcreds -t <target> [-d <domain>] [[-f <file>] | [-u <user>] [-p <password> | -H <hash>] [-k]] [-x <protocols>]
-  Tests credentials against multiple protocols on a target.
+
+Tests credentials against multiple protocols on a target.
 
   -t, --target    Target IP or hostname (required)
   -d, --domain    Domain for authentication
@@ -32,6 +33,7 @@ Usage: ezpz testcreds -t <target> [-d <domain>] [[-f <file>] | [-u <user>] [-p <
   -k, --kerb      Use Kerberos authentication
   -x, --protocols Specific protocols to test (comma-separated)
                   Default: smb,winrm,mssql,rdp,ssh,ftp
+  -h, --help      Show this help message
 "
 
     # Parse arguments

@@ -10,15 +10,16 @@ function _ezpz_enumsqli
     # Usage message
     set usage "
 Usage: ezpz enumsqli [options] [sqlmap_options]
-  A wrapper for sqlmap to automate enumeration and dumping.
-  Pass any valid sqlmap options for targeting (e.g., -u 'http://...').
 
-Options:
+A wrapper for sqlmap to automate enumeration and dumping.
+Pass any valid sqlmap options for targeting (e.g., -u 'http://...').
+
   -F, --fast    Skip DBMS enumeration and all interactive prompts (uses defaults)
   -h, --help    Show this help message
 
-Example: ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
-Example: ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
+Examples:
+ezpz enumsqli -u 'http://test.com/vuln.php?id=1' --cookie='...'
+ezpz enumsqli -F -u 'http://test.com/vuln.php?id=1' --cookie='...'
 "
 
     # Remove our flags from argv for sqlmap and detect them

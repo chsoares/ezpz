@@ -38,16 +38,18 @@ function _ezpz_enumnull
     # Usage message
     set usage "
 Usage: ezpz enumnull -t <target> [--guest] [-k]
-  Performs initial reconnaissance on a target without credentials (null session).
+
+Performs initial reconnaissance on a target without credentials (null session).
 
   -t, --target    Target IP or hostname (Required)
   --guest         Use guest account with empty password instead of null session
   -k, --kerb      Use Kerberos authentication (requires a valid TGT)
+  -h, --help      Show this help message
 
 Examples:
-  ezpz enumnull -t 10.10.10.10
-  ezpz enumnull -t dc01.corp.local --guest
-  ezpz enumnull -t dc01.corp.local --guest -k
+ezpz enumnull -t 10.10.10.10
+ezpz enumnull -t dc01.corp.local --guest
+ezpz enumnull -t dc01.corp.local --guest -k
 "
 
     # Check required tools

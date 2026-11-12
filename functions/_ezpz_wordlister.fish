@@ -6,19 +6,17 @@ function _ezpz_wordlister --description "Generate mutated wordlists for CTF"
 
     # Check for help flag
     if contains -- --help $argv; or contains -- -h $argv
-        ezpz_info "EZPZ Wordlist Generator"
         echo
         echo "Usage: ezpz wordlister [options] [wordlist_file]"
         echo
         echo "Generate mutated wordlists for CTF with various transformations:"
-        echo "  • Capitalization (lower, Title, UPPER)"
-        echo "  • Word reversal (password → drowssap)"
-        echo "  • Leetspeak (o→0, a→@, e→3, s→\$, i→1)"
-        echo "  • Word combinations (user + user, user + default words)"
-        echo "  • Numeric suffixes (1-4 digits, years 1980-2030)"
-        echo "  • Symbol suffixes (!@#\$%&*-+=)"
+        echo "• Capitalization (lower, Title, UPPER)"
+        echo "• Word reversal (password → drowssap)"
+        echo "• Leetspeak (o→0, a→@, e→3, s→\$, i→1)"
+        echo "• Word combinations (user + user, user + default words)"
+        echo "• Numeric suffixes (1-4 digits, years 1980-2030)"
+        echo "• Symbol suffixes (!@#\$%&*-+=)"
         echo
-        echo "Options:"
         echo "  -o, --output FILE    Output file (default: input_mutated.txt)"
         echo "  --min LENGTH         Minimum password length (default: 1)"
         echo "  --upper NUM          Minimum uppercase characters (default: 0)"
@@ -29,11 +27,11 @@ function _ezpz_wordlister --description "Generate mutated wordlists for CTF"
         echo "  -h, --help           Show this help"
         echo
         echo "Examples:"
-        echo "  ezpz wordlister wordlist.txt"
-        echo "  ezpz wordlister -F --min 8 wordlist.txt"
-        echo "  ezpz wordlister -FF --min 12 wordlist.txt"
-        echo "  ezpz wordlister --min 12 --upper 1 --num 2 wordlist.txt"
-        echo "  ezpz wordlister --output custom.txt wordlist.txt"
+        echo "ezpz wordlister wordlist.txt"
+        echo "ezpz wordlister -F --min 8 wordlist.txt"
+        echo "ezpz wordlister -FF --min 12 wordlist.txt"
+        echo "ezpz wordlister --min 12 --upper 1 --num 2 wordlist.txt"
+        echo "ezpz wordlister --output custom.txt wordlist.txt"
         return 0
     end
     

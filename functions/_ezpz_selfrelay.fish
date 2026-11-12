@@ -12,29 +12,24 @@ function _ezpz_selfrelay
     end
     
     if set -q _flag_help
-        ezpz_header "selfrelay - NTLM Self-Relay Attack Chain"
-        echo
-        echo "Description:"
-        echo "  Performs NTLM self-relay attack using DNS poisoning and coercion techniques"
-        echo
-        echo "Usage:"
-        echo "  ezpz selfrelay -t <target> -u <user> -p <pass> [-k] -d <domain> -l <listener> --dns <dns_server> [-m <method>] [-x <cmd>]"
-        echo
-        echo "Required:"
-        echo "  -t, --target     Target machine FQDN for NTLM relay"
-        echo "  -u, --user       Username for authentication"
-        echo "  -p, --pass       Password for authentication"
-        echo "  -d, --domain     Domain name"
-        echo "  -l, --listener   Attacker listener IP"
-        echo "  --dns            DNS server IP (Domain Controller)"
-        echo
-        echo "Optional:"
-        echo "  -k, --kerberos   Use Kerberos authentication"
-        echo "  -m, --method     Coercion method (PetitPotam, Printerbug, DFSCoerce, ALL) [default: ALL]"
-        echo "  -x, --cmd        Custom command to execute"
-        echo "  --modify         Use modify action instead of add for DNS record"
-        echo "  -h, --help       Show this help message"
-        echo
+        set -l usage "
+Usage: ezpz selfrelay -t <target> -u <user> -p <pass> [-k] -d <domain> -l <listener> --dns <dns_server> [-m <method>] [-x <cmd>]
+
+Performs NTLM self-relay attack using DNS poisoning and coercion techniques.
+
+  -t, --target     Target machine FQDN for NTLM relay
+  -u, --user       Username for authentication
+  -p, --pass       Password for authentication
+  -d, --domain     Domain name
+  -l, --listener   Attacker listener IP
+  --dns            DNS server IP (Domain Controller)
+  -k, --kerberos   Use Kerberos authentication
+  -m, --method     Coercion method (PetitPotam, Printerbug, DFSCoerce, ALL) [default: ALL]
+  -x, --cmd        Custom command to execute
+  --modify         Use modify action instead of add for DNS record
+  -h, --help       Show this help message
+"
+        echo $usage
         return 0
     end
     

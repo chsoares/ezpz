@@ -166,7 +166,8 @@ function _ezpz_enumdomain
     # Usage message
     set usage "
 Usage: ezpz enumdomain -t <target> -d <domain> -u <user> [options]
-  Enumerates an Active Directory domain for users, groups, policies, and misconfigurations.
+
+Enumerates an Active Directory domain for users, groups, policies, and misconfigurations.
 
   -t, --target        DC IP or hostname of the domain to enumerate (Required)
   -d, --domain        Domain of the supplied credentials (Required)
@@ -176,10 +177,11 @@ Usage: ezpz enumdomain -t <target> -d <domain> -u <user> [options]
   -k, --kerb          Use Kerberos authentication (requires a valid TGT)
   --target-domain     Domain being enumerated (auto-detected from -t when omitted)
                       Detection uses *_etchosts.txt (from ezpz adscan) or /etc/hosts.
+  -h, --help          Show this help message
 
 Examples:
-  ezpz enumdomain -t 10.10.10.10 -u administrator -p password123 -d corp.local
-  ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local --target-domain dev.local
+ezpz enumdomain -t 10.10.10.10 -u administrator -p password123 -d corp.local
+ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local --target-domain dev.local
 "
 
     # Check required tools

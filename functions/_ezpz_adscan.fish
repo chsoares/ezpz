@@ -4,8 +4,12 @@ function _ezpz_adscan
     # Usage message
     set usage "
 Usage: ezpz adscan <target>
-  <target> can be a CIDR range (e.g., 10.10.10.0/24), a single IP, or a file with targets.
-  This function attempts to write to /etc/hosts and may require sudo.
+
+  <target>    CIDR range (e.g., 10.10.10.0/24), a single IP, or a file with targets.
+
+This function attempts to write to /etc/hosts and may require sudo.
+
+  -h, --help    Show this help message
 "
     ezpz_banner adscan
 

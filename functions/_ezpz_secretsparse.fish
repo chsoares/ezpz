@@ -6,12 +6,15 @@ function _ezpz_secretsparse
     # Usage message
     set usage "
 Usage: ezpz secretsparse <base_filename>
-  Parses secretsdump.py output files (.sam, .secrets, .ntds) for user:hash (NTLM)
-  and consolidates them into a single, deduplicated .parsed file.
+
+Parses secretsdump.py output files (.sam, .secrets, .ntds) for user:hash (NTLM)
+and consolidates them into a single, deduplicated .parsed file.
 
   <base_filename>  The base name of the secretsdump.py output files (e.g., '172.16.1.200-secrets').
                    Files like <base_filename>.sam, <base_filename>.secrets, <base_filename>.ntds
                    are expected in the current directory or ./secretsdump/.
+
+  -h, --help       Show this help message
 "
     # Argument parsing
     argparse 'h/help' -- $argv

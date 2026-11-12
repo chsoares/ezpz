@@ -4,12 +4,14 @@ function _ezpz_webscan
     # Usage message
     set usage "
 Usage: ezpz webscan <url> [-w/--wordlist <wordlist>] [-e/--extensions <extensions>]
-  <url> must be a full URL including http:// or https://.
+
+  <url>    Full URL including http:// or https://.
 
   -w, --wordlist   Specify a custom wordlist for fuzzing.
                    Default: utils/weblist_ezpz.txt
   -e, --extensions Specify extensions for fuzzing (comma-separated).
                    Default: .php,.txt
+  -h, --help       Show this help message
 "
 
     ezpz_banner webscan

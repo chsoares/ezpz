@@ -32,11 +32,10 @@ function _ezpz_getloot
     end
     
     set -l usage "
-getloot - Extract information and secrets from a compromised Windows machine
+Usage: ezpz getloot -t <target> -d <domain> -u <user> [options]
 
-Usage: ezpz loot -t <target> -d <domain> -u <user> [options]
+Extract information and secrets from a compromised Windows machine.
 
-Options:
   -t, --target <ip>         Target IP or hostname (Required)
   -d, --domain <domain>     Domain for authentication (Required)
   -u, --username <user>     Username for authentication (Required)
@@ -46,14 +45,14 @@ Options:
   -x, --protocol <proto>    Protocol (smb/winrm; default: smb with -k, winrm otherwise)
   -h, --help                Show this help message
 
-  Kerberos notes:
-    With -k, WinRM needs a TGT in the ccache. A CIFS-only service ticket
-    works with SMB, so -k defaults to SMB. Use -x winrm to force WinRM.
+Kerberos notes:
+With -k, WinRM needs a TGT in the ccache. A CIFS-only service ticket
+works with SMB, so -k defaults to SMB. Use -x winrm to force WinRM.
 
 Examples:
-  ezpz loot -t 192.168.1.10 -u administrator -H hash -d corp.local
-  ezpz loot -t 192.168.1.20 -u domain\\user -p pass -d domain.local
-  ezpz loot -t 192.168.1.30 -u user -k -d domain.local
+ezpz getloot -t 192.168.1.10 -u administrator -H hash -d corp.local
+ezpz getloot -t 192.168.1.20 -u domain\\user -p pass -d domain.local
+ezpz getloot -t 192.168.1.30 -u user -k -d domain.local
 "
     
     if set -q _flag_help
