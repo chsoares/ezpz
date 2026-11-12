@@ -15,7 +15,7 @@ A Fish Shell-based collection of penetration testing enumeration scripts, refact
 - `enumsqli`: SQL Server enumeration
 - `testcreds`: Credential validation against targets
 - `certspray`: Per-credential ADCS ESC enumeration
-- `credspray`: Kerberos password spraying with lockout guard
+- `credspray`: Kerberos password spraying via kerbrute
 - `loot`: Information extraction from compromised Windows hosts
 - `secretsparse`: Parse secretsdump.py output for credentials
 
@@ -82,35 +82,45 @@ Use `ezpz --help` or `ezpz <command> --help` for detailed usage information.
 
 ## credspray
 
-Kerberos password spraying with `kerbrute`, designed for two workflows:
-
-1. Spray one or more known passwords against a user list.
-2. **Hail mary**: take a `user:pass` creds file, extract users and unique
-   passwords, skip NT hashes, and spray everything.
+Thin wrapper around `kerbrute passwordspray`. Its job is to reuse whatever you
+already have — a user list, a password list, or a `user:pass` file — without
+retelling you how Kerberos works.
 
 ```fish
 # One password against a user list
 ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \
     -u users.txt -p 'Winter2024'
 
-# Hail mary from creds.txt
+# Password list against a user list
 ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \
-    -c creds.txt --safe --delay 1000
+    -u users.txt -p passwords.txt
 
-# Hail mary + extra users + username-as-password
-ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local \
-    -c creds.txt -u users.txt --user-as-pass --safe
+# Hail mary from creds.txt: every password against every user
+ezpz credspray -t 10.10.0.11 -d north.sevenkingdoms.local -f creds.txt
 ```
 
-`-c creds.txt` extracts both usernames and passwords. Lines starting with `#`
-are ignored, `DOMAIN\user` / `user@domain` are normalized, and NT hashes
-(32 hex chars) are skipped — use `testcreds` or `nxc -H` for pass-the-hash.
+`-u` and `-p` accept a literal value, a one-per-line file, or a `user:pass`
+file. When every meaningful line of the file carries a colon it is treated as a
+creds file: `-u` keeps the username side, `-p` keeps the password side.
 
-Before spraying, the wrapper queries the domain password policy with the first
-usable credential. If the number of attempts per user reaches the lockout
-threshold, it refuses to continue unless `--force` is supplied. A failed policy
-probe also counts as one attempt for that user. Use `--safe` to abort when
-kerbrute detects a locked account, and `--delay <ms>` to throttle attempts.
+`-f` is the hail mary: it splits a `user:pass` file into usernames and unique
+passwords and sprays all of them against each other. Lines starting with `#` are
+ignored, `DOMAIN\user` / `user@domain` are normalized to the bare username, and
+NT hashes (32 hex chars) are skipped — use `testcreds -H` for pass-the-hash.
+
+Output is one command template plus a line per password, so the run is
+reproducible.
+
+Lockout protection is on by default: kerbrute always runs with `--safe`, so the
+spray stops on the first locked account and names it. Before spraying, the
+domain password policy is read with `nxc --pass-pol` (null session first, then a
+known credential) and the run is refused when the password count reaches the
+lockout threshold.
+
+- `--force` skips that pre-flight policy check but keeps `--safe`.
+- `--unsafe` drops `--safe`, so kerbrute keeps spraying after a lockout.
+
+Throttling stays with kerbrute (`--delay`, `--threads`).
 
 ## Requirements
 

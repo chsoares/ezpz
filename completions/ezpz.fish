@@ -136,9 +136,11 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from certspray' -s f -l file -r -
 complete -c ezpz -f -n '__fish_seen_subcommand_from enumsqli' -s F -l fast -d 'Skip DBMS enumeration and interactive prompts'
 
 # credspray specific
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s u -l usersfile -r -a '(find . -maxdepth 1 -name "*users.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'File with usernames'
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s p -l password -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Password to spray'
-complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s c -l credsfile -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'File with user:pass credentials'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s u -l user -r -a '(find . -maxdepth 1 -name "*users*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Username, username file, or user:pass file'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s p -l password -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Password, password file, or user:pass file'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s f -l file -r -a '(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | sed "s|^\./||")' -d 'Hail mary: user:pass credential file'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -s F -l force -d 'Ignore the password-policy lockout guard'
+complete -c ezpz -f -n '__fish_seen_subcommand_from credspray' -l unsafe -d 'Do not pass --safe to kerbrute'
 
 # selfrelay specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from selfrelay' -s l -l listener -r -a '(__ezpz_get_listener_ips)' -d 'Listener IP'
