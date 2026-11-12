@@ -897,6 +897,7 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     # Keep this step quiet: nxc is extremely verbose here and none of its
     # output is actionable on success. Only report the saved file or a
     # concise error.
+    ezpz_cmd "nxc ldap $nxc_auth --bloodhound --collection All --dns-server $dc_ip"
     set bh_tmp (mktemp)
     ezpz_spin_capture $bh_tmp nxc ldap $nxc_auth --bloodhound --collection All --dns-server $dc_ip
     set bh_status $status
