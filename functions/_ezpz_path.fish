@@ -159,7 +159,7 @@ Shows one-hop AD attack paths for a user from BloodHound data.
 
     set -l base "bloodyAD -H $dc -d $domain -u $source_user -p $base_secret"
 
-    ezpz_title "Attack paths for $source_user"
+    ezpz_header "Attack paths for $source_user"
     if test (count $paths) -eq 0
         printf '%s\n' "No attack paths found."
         echo
@@ -182,7 +182,7 @@ Shows one-hop AD attack paths for a user from BloodHound data.
         if test -n "$via"
             set label "$label ($via)"
         end
-        ezpz_header "$label"
+        ezpz_title "$label"
 
         switch $edge
             case ForceChangePassword
