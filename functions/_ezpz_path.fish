@@ -168,7 +168,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
   -f, --file      BloodHound zip (default: <domain>_bloodhound.zip)
   -t, --target    DC IP or hostname used in generated commands
   --chain         Search a multihop attack chain
-  --to            Chain target (default: domain object)
+  --to            Chain target (default: domain object; longest chain fallback)
   --depth         Maximum chain depth (default: 6)
   -h, --help      Show this help message
 "
@@ -234,6 +234,8 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         set -a helper_args --chain
         if set -q _flag_to
             set -a helper_args --to "$_flag_to"
+        else
+            set -a helper_args --fallback-longest
         end
         if set -q _flag_depth
             set -a helper_args --depth "$_flag_depth"

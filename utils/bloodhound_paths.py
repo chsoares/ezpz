@@ -178,6 +178,28 @@ def build_edges(objects):
     return by_sid, edges
 
 
+def longest_chain(start_sid, edges, groups, depth_limit):
+    best = []
+
+    def visit(sid, path, path_sids):
+        nonlocal best
+        if len(path) > len(best):
+            best = path[:]
+        if len(path) >= depth_limit:
+            return
+        current_sids = identity_sids(sid, groups, {})
+        for edge in edges:
+            if edge["principal"] not in current_sids:
+                continue
+            next_sid = edge["target"]
+            if next_sid in path_sids:
+                continue
+            visit(next_sid, path + [(sid, edge)], path_sids | {next_sid})
+
+    visit(start_sid, [], {start_sid})
+    return best
+
+
 def chain_output(source, target, objects, args):
     groups = group_membership(objects)
     source_sid = source.get("ObjectIdentifier", "")
@@ -242,16 +264,26 @@ def chain_output(source, target, objects, args):
                 heapq.heappush(heap, (next_cost, next_sid))
 
     if target_sid not in prev and target_sid != source_sid:
-        print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
-        return 1
-
-    steps = []
-    current = target_sid
-    while current != source_sid:
-        previous, edge = prev[current]
-        steps.append((previous, edge))
-        current = previous
-    steps.reverse()
+        if args.fallback_longest:
+            steps = longest_chain(source_sid, edges, groups, args.depth)
+            if not steps:
+                print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
+                return 1
+            target_sid = steps[-1][1]["target"]
+            target_obj = by_sid.get(target_sid)
+            target_type = object_type(target_obj["_source"], target_obj)
+            target_name = command_target(target_obj, target_type)
+        else:
+            print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
+            return 1
+    else:
+        steps = []
+        current = target_sid
+        while current != source_sid:
+            previous, edge = prev[current]
+            steps.append((previous, edge))
+            current = previous
+        steps.reverse()
 
     print(f"SOURCE\t{source_name}\t{source_domain}")
     print(f"TARGET\t{target_name}\t{target_type}")
@@ -277,6 +309,7 @@ def main():
     parser.add_argument("--chain", action="store_true")
     parser.add_argument("--to", default="")
     parser.add_argument("--depth", type=int, default=6)
+    parser.add_argument("--fallback-longest", action="store_true")
     args = parser.parse_args()
 
     try:
