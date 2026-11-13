@@ -15,6 +15,10 @@ function __ezpz_cmd_quote_arg --argument-names value
         echo "''"
         return
     end
+    if contains -- $value PASS NEWPASS HASH
+        echo $value
+        return
+    end
     if string match -q "'*'" -- $value
         echo $value
         return
