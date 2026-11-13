@@ -86,24 +86,46 @@ end
 function ezpz_show_menu
     ezpz_banner
     echo ""
-    echo "Available commands:"
-    echo "  netscan      - Network discovery and port scanning"
-    echo "  webscan      - Web enumeration with whatweb and ffuf"
-    echo "  adscan       - Active Directory enumeration"
-    echo "  checkvulns   - Vulnerability assessment"
-    echo "  enumnull     - Initial enumeration via NULL sessions"
-    echo "  enumdomain   - Domain enumeration"
-    echo "  enumuser     - User enumeration"
-    echo "  enumshares   - Share enumeration"
-    echo "  enumsqli     - SQL Server enumeration"
-    echo "  testcreds    - Test credentials against targets"
-    echo "  certspray    - Spray credentials against ADCS"
-    echo "  path         - Show one-hop AD attack paths from BloodHound"
-    echo "  getloot      - Extract information from Windows hosts"
-    echo "  secretsparse - Parse secretsdump.py output"
-    echo "  getflag      - Read flags from compromised hosts"
-    echo "  getshell     - Get reverse shell from compromised hosts"
-    echo "  selfrelay    - NTLM self-relay attack chain"
+    ezpz_info "Available commands"
+
+    # Single source of truth for the menu: <category>|<command>|<description>.
+    # Every command the dispatcher accepts must have a row here, otherwise it
+    # silently disappears from the help.
+    set -l sections \
+        "Recon|netscan|Network discovery and port scanning" \
+        "Recon|webscan|Web enumeration with whatweb and ffuf" \
+        "Recon|adscan|Active Directory discovery" \
+        "Enumeration|enumnull|Unauthenticated enumeration via NULL sessions" \
+        "Enumeration|enumdomain|Domain enumeration" \
+        "Enumeration|enumuser|User and permission enumeration" \
+        "Enumeration|enumshares|SMB share enumeration" \
+        "Enumeration|enumsqli|SQL injection enumeration with sqlmap" \
+        "Enumeration|checkvulns|SMB and AD vulnerability checks" \
+        "Access|testcreds|Test credentials against targets" \
+        "Access|credspray|Kerberos password spraying via kerbrute" \
+        "Access|certspray|Spray credentials against ADCS" \
+        "Access|selfrelay|NTLM self-relay attack chain" \
+        "Access|path|One-hop AD attack paths from BloodHound" \
+        "Post-Exploit|getloot|Extract information from Windows hosts" \
+        "Post-Exploit|getflag|Read flags from compromised hosts" \
+        "Post-Exploit|getshell|Get reverse shell from compromised hosts" \
+        "Post-Exploit|secretsparse|Parse secretsdump.py output" \
+        "Post-Exploit|wordlister|Generate mutated wordlists"
+
+    set -l current_category
+    for entry in $sections
+        set -l fields (string split -m 2 -- '|' $entry)
+        if test "$fields[1]" != "$current_category"
+            set current_category $fields[1]
+            echo ""
+            # Two leading spaces put the category symbol on the same column as
+            # the first character of the command lines below it.
+            echo -n "  "
+            ezpz_cmd $current_category
+        end
+        printf '  %-14s %s\n' $fields[2] $fields[3]
+    end
+
     echo ""
     ezpz_info "Usage: ezpz <command> [options]"
     echo "For help on a specific command: ezpz <command> --help"

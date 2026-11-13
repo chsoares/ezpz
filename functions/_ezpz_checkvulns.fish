@@ -10,7 +10,7 @@ function __ezpz_checkvulns_module --argument-names label proto module target
     set -l rc $status
     set -l lines (grep -avE '\[\*\]|\[\+\]|\[-\]|\[!\]' $tmp \
         | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' \
-        | grep -aiE 'vulnerable|next step|enabled|found|unable to detect|S-1-5-21|spooler|webdav|petitpotam|printerbug|dfscoerce|mseven|coerce|nopac|badsuccessor|remove.?mic|smbghost' \
+        | grep -aiE 'vulnerable|next step|enabled|found|unable to detect|webdav|petitpotam|printerbug|dfscoerce|mseven|coerce|nopac|remove.?mic|smbghost' \
         | grep -avE 'Traceback|File "|^[[:space:]]*[│╭╰]|KDC_ERR|KerberosError|Name or service|Errno|Exception|module:' \
         | sort -u)
 
@@ -24,6 +24,50 @@ function __ezpz_checkvulns_module --argument-names label proto module target
         printf '%s\n' $lines
     else
         echo "No result / not vulnerable"
+    end
+    rm -f $tmp
+end
+
+# BadSuccessor keeps all of its signal on tagged lines: the OS gate is a [-]
+# line ("attack not possible"), the hit count is [+], and the only untagged
+# line is the trustee SID. The generic filter drops the verdict and keeps the
+# SID, which reads like a finding when there is none. So: gate first, and only
+# show OU/ACL detail when a Server 2025 DC actually makes the attack possible.
+function __ezpz_checkvulns_badsuccessor --argument-names target
+    set -l auth $argv[2..-1]
+
+    ezpz_header "BadSuccessor"
+    ezpz_cmd "nxc ldap $target $auth -M badsuccessor"
+
+    set -l tmp (mktemp)
+    ezpz_spin_capture $tmp timeout $timeout_secs nxc ldap $target $auth -M badsuccessor
+    set -l rc $status
+
+    set -l out (sed -E 's/\x1b\[[0-9;]*m//g' $tmp \
+        | sed -E 's/^([^[:space:]]+[[:space:]]+){4}//' \
+        | sed -E 's/^\[[^]]*\][[:space:]]*//' \
+        | grep -avE '^[[:space:]]*$')
+
+    if test $rc -eq 124
+        ezpz_warn "Timeout reached while testing BadSuccessor on $target"
+    else if grep -aqE 'KDC_ERR|KerberosError' $tmp
+        echo "No result / Kerberos realm or authentication error"
+    else if test -z "$out"
+        # nxc ldap exits silently with status 0 against a non-DC target, so
+        # an empty capture is "wrong host", not "not vulnerable".
+        echo "Skipped / target is not a domain controller"
+    else if string match -qr 'Found domain controller with operating system Windows Server 2025' -- $out
+        echo "VULNERABLE / dMSA abuse possible (Server 2025 DC)"
+        printf '%s\n' (printf '%s\n' $out | grep -aiE '^Found domain controller with operating system Windows Server 2025' | sort -u)
+        set -l acl (printf '%s\n' $out | grep -aiE ', OU=' | sort -u)
+        if test -n "$acl"
+            echo "Principals with rights on OUs (candidates to create a dMSA):"
+            printf '  %s\n' $acl
+        end
+    else if string match -qr 'attack not possible' -- $out
+        echo "No result / no Server 2025 DC (attack not possible)"
+    else
+        printf '%s\n' $out | sort -u
     end
     rm -f $tmp
 end
@@ -171,7 +215,12 @@ Usage: ezpz checkvulns -t <target> [-d <domain>] -u <user> [-p <password> | -H <
         end
         rm -f $cve_tmp
 
-        __ezpz_checkvulns_module "Print Spooler" smb spooler $target $auth_string
+        # Spooler enum is intentionally not here: coerce_plus below reports
+        # "VULNERABLE, PrinterBug" whenever MS-RPRN actually accepts a
+        # coercion, which is the actionable half. "Spooler service enabled" is
+        # a coercion-source property, not a host vulnerability -- run
+        # `-M spooler` in the recon/coercion phase if the endpoint list (or
+        # the nxc DB spooler flag) is needed.
         __ezpz_checkvulns_module "WebDAV Detection" smb webdav $target $auth_string
         __ezpz_checkvulns_module "EternalBlue (MS17-010)" smb ms17-010 $target $auth_string
         __ezpz_checkvulns_module "Zerologon (CVE-2020-1472)" smb zerologon $target $auth_string
@@ -187,7 +236,7 @@ Usage: ezpz checkvulns -t <target> [-d <domain>] -u <user> [-p <password> | -H <
         __ezpz_checkvulns_module "Coerce Attacks (PetitPotam, etc.)" smb coerce_plus $target $auth_string
         __ezpz_checkvulns_module "Remove MIC (CVE-2019-1040)" smb remove-mic $target $auth_string
         __ezpz_checkvulns_module "SMBGhost (CVE-2020-0796)" smb smbghost $target $auth_string
-        __ezpz_checkvulns_module "BadSuccessor" ldap badsuccessor $target $auth_string
+        __ezpz_checkvulns_badsuccessor $target $auth_string
 
         # Host defense posture, at the end after the active vulnerability
         # checks: useful context for whether exploitation would be blocked.
