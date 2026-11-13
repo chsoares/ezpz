@@ -102,10 +102,181 @@ def resolve_source(objects, source):
     return matches[0]
 
 
+TAKEOVER_RIGHTS = {
+    "ForceChangePassword": 1,
+    "AddKeyCredentialLink": 1,
+    "ReadLAPSPassword": 1,
+    "ReadGMSAPassword": 1,
+    "GenericAll": 2,
+    "AllExtendedRights": 2,
+    "GenericWrite": 2,
+    "WriteAllProperties": 2,
+    "WriteDacl": 3,
+    "WriteOwner": 3,
+    "Owns": 3,
+    "DCSync": 1,
+    "GetChangesAll": 1,
+}
+
+
+def object_by_sid(objects):
+    return {o.get("ObjectIdentifier"): o for o in objects if o.get("ObjectIdentifier")}
+
+
+def group_membership(objects):
+    groups = {}
+    for obj in objects:
+        if object_type(obj["_source"], obj) == "Group":
+            groups[obj.get("ObjectIdentifier", "")] = obj
+    return groups
+
+
+def identity_sids(sid, groups, cache):
+    if sid in cache:
+        return cache[sid]
+    result = {sid}
+    changed = True
+    while changed:
+        changed = False
+        for group_sid, group in groups.items():
+            if group_sid in result:
+                continue
+            if any(m.get("ObjectIdentifier") in result for m in (group.get("Members") or [])):
+                result.add(group_sid)
+                changed = True
+    cache[sid] = result
+    return result
+
+
+def build_edges(objects):
+    by_sid = object_by_sid(objects)
+    edges = []
+    for target_sid, obj in by_sid.items():
+        target_type = object_type(obj["_source"], obj)
+        if target_type not in ("User", "Computer", "Domain"):
+            continue
+        target = command_target(obj, target_type)
+        target_dn = value(obj.get("Properties", {}), "distinguishedname")
+        target_name = target_fqdn(obj, target_type)
+        for ace in obj.get("Aces", []):
+            right = value(ace, "RightName")
+            if right not in TAKEOVER_RIGHTS:
+                continue
+            principal = ace.get("PrincipalSID")
+            if not principal:
+                continue
+            edges.append({
+                "principal": principal,
+                "target": target_sid,
+                "target_name": target,
+                "target_type": target_type,
+                "target_dn": target_dn,
+                "target_fqdn": target_name,
+                "right": right,
+                "cost": TAKEOVER_RIGHTS[right],
+            })
+    return by_sid, edges
+
+
+def chain_output(source, target, objects, args):
+    groups = group_membership(objects)
+    source_sid = source.get("ObjectIdentifier", "")
+    source_name = display_name(source)
+    source_props = source.get("Properties", {})
+    source_domain = value(source_props, "domain", "domainsid")
+    by_sid, edges = build_edges(objects)
+
+    if target:
+        target_obj = resolve_source(objects, target)
+        if not target_obj:
+            print(f"Target not found in BloodHound data: {target}", file=sys.stderr)
+            return 1
+    else:
+        target_obj = None
+        for obj in objects:
+            if object_type(obj["_source"], obj) != "Domain":
+                continue
+            props = obj.get("Properties", {})
+            if source_domain and value(props, "name", "domain").lower() == source_domain.lower():
+                target_obj = obj
+                break
+        if target_obj is None:
+            for obj in objects:
+                if object_type(obj["_source"], obj) == "Domain":
+                    target_obj = obj
+                    break
+        if target_obj is None:
+            print("No domain object found in BloodHound data.", file=sys.stderr)
+            return 1
+
+    target_sid = target_obj.get("ObjectIdentifier", "")
+    target_type = object_type(target_obj["_source"], target_obj)
+    target_name = command_target(target_obj, target_type)
+
+    import heapq
+    # Dijkstra over principal takeovers, bounded by depth.
+    inf = 10**9
+    dist = {source_sid: 0}
+    depth = {source_sid: 0}
+    prev = {}
+    heap = [(0, source_sid)]
+    cache = {}
+
+    while heap:
+        cost, current = heapq.heappop(heap)
+        if cost != dist.get(current):
+            continue
+        if depth.get(current, 0) >= args.depth:
+            continue
+        current_sids = identity_sids(current, groups, cache)
+        for edge in edges:
+            if edge["principal"] not in current_sids:
+                continue
+            next_sid = edge["target"]
+            next_cost = cost + edge["cost"]
+            next_depth = depth.get(current, 0) + 1
+            if next_cost < dist.get(next_sid, inf):
+                dist[next_sid] = next_cost
+                depth[next_sid] = next_depth
+                prev[next_sid] = (current, edge)
+                heapq.heappush(heap, (next_cost, next_sid))
+
+    if target_sid not in prev and target_sid != source_sid:
+        print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
+        return 1
+
+    steps = []
+    current = target_sid
+    while current != source_sid:
+        previous, edge = prev[current]
+        steps.append((previous, edge))
+        current = previous
+    steps.reverse()
+
+    print(f"SOURCE\t{source_name}\t{source_domain}")
+    print(f"TARGET\t{target_name}\t{target_type}")
+    for index, (previous, edge) in enumerate(steps, 1):
+        source_name_step = display_name(by_sid.get(previous, {}))
+        fields = [
+            str(index),
+            edge["right"],
+            source_name_step,
+            edge["target_name"],
+            edge["target_type"],
+            edge["target_dn"],
+            edge["target_fqdn"],
+        ]
+        print("STEP\t" + "\t".join(str(x).replace("\t", " ") for x in fields))
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--zip", required=True)
     parser.add_argument("--from", dest="source", required=True)
+    parser.add_argument("--chain", action="store_true")
+    parser.add_argument("--to", default="")
+    parser.add_argument("--depth", type=int, default=6)
     args = parser.parse_args()
 
     try:
@@ -135,6 +306,9 @@ def main():
     if not source:
         print(f"Principal not found in BloodHound data: {args.source}", file=sys.stderr)
         return 1
+
+    if args.chain:
+        return chain_output(source, args.to, objects, args)
 
     source_sid = source.get("ObjectIdentifier", "")
     source_props = source.get("Properties", {})
