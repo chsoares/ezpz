@@ -28,7 +28,7 @@ function __ezpz_cmd_quote_arg --argument-names value
     echo "'$escaped'"
 end
 
-function ezpz_cmd
+function __ezpz_cmd_format
     set -l parts $argv
     set -l from_list 0
     if test (count $parts) -gt 1
@@ -63,7 +63,11 @@ function ezpz_cmd
         set -a out "''"
     end
 
-    echo (set_color blue)"  "(string join -- ' ' $out)(set_color normal)
+    string join -- ' ' $out
+end
+
+function ezpz_cmd
+    echo (set_color blue)"  "(__ezpz_cmd_format $argv)(set_color normal)
 end
 function ezpz_error
     echo (set_color red --bold)"  "$argv(set_color normal)
