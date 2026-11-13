@@ -39,7 +39,7 @@ function ezpz_cmd
 
     set -l out
     set -l quote_next 0
-    set -l auth_flags -u --user --username -p --password --pass -H --hash -hashes --hashes
+    set -l auth_flags -u --user --username -p --password --pass --hash -hashes --hashes
 
     for arg in $parts
         if test $quote_next -eq 1
