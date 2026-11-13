@@ -3,7 +3,7 @@ function __ezpz_path_print --argument-names command
 end
 
 function __ezpz_path_quote_value --argument-names value
-    if contains -- $value PASS NEWPASS HASH
+    if contains -- $value '<PASS>' '<NEWPASS>' '<HASH>'
         echo $value
         return
     end
@@ -12,7 +12,7 @@ function __ezpz_path_quote_value --argument-names value
 end
 
 function __ezpz_path_identity --argument-names domain user secret dc
-    if contains -- $secret PASS NEWPASS HASH
+    if contains -- $secret '<PASS>' '<NEWPASS>' '<HASH>'
         printf '%s/%s:%s@%s\n' "$domain" "$user" "$secret" "$dc"
         return
     end
@@ -44,7 +44,7 @@ function __ezpz_path_generic --argument-names base target target_type target_nam
     switch $target_type
         case User
             ezpz_cmd "Option 1: change password"
-            __ezpz_path_print "$base set password $target NEWPASS"
+            __ezpz_path_print "$base set password $target <NEWPASS>"
             ezpz_cmd "Option 2: shadow credentials"
             __ezpz_path_print "$base add shadowCredentials $target"
         case Group
@@ -111,7 +111,7 @@ function __ezpz_path_hash --argument-names value
 end
 
 function __ezpz_path_placeholder --argument-names user
-    echo PASS
+    echo "<PASS>"
 end
 
 function __ezpz_path_render_edge --argument-names edge target target_type target_name user domain secret hash dc newpass
@@ -299,7 +299,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     set -l secret (__ezpz_path_secret "$source_user" "$domain" | head -1)
     set -l hash (__ezpz_path_hash "$secret")
     if test -n "$hash"
-        set secret PASS
+        set secret "<PASS>"
     else if test -z "$secret"
         set secret (__ezpz_path_placeholder "$source_user")
     end
@@ -341,18 +341,18 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             set -l step_dn $fields[7]
             set -l step_fqdn $fields[8]
             ezpz_title "$step_index: $step_source — $edge -> $step_target"
-            __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "NEWPASS"
+            __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "<NEWPASS>"
             if test $step_index -lt $total_steps; and test "$step_type" != Group
                 set -l next_secret ""
                 if test "$edge" = ForceChangePassword
-                    set next_secret "NEWPASS"
+                    set next_secret "<NEWPASS>"
                     set current_hash ""
                 else
                     set next_secret (__ezpz_path_secret "$step_target" "$domain" | head -1)
                     set -l next_hash (__ezpz_path_hash "$next_secret")
                     if test -n "$next_hash"
                         set current_hash $next_hash
-                        set next_secret PASS
+                        set next_secret "<PASS>"
                     else if test -z "$next_secret"
                         set next_secret (__ezpz_path_placeholder "$step_target")
                         set current_hash ""
@@ -396,7 +396,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
 
         switch $edge
             case ForceChangePassword
-                __ezpz_path_print "$base set password $target NEWPASS"
+                __ezpz_path_print "$base set password $target <NEWPASS>"
             case GenericAll AllExtendedRights WriteAllProperties
                 __ezpz_path_generic "$base" "$target" "$target_type" "$target_name" "$source_user" "$domain" "$secret" "$hash" "$dc"
             case GenericWrite

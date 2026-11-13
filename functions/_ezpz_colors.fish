@@ -15,7 +15,7 @@ function __ezpz_cmd_quote_arg --argument-names value
         echo "''"
         return
     end
-    if contains -- $value PASS NEWPASS HASH
+    if contains -- $value '<PASS>' '<NEWPASS>' '<HASH>'
         echo $value
         return
     end
