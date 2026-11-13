@@ -185,6 +185,13 @@ function __ezpz_path_render_edge --argument-names edge target target_type target
     end
 end
 
+function __ezpz_path_done
+    if not set -q __EZPZ_PATH_BATCH
+        echo
+        ezpz_success "Done."
+    end
+end
+
 function __ezpz_path_users_from_file --argument-names file domain
     while read -l line
         set line (string trim -- $line)
@@ -290,6 +297,8 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         for user in $users
             _ezpz_path -u "$user" $rest
         end
+        echo
+        ezpz_success "Done."
         set -e __EZPZ_PATH_BATCH
         return 0
     end
@@ -371,9 +380,11 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
 
     if set -q _flag_chain
         if test (count $chain_steps) -eq 0
+            if set -q __EZPZ_PATH_BATCH
+                return 0
+            end
             printf '%s\n' "No attack chain found."
-            echo
-            ezpz_success "Done."
+            __ezpz_path_done
             return 0
         end
         set -l current_user $source_user
@@ -423,19 +434,21 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                 set current_secret $next_secret
             end
         end
-        echo
-        ezpz_success "Done."
+        __ezpz_path_done
+        return 0
+    end
+
+    if test (count $paths) -eq 0
+        if set -q __EZPZ_PATH_BATCH
+            return 0
+        end
+        ezpz_header "Attack paths for $source_user"
+        printf '%s\n' "No attack paths found."
+        __ezpz_path_done
         return 0
     end
 
     ezpz_header "Attack paths for $source_user"
-    if test (count $paths) -eq 0
-        printf '%s\n' "No attack paths found."
-        echo
-        ezpz_success "Done."
-        return 0
-    end
-
     for record in $paths
         set -l fields (string split \t -- $record)
         set -l edge $fields[1]
@@ -518,6 +531,5 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         end
     end
 
-    echo
-    ezpz_success "Done."
+    __ezpz_path_done
 end
