@@ -252,11 +252,12 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
   -d, --domain    Domain used in generated commands (required)
   -f, --file      BloodHound zip (default: <domain>_bloodhound.zip)
   --chain         Search a multihop attack chain (at least two hops)
+  --short         Show only chain summaries (requires --chain)
   --to            Chain target (default: domain object; longest chain fallback)
   -h, --help      Show this help message
 "
 
-    argparse 'u/user=' 'f/file=' 'd/domain=' 'chain' 'to=' 'h/help' -- $argv
+    argparse 'u/user=' 'f/file=' 'd/domain=' 'chain' 'short' 'to=' 'h/help' -- $argv
     or begin
         ezpz_error "Invalid arguments."
         echo $usage
@@ -266,6 +267,11 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     if set -q _flag_help
         echo $usage
         return 0
+    end
+
+    if set -q _flag_short; and not set -q _flag_chain
+        ezpz_error "--short requires --chain."
+        return 1
     end
 
     set -l source_user ""
@@ -556,8 +562,13 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             __ezpz_path_done
             return 0
         end
-        if test -n "$chain_fallback_warning"; and not test $total_steps -eq 1
+        if test -n "$chain_fallback_warning"; and not test $total_steps -eq 1; and not set -q _flag_short
             ezpz_warn "$chain_fallback_warning $chain_fallback_info"
+        end
+        if set -q _flag_short
+            ezpz_header (string join ' -> ' $chain_path)
+            __ezpz_path_done
+            return 0
         end
         if test $total_steps -eq 1
             ezpz_header "Direct edge: "(string join ' -> ' $chain_path)

@@ -203,6 +203,7 @@ end
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s f -l file -r -a '(find . -maxdepth 1 -name "*_bloodhound.zip" -type f 2>/dev/null | sed "s|^./||")' -d 'BloodHound zip'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s u -l user -r -a '(__ezpz_path_user_files)'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l chain -d 'Search a multihop chain'
+complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l short -d 'Show only chain summaries (requires --chain)'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l to -r -a '(__ezpz_path_to_users)'
 
 # certspray specific
