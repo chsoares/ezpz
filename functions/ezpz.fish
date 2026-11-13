@@ -34,7 +34,7 @@ function ezpz
 
     source $EZPZ_HOME/functions/_ezpz_colors.fish
     
-    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds certspray path enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell wordlister selfrelay
+    set -l commands netscan webscan secretsparse getloot checkvulns adscan testcreds certspray path enumnull enumdomain enumuser enumshares enumsqli credspray getflag getshell selfrelay
 
     if test (count $argv) -eq 0
         ezpz_show_menu
@@ -109,8 +109,7 @@ function ezpz_show_menu
         "Post-Exploit|getloot|Extract information from Windows hosts" \
         "Post-Exploit|getflag|Read flags from compromised hosts" \
         "Post-Exploit|getshell|Get reverse shell from compromised hosts" \
-        "Post-Exploit|secretsparse|Parse secretsdump.py output" \
-        "Post-Exploit|wordlister|Generate mutated wordlists"
+        "Post-Exploit|secretsparse|Parse secretsdump.py output"
 
     set -l current_category
     for entry in $sections
