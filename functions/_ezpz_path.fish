@@ -235,6 +235,88 @@ function __ezpz_path_is_contained --argument-names container candidate
     return 1
 end
 
+function __ezpz_path_render_chain
+    set -l source_user $argv[1]
+    set -l domain $argv[2]
+    set -l secret $argv[3]
+    set -l hash $argv[4]
+    set -l dc $argv[5]
+    set -l short_mode $argv[6]
+    set -l records $argv[7..-1]
+
+    set -l chain_steps
+    set -l chain_source ""
+    for record in $records
+        set -l fields (string split \t -- $record)
+        switch "$fields[1]"
+            case SOURCE
+                set chain_source $fields[2]
+            case STEP
+                set -a chain_steps $record
+        end
+    end
+    if test (count $chain_steps) -eq 0
+        return 0
+    end
+
+    set -l current_user $source_user
+    set -l current_secret $secret
+    set -l current_hash $hash
+    set -l chain_path $chain_source
+    for step_record in $chain_steps
+        set -l fields (string split \t -- $step_record)
+        set -a chain_path $fields[5]
+    end
+    set -l total_steps (count $chain_steps)
+
+    if test "$short_mode" = 1
+        printf '%s\n' (string join ' -> ' $chain_path)
+        return 0
+    end
+
+    if test $total_steps -eq 1
+        ezpz_header "Direct edge: "(string join ' -> ' $chain_path)
+    else
+        ezpz_header "Attack chain: "(string join ' -> ' $chain_path)
+    end
+
+    set -l step_index 0
+    for step_record in $chain_steps
+        set -l fields (string split \t -- $step_record)
+        set step_index (math $step_index + 1)
+        set -l edge $fields[3]
+        set -l step_source $fields[4]
+        set -l step_target $fields[5]
+        set -l step_type $fields[6]
+        set -l step_dn $fields[7]
+        set -l step_fqdn $fields[8]
+        ezpz_title "$step_index: $step_source — $edge -> $step_target"
+        __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "<NEWPASS>"
+        if test $step_index -lt $total_steps; and test "$step_type" != Group
+            set -l next_secret ""
+            if test "$edge" = ForceChangePassword
+                set next_secret "<NEWPASS>"
+                set current_hash ""
+            else
+                set next_secret (__ezpz_path_secret "$step_target" "$domain" | head -1)
+                set -l next_hash (__ezpz_path_hash "$next_secret")
+                if test -n "$next_hash"
+                    set current_hash $next_hash
+                    set next_secret "<PASS>"
+                else if test -z "$next_secret"
+                    set next_secret (__ezpz_path_placeholder "$step_target")
+                    set current_hash ""
+                else
+                    set current_hash ""
+                end
+            end
+            set current_user $step_target
+            set current_secret $next_secret
+        end
+    end
+    return 0
+end
+
 function _ezpz_path
     source "$EZPZ_HOME/functions/_ezpz_colors.fish"
     if not set -q __EZPZ_PATH_BATCH
@@ -363,6 +445,10 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         end
         set -l selected_users $users
         set -l any_direct 0
+        set -l selected_chain_indices
+        set -l chain_users
+        set -l chain_paths
+        set -l chain_records
 
         if set -q _flag_chain
             set -l prep_args --zip "$batch_zip" --chain --batch
@@ -372,6 +458,52 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                 set -a prep_args --fallback-longest
             end
 
+            set -l users_tmp (mktemp)
+            printf '%s\n' $users > "$users_tmp"
+            set -l out (python3 "$batch_helper" $prep_args --from-file "$users_tmp" 2>&1)
+            set -l prep_status $status
+            rm -f "$users_tmp"
+            if test $prep_status -ne 0
+                ezpz_error "$out"
+                return 1
+            end
+
+            set -l current_user ""
+            set -l current_block
+            set -l current_path
+            for record in $out
+                set -l fields (string split \t -- $record)
+                switch "$fields[1]"
+                    case USER
+                        if test (count $current_block) -gt 0
+                            set -a chain_users $current_user
+                            set -a chain_paths (string join '|' $current_path)
+                            set -a chain_records (string join \x1f $current_block)
+                            set current_block
+                            set current_path
+                        end
+                        set current_user $fields[2]
+                    case CHAIN
+                        if test (count $current_block) -gt 0
+                            set -a chain_users $current_user
+                            set -a chain_paths (string join '|' $current_path)
+                            set -a chain_records (string join \x1f $current_block)
+                        end
+                        set current_block
+                        set current_path $current_user
+                    case SOURCE TARGET
+                        set -a current_block $record
+                    case STEP
+                        set -a current_block $record
+                        set -a current_path $fields[5]
+                end
+            end
+            if test (count $current_block) -gt 0
+                set -a chain_users $current_user
+                set -a chain_paths (string join '|' $current_path)
+                set -a chain_records (string join \x1f $current_block)
+            end
+
             set -l min_path_objects 3
             if set -q _flag_to
                 # An explicit target may be reachable through a direct edge,
@@ -379,62 +511,68 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                 set min_path_objects 2
             end
 
-            set -l chain_users
-            set -l chain_paths
-            for user in $users
-                set -l out (python3 "$batch_helper" $prep_args --from "$user" 2>/dev/null)
-                set -l path $user
-                for line in $out
-                    set -l fields (string split \t -- $line)
-                    if test "$fields[1]" = STEP
-                        set -a path $fields[5]
-                    end
-                end
+            set -l usable_indices
+            for i in (seq (count $chain_paths))
+                set -l path_parts (string split '|' -- $chain_paths[$i])
                 # A two-item path ends at a single target, so it is a direct
                 # edge rather than a chain.
-                if test (count $path) -eq 2
+                if test (count $path_parts) -eq 2
                     set any_direct 1
                 end
                 # Require at least two hops for ordinary chains, but allow a
                 # direct edge when the user asked for an explicit --to target.
-                if test (count $path) -ge $min_path_objects
-                    set -a chain_users $user
-                    set -a chain_paths (string join '|' $path)
+                if test (count $path_parts) -ge $min_path_objects
+                    set -a usable_indices $i
                 end
             end
 
-            set selected_users
             if not set -q _flag_to
                 # In fallback mode, a chain that is already contained in a
                 # longer chain adds no new attack path. With an explicit --to,
                 # each user's result is independent and must be kept.
-                for i in (seq (count $chain_paths))
+                for i in $usable_indices
                     set -l contained 0
-                    for j in (seq (count $chain_paths))
+                    for j in $usable_indices
                         test $i -eq $j; and continue
                         if __ezpz_path_is_contained "$chain_paths[$j]" "$chain_paths[$i]"
                             set contained 1
                             break
                         end
                     end
-                    test $contained -eq 0; and set -a selected_users $chain_users[$i]
+                    test $contained -eq 0; and set -a selected_chain_indices $i
                 end
             else
-                set selected_users $chain_users
+                set selected_chain_indices $usable_indices
             end
+            set selected_users
         end
 
         set -gx __EZPZ_PATH_BATCH 1
-        if set -q _flag_chain; and set -q _flag_short; and test (count $selected_users) -gt 0
+        if set -q _flag_chain; and set -q _flag_short; and test (count $selected_chain_indices) -gt 0
             ezpz_header "Attack chains summary:"
             set -g __EZPZ_PATH_SHORT_SUMMARY 1
         end
         set -l batch_tmp (mktemp)
         set -l any_output 0
-        for user in $selected_users
-            _ezpz_path -u "$user" $rest | tee "$batch_tmp"
-            if test -s "$batch_tmp"
-                set any_output 1
+        if set -q _flag_chain
+            set -l records_dir (mktemp -d)
+            for idx in $selected_chain_indices
+                set -l records_file "$records_dir/chain_$idx.tsv"
+                printf '%s\n' (string split \x1f -- "$chain_records[$idx]") > "$records_file"
+                set -gx __EZPZ_PATH_RECORDS_FILE "$records_file"
+                _ezpz_path -u "$chain_users[$idx]" $rest | tee "$batch_tmp"
+                if test -s "$batch_tmp"
+                    set any_output 1
+                end
+            end
+            set -e __EZPZ_PATH_RECORDS_FILE
+            rm -rf "$records_dir"
+        else
+            for user in $selected_users
+                _ezpz_path -u "$user" $rest | tee "$batch_tmp"
+                if test -s "$batch_tmp"
+                    set any_output 1
+                end
             end
         end
         rm -f "$batch_tmp"
@@ -484,8 +622,14 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             set -a helper_args --fallback-longest
         end
     end
-    set -l records (python3 "$helper" $helper_args 2>&1)
-    set -l rc $status
+    set -l records
+    set -l rc 0
+    if set -q __EZPZ_PATH_RECORDS_FILE
+        set records (cat "$__EZPZ_PATH_RECORDS_FILE")
+    else
+        set records (python3 "$helper" $helper_args 2>&1)
+        set rc $status
+    end
     if test $rc -ne 0
         if set -q __EZPZ_PATH_BATCH
             # Missing principals and targets are expected in batch lists;
@@ -502,28 +646,31 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     end
 
     set -l paths
-    set -l chain_steps
-    set -l chain_source ""
-    set -l chain_target ""
-    set -l chain_target_type ""
+    set -l chain_blocks
+    set -l current_block
     set -l chain_fallback_warning ""
     set -l chain_fallback_info ""
     for record in $records
         set -l fields (string split \t -- $record)
         switch "$fields[1]"
-            case SOURCE
-                set chain_source $fields[2]
-            case TARGET
-                set chain_target $fields[2]
-                set chain_target_type $fields[3]
-            case STEP
-                set -a chain_steps $record
+            case CHAIN
+                if test (count $current_block) -gt 0
+                    set -a chain_blocks (string join \x1f $current_block)
+                end
+                set current_block
+            case SOURCE TARGET STEP
+                set -a current_block $record
             case FALLBACK
                 set chain_fallback_warning $fields[2]
                 set chain_fallback_info $fields[3]
+            case USER
+                # Batch user marker; the user comes from -u/--user.
             case '*'
                 set -a paths $record
         end
+    end
+    if test (count $current_block) -gt 0
+        set -a chain_blocks (string join \x1f $current_block)
     end
 
     set -l dc (ezpz_dc_ip $domain)
@@ -544,7 +691,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     set -l base "bloodyAD -H $dc -d $domain -u $source_user -p $base_secret"
 
     if set -q _flag_chain
-        if test (count $chain_steps) -eq 0
+        if test (count $chain_blocks) -eq 0
             if set -q __EZPZ_PATH_BATCH
                 return 0
             end
@@ -552,70 +699,39 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             __ezpz_path_done
             return 0
         end
-        set -l current_user $source_user
-        set -l current_secret $secret
-        set -l current_hash $hash
-        set -l chain_path $chain_source
-        for step_record in $chain_steps
-            set -l fields (string split \t -- $step_record)
-            set -a chain_path $fields[5]
+
+        set -l has_long 0
+        for block in $chain_blocks
+            set -l steps 0
+            for record in (string split \x1f -- $block)
+                if test (string split \t -- $record)[1] = STEP
+                    set steps (math $steps + 1)
+                end
+            end
+            if test $steps -gt 1
+                set has_long 1
+            end
         end
-        set -l total_steps (count $chain_steps)
-        if test $total_steps -eq 1; and not set -q _flag_to
+
+        if test $has_long -eq 0; and not set -q _flag_to
             printf '%s\n' "No chain longer than one hop found."
             printf '%s\n' "Use ezpz path without --chain to list direct edges."
             __ezpz_path_done
             return 0
         end
-        if test -n "$chain_fallback_warning"; and not test $total_steps -eq 1; and not set -q _flag_short
+        if test -n "$chain_fallback_warning"; and test $has_long -eq 1; and not set -q _flag_short; and not set -q __EZPZ_PATH_BATCH
             ezpz_warn "$chain_fallback_warning $chain_fallback_info"
         end
+        if set -q _flag_short; and not set -q __EZPZ_PATH_SHORT_SUMMARY
+            ezpz_header "Attack chains summary:"
+        end
+        set -l short_mode 0
         if set -q _flag_short
-            if not set -q __EZPZ_PATH_SHORT_SUMMARY
-                ezpz_header "Attack chains summary:"
-            end
-            printf '%s\n' (string join ' -> ' $chain_path)
-            __ezpz_path_done
-            return 0
+            set short_mode 1
         end
-        if test $total_steps -eq 1
-            ezpz_header "Direct edge: "(string join ' -> ' $chain_path)
-        else
-            ezpz_header "Attack chain: "(string join ' -> ' $chain_path)
-        end
-        set -l step_index 0
-        for step_record in $chain_steps
-            set -l fields (string split \t -- $step_record)
-            set step_index (math $step_index + 1)
-            set -l edge $fields[3]
-            set -l step_source $fields[4]
-            set -l step_target $fields[5]
-            set -l step_type $fields[6]
-            set -l step_dn $fields[7]
-            set -l step_fqdn $fields[8]
-            ezpz_title "$step_index: $step_source — $edge -> $step_target"
-            __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "<NEWPASS>"
-            if test $step_index -lt $total_steps; and test "$step_type" != Group
-                set -l next_secret ""
-                if test "$edge" = ForceChangePassword
-                    set next_secret "<NEWPASS>"
-                    set current_hash ""
-                else
-                    set next_secret (__ezpz_path_secret "$step_target" "$domain" | head -1)
-                    set -l next_hash (__ezpz_path_hash "$next_secret")
-                    if test -n "$next_hash"
-                        set current_hash $next_hash
-                        set next_secret "<PASS>"
-                    else if test -z "$next_secret"
-                        set next_secret (__ezpz_path_placeholder "$step_target")
-                        set current_hash ""
-                    else
-                        set current_hash ""
-                    end
-                end
-                set current_user $step_target
-                set current_secret $next_secret
-            end
+        for block in $chain_blocks
+            set -l block_records (string split \x1f -- $block)
+            __ezpz_path_render_chain "$source_user" "$domain" "$secret" "$hash" "$dc" "$short_mode" $block_records
         end
         __ezpz_path_done
         return 0

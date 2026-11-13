@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract one-hop attack paths from a BloodHound JSON zip.
+"""Extract one-hop attack paths or attack chains from a BloodHound JSON zip.
 
 Output is TSV:
   SOURCE<TAB>display<TAB>domain
@@ -211,9 +211,12 @@ def effective_sids(user_sid, extra_groups, groups, cache):
     return sids
 
 
-def longest_chain(start_sid, target_sid, target_type, edges, groups):
-    best_steps = []
-    best_state = None
+def longest_chains(start_sid, edges, groups):
+    """Return every unique longest fallback chain.
+
+    Computer and domain endpoints are preferred over user endpoints. If no
+    computer/domain chain exists, all tied user chains are returned.
+    """
     cache = {}
     # Groups are intermediate objects; a useful fallback chain should end on a
     # principal that can actually be taken over (user, computer, or domain).
@@ -226,8 +229,11 @@ def longest_chain(start_sid, target_sid, target_type, edges, groups):
         if edge["principal"] in start_sids and edge["target_type"] in useful_types
     }
 
+    candidates = []
+    best_len = 0
+
     def consider(state, path):
-        nonlocal best_steps, best_state
+        nonlocal best_len
         if not path:
             return
         last_edge = path[-1][1]
@@ -237,9 +243,11 @@ def longest_chain(start_sid, target_sid, target_type, edges, groups):
         # redundant; the direct edge is the best result for that endpoint.
         if last_edge["target"] in direct_targets and len(path) != 1:
             return
-        if len(path) > len(best_steps):
-            best_steps = path[:]
-            best_state = state
+        if len(path) > best_len:
+            best_len = len(path)
+            candidates.clear()
+        if len(path) == best_len:
+            candidates.append((path[:], state))
 
     def visit(state, path, path_states, path_nodes):
         consider(state, path)
@@ -267,20 +275,47 @@ def longest_chain(start_sid, target_sid, target_type, edges, groups):
 
     start_state = (start_sid, ())
     visit(start_state, [], {start_state}, {start_sid})
-    return best_steps, best_state
+    if not candidates:
+        return []
+
+    # Prefer chains that end on a computer or domain; users are the fallback
+    # only when there is no higher-value endpoint at the same depth.
+    if any(steps[-1][1]["target_type"] in ("Computer", "Domain") for steps, _ in candidates):
+        candidates = [
+            item for item in candidates
+            if item[0][-1][1]["target_type"] in ("Computer", "Domain")
+        ]
+
+    # The same object sequence can be reached through different ACEs; for a
+    # summary/list view, the sequence itself is what matters.
+    seen = set()
+    unique = []
+    for steps, state in candidates:
+        key = tuple(edge["target"] for _, edge in steps)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append((steps, state))
+
+    unique.sort(key=lambda item: tuple(edge["target_name"].casefold() for _, edge in item[0]))
+    return unique
 
 
-def chain_output(source, target, objects, args):
-    groups = group_membership(objects)
+def chain_output(source, target, objects, args, groups=None, by_sid=None, edges=None, target_obj=None):
+    if groups is None:
+        groups = group_membership(objects)
+    if by_sid is None or edges is None:
+        by_sid, edges = build_edges(objects)
+
     source_sid = source.get("ObjectIdentifier", "")
     source_type = object_type(source["_source"], source)
     source_name = display_name(source, source_type)
     source_props = source.get("Properties", {})
     source_domain = value(source_props, "domain", "domainsid")
-    by_sid, edges = build_edges(objects)
 
     if target:
-        target_obj = resolve_source(objects, target)
+        if target_obj is None:
+            target_obj = resolve_source(objects, target)
         if not target_obj:
             print(f"Target not found in BloodHound data: {target}", file=sys.stderr)
             return 1
@@ -344,33 +379,32 @@ def chain_output(source, target, objects, args):
                 prev[next_state] = (state, edge)
                 heapq.heappush(heap, (next_cost, next_state))
 
-    fallback_used = False
+    chains = []
     if found_state is None:
-        if args.fallback_longest:
-            original_target_name = target_name
-            steps, fallback_state = longest_chain(
-                source_sid, target_sid, target_type, edges, groups
-            )
-            if not steps:
-                if args.batch:
-                    return 0
-                print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
-                return 1
-            if not args.batch:
-                print(f"FALLBACK\tNo chain found from {source_name} to {original_target_name}.\tFalling back to longest reachable chain.")
-            fallback_used = True
-            found_state = fallback_state
-        else:
+        if not args.fallback_longest:
             if args.batch:
                 return 0
             print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
             return 1
 
-    if fallback_used:
-        target_sid = steps[-1][1]["target"]
-        target_obj = by_sid.get(target_sid)
-        target_type = object_type(target_obj["_source"], target_obj)
-        target_name = command_target(target_obj, target_type)
+        candidates = longest_chains(source_sid, edges, groups)
+        if not candidates:
+            if args.batch:
+                return 0
+            print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
+            return 1
+        if not args.batch:
+            plural = "chains" if len(candidates) > 1 else "chain"
+            print(f"FALLBACK\tNo chain found from {source_name} to {target_name}.\tFalling back to longest reachable {plural}.")
+
+        for steps, _ in candidates:
+            endpoint_sid = steps[-1][1]["target"]
+            endpoint_obj = by_sid.get(endpoint_sid)
+            if not endpoint_obj:
+                continue
+            endpoint_type = object_type(endpoint_obj["_source"], endpoint_obj)
+            endpoint_name = command_target(endpoint_obj, endpoint_type)
+            chains.append((endpoint_name, endpoint_type, steps))
     else:
         steps = []
         current = found_state
@@ -379,29 +413,42 @@ def chain_output(source, target, objects, args):
             steps.append((previous, edge))
             current = previous
         steps.reverse()
+        chains.append((target_name, target_type, steps))
 
-    print(f"SOURCE\t{source_name}\t{source_domain}")
-    print(f"TARGET\t{target_name}\t{target_type}")
-    for index, (previous_state, edge) in enumerate(steps, 1):
-        principal_obj = by_sid.get(edge["principal"])
-        principal_type = object_type(principal_obj["_source"], principal_obj) if principal_obj else ""
-        source_name_step = display_name(principal_obj, principal_type) if principal_obj else edge["principal"]
-        fields = [
-            str(index),
-            edge["right"],
-            source_name_step,
-            edge["target_name"],
-            edge["target_type"],
-            edge["target_dn"],
-            edge["target_fqdn"],
-        ]
-        print("STEP\t" + "\t".join(str(x).replace("\t", " ") for x in fields))
+    if not chains:
+        if args.batch:
+            return 0
+        print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
+        return 1
+
+    if args.batch:
+        print(f"USER\t{source_name}\t{source_domain}")
+
+    for chain_index, (chain_target, chain_target_type, steps) in enumerate(chains, 1):
+        print(f"CHAIN\t{chain_index}")
+        print(f"SOURCE\t{source_name}\t{source_domain}")
+        print(f"TARGET\t{chain_target}\t{chain_target_type}")
+        for index, (_previous_state, edge) in enumerate(steps, 1):
+            principal_obj = by_sid.get(edge["principal"])
+            principal_type = object_type(principal_obj["_source"], principal_obj) if principal_obj else ""
+            source_name_step = display_name(principal_obj, principal_type) if principal_obj else edge["principal"]
+            fields = [
+                str(index),
+                edge["right"],
+                source_name_step,
+                edge["target_name"],
+                edge["target_type"],
+                edge["target_dn"],
+                edge["target_fqdn"],
+            ]
+            print("STEP\t" + "\t".join(str(x).replace("\t", " ") for x in fields))
     return 0
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--zip", required=True)
-    parser.add_argument("--from", dest="source", required=True)
+    parser.add_argument("--from", dest="source", default="")
+    parser.add_argument("--from-file", dest="source_file", default="")
     parser.add_argument("--chain", action="store_true")
     parser.add_argument("--to", default="")
     parser.add_argument("--fallback-longest", action="store_true")
@@ -430,6 +477,45 @@ def main():
                 if isinstance(obj, dict) and obj.get("ObjectIdentifier"):
                     obj["_source"] = info.filename
                     objects.append(obj)
+
+    if args.source_file:
+        if not args.chain:
+            print("--from-file is only supported with --chain.", file=sys.stderr)
+            return 1
+        try:
+            with open(args.source_file, encoding="utf-8") as handle:
+                users = [
+                    line.strip() for line in handle
+                    if line.strip() and not line.lstrip().startswith("#")
+                ]
+        except OSError as exc:
+            print(f"Cannot read user list: {exc}", file=sys.stderr)
+            return 1
+        users = list(dict.fromkeys(users))
+        args.batch = True
+        groups = group_membership(objects)
+        by_sid, edges = build_edges(objects)
+        target_obj = None
+        if args.to:
+            target_obj = resolve_source(objects, args.to)
+            if not target_obj:
+                print(f"Target not found in BloodHound data: {args.to}", file=sys.stderr)
+                return 1
+        for user in users:
+            source = resolve_source(objects, user)
+            if not source:
+                continue
+            status = chain_output(
+                source, args.to, objects, args,
+                groups=groups, by_sid=by_sid, edges=edges, target_obj=target_obj,
+            )
+            if status != 0:
+                return status
+        return 0
+
+    if not args.source:
+        print("Either --from or --from-file is required.", file=sys.stderr)
+        return 1
 
     source = resolve_source(objects, args.source)
     if not source:
