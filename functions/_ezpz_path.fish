@@ -157,14 +157,14 @@ function _ezpz_path
     ezpz_banner path
 
     set -l usage "
-Usage: ezpz path -u <user> -d <domain> [-p <password> | -H <hash>] [options]
+Usage: ezpz path -u <user> -d <domain> (-p <password> | -H <hash>) [options]
 
 Shows one-hop AD attack paths or a multihop chain from BloodHound data.
 
   -u, --user      Principal to analyze (required)
   -d, --domain    Domain used in generated commands (required)
-  -p, --password  Password used in generated commands (default: creds.txt)
-  -H, --hash      NTLM hash used in generated commands (default: creds.txt)
+  -p, --password  Password used in generated commands (required unless -H)
+  -H, --hash      NTLM hash used in generated commands (required unless -p)
   -f, --file      BloodHound zip (default: <domain>_bloodhound.zip)
   -t, --target    DC IP or hostname used in generated commands
   --chain         Search a multihop attack chain
@@ -205,6 +205,12 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         return 1
     end
     set -l domain (string lower -- $_flag_domain)
+
+    if not set -q _flag_password; and not set -q _flag_hash
+        ezpz_error "Missing authentication: use -p/--password or -H/--hash."
+        echo $usage
+        return 1
+    end
 
     set -l zip_file ""
     if set -q _flag_file
@@ -274,12 +280,6 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         set hash $_flag_hash
     else if set -q _flag_password
         set secret $_flag_password
-    else
-        set secret (__ezpz_path_secret "$source_user" "$domain" | head -1)
-        if string match -qr '^[a-fA-F0-9]{32}$' -- "$secret"
-            set hash $secret
-            set secret ""
-        end
     end
     test -n "$secret"; or set secret "<PASS>"
     set -l base_secret $secret
