@@ -289,6 +289,29 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     end
     set -l domain (string lower -- $_flag_domain)
 
+    if test -f "$source_user"; and not set -q __EZPZ_PATH_BATCH_SPIN
+        # The list mode loads the BloodHound zip once per user, so keep the
+        # terminal busy while the batch runs and print the buffered output
+        # afterwards.
+        set -l spin_tmp (mktemp)
+        if set -q boxpwd
+            set -gx boxpwd $boxpwd
+        end
+        set -gx __EZPZ_PATH_BATCH 1
+        set -gx __EZPZ_PATH_BATCH_SPIN 1
+        ezpz_spin_capture "$spin_tmp" fish --no-config -c '
+            set -gx EZPZ_HOME $argv[1]
+            set fish_function_path $EZPZ_HOME/functions $fish_function_path
+            _ezpz_path $argv[2..-1]
+        ' -- "$EZPZ_HOME" $original_argv
+        set -l spin_status $status
+        cat "$spin_tmp"
+        rm -f "$spin_tmp"
+        set -e __EZPZ_PATH_BATCH_SPIN
+        set -e __EZPZ_PATH_BATCH
+        return $spin_status
+    end
+
     if test -f "$source_user"
         set -l users (__ezpz_path_users_from_file "$source_user" "$domain")
         if test (count $users) -eq 0
@@ -333,6 +356,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             return 1
         end
         set -l selected_users $users
+        set -l any_direct 0
 
         if set -q _flag_chain
             set -l prep_args --zip "$batch_zip" --chain --batch
@@ -359,6 +383,11 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                     if test "$fields[1]" = STEP
                         set -a path $fields[5]
                     end
+                end
+                # A two-item path ends at a single target, so it is a direct
+                # edge rather than a chain.
+                if test (count $path) -eq 2
+                    set any_direct 1
                 end
                 # Require at least two hops for ordinary chains, but allow a
                 # direct edge when the user asked for an explicit --to target.
@@ -390,8 +419,24 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         end
 
         set -gx __EZPZ_PATH_BATCH 1
+        set -l batch_tmp (mktemp)
+        set -l any_output 0
         for user in $selected_users
-            _ezpz_path -u "$user" $rest
+            _ezpz_path -u "$user" $rest | tee "$batch_tmp"
+            if test -s "$batch_tmp"
+                set any_output 1
+            end
+        end
+        rm -f "$batch_tmp"
+        if test $any_output -eq 0
+            if set -q _flag_chain
+                printf '%s\n' "No attack chains found in $source_user."
+                if test $any_direct -eq 1; and not set -q _flag_to
+                    printf '%s\n' "Use ezpz path without --chain to list direct edges."
+                end
+            else
+                printf '%s\n' "No attack paths found in $source_user."
+            end
         end
         echo
         ezpz_success "Done."
