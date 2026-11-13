@@ -330,12 +330,17 @@ def chain_output(source, target, objects, args):
                 source_sid, target_sid, target_type, edges, groups
             )
             if not steps:
+                if args.batch:
+                    return 0
                 print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
                 return 1
-            print(f"FALLBACK\tNo chain found from {source_name} to {original_target_name}.\tFalling back to longest reachable chain.")
+            if not args.batch:
+                print(f"FALLBACK\tNo chain found from {source_name} to {original_target_name}.\tFalling back to longest reachable chain.")
             fallback_used = True
             found_state = fallback_state
         else:
+            if args.batch:
+                return 0
             print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
             return 1
 
@@ -378,6 +383,7 @@ def main():
     parser.add_argument("--chain", action="store_true")
     parser.add_argument("--to", default="")
     parser.add_argument("--fallback-longest", action="store_true")
+    parser.add_argument("--batch", action="store_true")
     args = parser.parse_args()
 
     try:

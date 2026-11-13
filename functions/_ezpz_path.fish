@@ -321,6 +321,9 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     end
 
     set -l helper_args --zip "$zip_file" --from "$source_user"
+    if set -q __EZPZ_PATH_BATCH
+        set -a helper_args --batch
+    end
     if set -q _flag_chain
         set -a helper_args --chain
         if set -q _flag_to
