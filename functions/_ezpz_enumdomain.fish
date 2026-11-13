@@ -919,6 +919,20 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     end
     rm -f $bh_tmp
 
+    set -l summary_zip "./$file_domain"_bloodhound.zip
+    if test -f "$summary_zip"; and test -f "$users_file"
+        ezpz_header "Listing attack chains of potential interest"
+        set -gx __EZPZ_PATH_BATCH 1
+        set -gx __EZPZ_PATH_BATCH_SPIN 1
+        set -gx __EZPZ_PATH_SHORT_SUMMARY 1
+        set -gx __EZPZ_PATH_NO_DONE 1
+        _ezpz_path -d "$file_domain" -u "$users_file" -f "$summary_zip" --chain --short
+        set -e __EZPZ_PATH_NO_DONE
+        set -e __EZPZ_PATH_SHORT_SUMMARY
+        set -e __EZPZ_PATH_BATCH_SPIN
+        set -e __EZPZ_PATH_BATCH
+    end
+
     echo
     ezpz_success "Done."
 end

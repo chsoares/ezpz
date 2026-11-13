@@ -548,7 +548,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         end
 
         set -gx __EZPZ_PATH_BATCH 1
-        if set -q _flag_chain; and set -q _flag_short; and test (count $selected_chain_indices) -gt 0
+        if set -q _flag_chain; and set -q _flag_short; and test (count $selected_chain_indices) -gt 0; and not set -q __EZPZ_PATH_SHORT_SUMMARY
             ezpz_header "Attack chains summary:"
             set -g __EZPZ_PATH_SHORT_SUMMARY 1
         end
@@ -587,8 +587,10 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                 printf '%s\n' "No attack paths found in $source_user."
             end
         end
-        echo
-        ezpz_success "Done."
+        if not set -q __EZPZ_PATH_NO_DONE
+            echo
+            ezpz_success "Done."
+        end
         set -e __EZPZ_PATH_BATCH
         return 0
     end
