@@ -86,17 +86,17 @@ complete -c ezpz -f -n '__fish_use_subcommand' -a 'selfrelay' -d 'NTLM self-rela
 
 # Target flag with IP completion from *_ips.txt files - requires argument
 # All commands that take targets
-complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns certspray path enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell credspray selfrelay' -s t -l target -r -a '(__ezpz_get_ips)'
+complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan checkvulns certspray enumnull enumdomain enumuser enumshares enumsqli testcreds getloot getflag getshell credspray selfrelay' -s t -l target -r -a '(__ezpz_get_ips)'
 
 # Authentication options - for commands that support auth
 # Username completion from creds.txt
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay path' -s u -l user -r -a '(__ezpz_creds_completion_users)' -d 'Username'
 
 # Password completion based on selected user
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay path' -s p -l password -r -a '(__ezpz_creds_completion_passwords)' -d 'Password for authentication'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s p -l password -r -a '(__ezpz_creds_completion_passwords)' -d 'Password for authentication'
 
 # Hash completion based on selected user
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot path' -s H -l hash -r -a '(__ezpz_creds_completion_hashes)' -d 'NTLM hash for pass-the-hash'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot' -s H -l hash -r -a '(__ezpz_creds_completion_hashes)' -d 'NTLM hash for pass-the-hash'
 
 # Domain option with hostname completion from *_etchosts.txt files
 complete -c ezpz -f --keep-order -n '__fish_seen_subcommand_from checkvulns certspray path enumdomain testcreds enumuser enumshares enumsqli getloot credspray selfrelay' -s d -l domain -r -a '(__ezpz_get_domains)' -d 'Domain name'
