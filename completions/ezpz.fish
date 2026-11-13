@@ -90,7 +90,7 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from netscan webscan adscan check
 
 # Authentication options - for commands that support auth
 # Username completion from creds.txt
-complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay path' -s u -l user -r -a '(__ezpz_creds_completion_users)' -d 'Username'
+complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s u -l user -r -a '(__ezpz_creds_completion_users)' -d 'Username'
 
 # Password completion based on selected user
 complete -c ezpz -f -n '__fish_seen_subcommand_from checkvulns enumdomain testcreds enumuser enumshares enumsqli getloot selfrelay' -s p -l password -r -a '(__ezpz_creds_completion_passwords)' -d 'Password for authentication'
@@ -155,53 +155,9 @@ function __ezpz_path_to_users
     printf '%s\n' $users | sort -u
 end
 
-# User-list files accepted by `path -u`.
-function __ezpz_path_user_files
-    set -l tokens (commandline -opc)
-    set -l domain ""
-    set -l want_domain 0
-    for token in $tokens
-        if test $want_domain -eq 1
-            set domain $token
-            break
-        end
-        if test "$token" = "-d"; or test "$token" = "--domain"
-            set want_domain 1
-        else if string match -q -- '--domain=*' $token
-            set domain (string replace -- '--domain=' '' $token)
-            break
-        end
-    end
-
-    set -l pattern "*_users*.txt"
-    test -n "$domain"; and set pattern "$domain"_users\*.txt
-
-    set -l files
-    for root in . "$boxpwd"
-        test -d "$root"; or continue
-        if test -f "$root/creds.txt"; and not contains -- "$root/creds.txt" $files
-            set -a files "$root/creds.txt"
-        end
-        for file in (find "$root" -maxdepth 1 -name $pattern -type f 2>/dev/null)
-            contains -- "$file" $files; or set -a files "$file"
-        end
-    end
-
-    set -l seen
-    for file in $files
-        set -l name (basename -- "$file")
-        contains -- $name $seen; and continue
-        set -a seen $name
-        set -l count (awk 'NF && $0 !~ /^[[:space:]]*#/ { n++ } END { print n + 0 }' "$file")
-        set -l desc "$count entry"
-        test "$count" -ne 1; and set desc "$count entries"
-        printf '%s\t%s\n' "$name" "$desc"
-    end | sort
-end
-
 # path specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s f -l file -r -a '(find . -maxdepth 1 -name "*_bloodhound.zip" -type f 2>/dev/null | sed "s|^./||")' -d 'BloodHound zip'
-complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s u -l user -r -a '(__ezpz_path_user_files)'
+complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s u -l user -r -a '(__ezpz_path_to_users)' -d 'User from <domain>_users*.txt'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l chain -d 'Search a multihop chain'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l short -d 'Show only chain summaries (requires --chain)'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l to -r -a '(__ezpz_path_to_users)'
