@@ -114,9 +114,7 @@ complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s f -l file -r -
 complete -c ezpz -f -n '__fish_seen_subcommand_from testcreds' -s x -l protocols -r -a '(__ezpz_completion_protocols)'
 
 # path specific
-complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l from -r -a '(__ezpz_creds_completion_users)' -d 'Principal'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s f -l file -r -a '(find . -maxdepth 1 -name "*_bloodhound.zip" -type f 2>/dev/null | sed "s|^./||")' -d 'BloodHound zip'
-complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s z -l zip -r -a '(find . -maxdepth 1 -name "*_bloodhound.zip" -type f 2>/dev/null | sed "s|^./||")' -d 'BloodHound zip'
 
 # certspray specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from certspray' -s f -l file -r -a '(__ezpz_completion_creds_files)' -d 'Credentials file'
