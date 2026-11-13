@@ -155,8 +155,37 @@ function __ezpz_path_to_users
     printf '%s\n' $users | sort -u
 end
 
+# User-list files accepted by `path -u`.
+function __ezpz_path_user_files
+    set -l tokens (commandline -opc)
+    set -l domain ""
+    set -l want_domain 0
+    for token in $tokens
+        if test $want_domain -eq 1
+            set domain $token
+            break
+        end
+        if test "$token" = "-d"; or test "$token" = "--domain"
+            set want_domain 1
+        else if string match -q -- '--domain=*' $token
+            set domain (string replace -- '--domain=' '' $token)
+            break
+        end
+    end
+
+    set -l pattern "*_users*.txt"
+    test -n "$domain"; and set pattern "$domain"_users\*.txt
+    for root in . "$boxpwd"
+        test -d "$root"; or continue
+        for file in (find "$root" -maxdepth 1 -name $pattern -type f 2>/dev/null)
+            basename -- "$file"
+        end
+    end | sort -u
+end
+
 # path specific
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s f -l file -r -a '(find . -maxdepth 1 -name "*_bloodhound.zip" -type f 2>/dev/null | sed "s|^./||")' -d 'BloodHound zip'
+complete -c ezpz -f -n '__fish_seen_subcommand_from path' -s u -l user -r -a '(__ezpz_path_user_files)' -d 'Users file'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l chain -d 'Search a multihop chain'
 complete -c ezpz -f -n '__fish_seen_subcommand_from path' -l to -r -a '(__ezpz_path_to_users)'
 

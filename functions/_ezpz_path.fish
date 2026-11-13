@@ -185,16 +185,44 @@ function __ezpz_path_render_edge --argument-names edge target target_type target
     end
 end
 
+function __ezpz_path_users_from_file --argument-names file domain
+    while read -l line
+        set line (string trim -- $line)
+        test -z "$line"; and continue
+        string match -q '#*' -- $line; and continue
+
+        set -l identity (string split -m1 ':' -- $line)[1]
+        set -l user $identity
+        set -l item_domain ""
+        if string match -q '*@*' -- $identity
+            set user (string split -m1 '@' -- $identity)[1]
+            set item_domain (string split -m1 '@' -- $identity)[2]
+        else if string match -rq '\\\\' -- $identity
+            set item_domain (string split -m1 '\\' -- $identity)[1]
+            set user (string split -m1 '\\' -- $identity)[2]
+        end
+        test -n "$user"; or continue
+        if test -n "$item_domain"; and test (string lower -- $item_domain) != (string lower -- $domain)
+            continue
+        end
+        printf '%s\n' $user
+    end < "$file" | sort -u
+end
+
 function _ezpz_path
     source "$EZPZ_HOME/functions/_ezpz_colors.fish"
-    ezpz_banner path
+    if not set -q __EZPZ_PATH_BATCH
+        ezpz_banner path
+    end
+
+    set -l original_argv $argv
 
     set -l usage "
 Usage: ezpz path -u <user> -d <domain> [options]
 
 Shows one-hop AD attack paths or a multihop chain from BloodHound data.
 
-  -u, --user      Principal to analyze (required)
+  -u, --user      Principal or users file to analyze (required)
   -d, --domain    Domain used in generated commands (required)
   -f, --file      BloodHound zip (default: <domain>_bloodhound.zip)
   --chain         Search a multihop attack chain
@@ -234,6 +262,37 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         return 1
     end
     set -l domain (string lower -- $_flag_domain)
+
+    if test -f "$source_user"
+        set -l users (__ezpz_path_users_from_file "$source_user" "$domain")
+        if test (count $users) -eq 0
+            ezpz_error "No users found in $source_user for domain $domain."
+            return 1
+        end
+
+        set -l rest
+        set -l skip_user 0
+        for token in $original_argv
+            if test $skip_user -eq 1
+                set skip_user 0
+                continue
+            end
+            if test "$token" = "-u"; or test "$token" = "--user"
+                set skip_user 1
+                continue
+            else if string match -q -- '--user=*' $token
+                continue
+            end
+            set -a rest $token
+        end
+
+        set -gx __EZPZ_PATH_BATCH 1
+        for user in $users
+            _ezpz_path -u "$user" $rest
+        end
+        set -e __EZPZ_PATH_BATCH
+        return 0
+    end
 
     set -l zip_file ""
     if set -q _flag_file
