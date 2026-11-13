@@ -215,12 +215,34 @@ def longest_chain(start_sid, target_sid, target_type, edges, groups):
     best_steps = []
     best_state = None
     cache = {}
+    # Groups are intermediate objects; a useful fallback chain should end on a
+    # principal that can actually be taken over (user, computer, or domain).
+    useful_types = {"User", "Computer", "Domain"}
 
-    def visit(state, path, path_states, path_nodes):
+    start_sids = effective_sids(start_sid, (), groups, cache)
+    direct_targets = {
+        edge["target"]
+        for edge in edges
+        if edge["principal"] in start_sids and edge["target_type"] in useful_types
+    }
+
+    def consider(state, path):
         nonlocal best_steps, best_state
+        if not path:
+            return
+        last_edge = path[-1][1]
+        if last_edge["target_type"] not in useful_types:
+            return
+        # A longer detour to an object that is already reachable in one hop is
+        # redundant; the direct edge is the best result for that endpoint.
+        if last_edge["target"] in direct_targets and len(path) != 1:
+            return
         if len(path) > len(best_steps):
             best_steps = path[:]
             best_state = state
+
+    def visit(state, path, path_states, path_nodes):
+        consider(state, path)
         user_sid, extra = state
         current_sids = effective_sids(user_sid, extra, groups, cache)
         for edge in edges:
