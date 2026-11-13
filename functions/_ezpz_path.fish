@@ -74,6 +74,20 @@ function __ezpz_path_secret --argument-names user domain
     end < "$file"
 end
 
+function __ezpz_path_hash --argument-names value
+    if string match -qr '^[a-fA-F0-9]{32}$' -- $value
+        echo ":$value"
+        return 0
+    else if string match -qr '^[a-fA-F0-9]{32}:[a-fA-F0-9]{32}$' -- $value
+        echo $value
+        return 0
+    else if string match -qr '^:[a-fA-F0-9]{32}$' -- $value
+        echo $value
+        return 0
+    end
+    return 1
+end
+
 function __ezpz_path_placeholder --argument-names user
     set -l name (string upper -- $user)
     set name (string replace -a -- '.' '_' $name)
@@ -264,9 +278,8 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     test -n "$dc"; or set dc "<DC>"
 
     set -l secret (__ezpz_path_secret "$source_user" "$domain" | head -1)
-    set -l hash ""
-    if string match -qr '^[a-fA-F0-9]{32}$' -- "$secret"
-        set hash $secret
+    set -l hash (__ezpz_path_hash "$secret")
+    if test -n "$hash"
         set secret "<PASS>"
     else if test -z "$secret"
         set secret (__ezpz_path_placeholder "$source_user")
@@ -317,8 +330,9 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                     set current_hash ""
                 else
                     set next_secret (__ezpz_path_secret "$step_target" "$domain" | head -1)
-                    if string match -qr '^[a-fA-F0-9]{32}$' -- "$next_secret"
-                        set current_hash $next_secret
+                    set -l next_hash (__ezpz_path_hash "$next_secret")
+                    if test -n "$next_hash"
+                        set current_hash $next_hash
                         set next_secret "<PASS>"
                     else if test -z "$next_secret"
                         set next_secret (__ezpz_path_placeholder "$step_target")
