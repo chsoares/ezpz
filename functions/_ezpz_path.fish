@@ -299,7 +299,12 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         set -l current_user $source_user
         set -l current_secret $secret
         set -l current_hash $hash
-        ezpz_header "Attack chain: $chain_source -> $chain_target"
+        set -l chain_path $chain_source
+        for step_record in $chain_steps
+            set -l fields (string split \t -- $step_record)
+            set -a chain_path $fields[5]
+        end
+        ezpz_header "Attack chain: "(string join ' -> ' $chain_path)
         set -l total_steps (count $chain_steps)
         set -l step_index 0
         for step_record in $chain_steps
@@ -311,8 +316,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             set -l step_type $fields[6]
             set -l step_dn $fields[7]
             set -l step_fqdn $fields[8]
-            ezpz_title "Step $step_index: $step_source -> $step_target"
-            ezpz_info "$edge"
+            ezpz_title "$step_index: $step_source -- $edge -> $step_target"
             __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "ezpzr0cks!"
             if test $step_index -lt $total_steps
                 set -l next_secret ""
@@ -333,11 +337,6 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                 end
                 set current_user $step_target
                 set current_secret $next_secret
-                if test -n "$current_hash"
-                    ezpz_info "Next: authenticate as $step_target with hash $current_hash"
-                else
-                    ezpz_info "Next: authenticate as $step_target with $current_secret"
-                end
             end
         end
         echo
