@@ -24,14 +24,18 @@ def value(props, *names):
     return ""
 
 
-def display_name(obj):
+def display_name(obj, typ=None):
     props = obj.get("Properties", {})
     sam = value(props, "samaccountname")
-    if sam:
-        return sam
-    name = value(props, "name")
+    name = sam or value(props, "name")
     if "@" in name:
         name = name.split("@", 1)[0]
+    if typ == "User":
+        return name.lower()
+    if typ == "Group":
+        return name.upper()
+    if typ == "Computer":
+        return name.upper()
     return name
 
 
@@ -63,6 +67,10 @@ def command_target(obj, typ):
     if typ in ("User", "Group", "Computer"):
         sam = value(props, "samaccountname")
         if sam:
+            if typ == "User":
+                return sam.lower()
+            if typ in ("Group", "Computer"):
+                return sam.upper()
             return sam
     if typ == "Domain":
         return value(props, "name", "domain")
@@ -100,6 +108,18 @@ def resolve_source(objects, source):
         if "users.json" in obj["_source"].lower():
             return obj
     return matches[0]
+
+
+MEMBERSHIP_RIGHTS = {
+    "AddSelf": 1,
+    "AddMember": 1,
+    "GenericAll": 2,
+    "AllExtendedRights": 2,
+    "WriteAllProperties": 2,
+    "WriteDacl": 3,
+    "WriteOwner": 3,
+    "Owns": 3,
+}
 
 
 TAKEOVER_RIGHTS = {
@@ -153,15 +173,21 @@ def build_edges(objects):
     edges = []
     for target_sid, obj in by_sid.items():
         target_type = object_type(obj["_source"], obj)
-        if target_type not in ("User", "Computer", "Domain"):
+        if target_type not in ("User", "Computer", "Domain", "Group"):
             continue
         target = command_target(obj, target_type)
         target_dn = value(obj.get("Properties", {}), "distinguishedname")
         target_name = target_fqdn(obj, target_type)
         for ace in obj.get("Aces", []):
             right = value(ace, "RightName")
-            if right not in TAKEOVER_RIGHTS:
-                continue
+            if target_type == "Group":
+                if right not in MEMBERSHIP_RIGHTS:
+                    continue
+                edge_cost = MEMBERSHIP_RIGHTS[right]
+            else:
+                if right not in TAKEOVER_RIGHTS:
+                    continue
+                edge_cost = TAKEOVER_RIGHTS[right]
             principal = ace.get("PrincipalSID")
             if not principal:
                 continue
@@ -173,35 +199,55 @@ def build_edges(objects):
                 "target_dn": target_dn,
                 "target_fqdn": target_name,
                 "right": right,
-                "cost": TAKEOVER_RIGHTS[right],
+                "cost": edge_cost,
             })
     return by_sid, edges
 
 
-def longest_chain(start_sid, edges, groups):
-    best = []
+def effective_sids(user_sid, extra_groups, groups, cache):
+    sids = set(identity_sids(user_sid, groups, cache))
+    for group_sid in extra_groups:
+        sids.update(identity_sids(group_sid, groups, cache))
+    return sids
 
-    def visit(sid, path, path_sids):
-        nonlocal best
-        if len(path) > len(best):
-            best = path[:]
-        current_sids = identity_sids(sid, groups, {})
+
+def longest_chain(start_sid, target_sid, target_type, edges, groups):
+    best_steps = []
+    best_state = None
+    cache = {}
+
+    def visit(state, path, path_states):
+        nonlocal best_steps, best_state
+        if len(path) > len(best_steps):
+            best_steps = path[:]
+            best_state = state
+        user_sid, extra = state
+        current_sids = effective_sids(user_sid, extra, groups, cache)
         for edge in edges:
             if edge["principal"] not in current_sids:
                 continue
-            next_sid = edge["target"]
-            if next_sid in path_sids:
+            if edge["target_type"] == "Group":
+                if edge["target"] in current_sids:
+                    continue
+                next_state = (user_sid, tuple(sorted(set(extra) | {edge["target"]})))
+            else:
+                if edge["target"] == user_sid:
+                    continue
+                next_state = (edge["target"], ())
+            if next_state in path_states:
                 continue
-            visit(next_sid, path + [(sid, edge)], path_sids | {next_sid})
+            visit(next_state, path + [(state, edge)], path_states | {next_state})
 
-    visit(start_sid, [], {start_sid})
-    return best
+    start_state = (start_sid, ())
+    visit(start_state, [], {start_state})
+    return best_steps, best_state
 
 
 def chain_output(source, target, objects, args):
     groups = group_membership(objects)
     source_sid = source.get("ObjectIdentifier", "")
-    source_name = display_name(source)
+    source_type = object_type(source["_source"], source)
+    source_name = display_name(source, source_type)
     source_props = source.get("Properties", {})
     source_domain = value(source_props, "domain", "domainsid")
     by_sid, edges = build_edges(objects)
@@ -235,45 +281,68 @@ def chain_output(source, target, objects, args):
 
     import heapq
     inf = 10**9
-    dist = {source_sid: 0}
+    start_state = (source_sid, ())
+    dist = {start_state: 0}
     prev = {}
-    heap = [(0, source_sid)]
+    heap = [(0, start_state)]
+    found_state = None
     cache = {}
 
     while heap:
-        cost, current = heapq.heappop(heap)
-        if cost != dist.get(current):
+        cost, state = heapq.heappop(heap)
+        if cost != dist.get(state):
             continue
-        current_sids = identity_sids(current, groups, cache)
+        user_sid, extra = state
+        sids = effective_sids(user_sid, extra, groups, cache)
+        if user_sid == target_sid:
+            found_state = state
+            break
+        if target_type == "Group" and target_sid in sids:
+            found_state = state
+            break
         for edge in edges:
-            if edge["principal"] not in current_sids:
+            if edge["principal"] not in sids:
                 continue
-            next_sid = edge["target"]
+            if edge["target_type"] == "Group":
+                if edge["target"] in sids:
+                    continue
+                next_state = (user_sid, tuple(sorted(set(extra) | {edge["target"]})))
+            else:
+                if edge["target"] == user_sid:
+                    continue
+                next_state = (edge["target"], ())
             next_cost = cost + edge["cost"]
-            if next_cost < dist.get(next_sid, inf):
-                dist[next_sid] = next_cost
-                prev[next_sid] = (current, edge)
-                heapq.heappush(heap, (next_cost, next_sid))
+            if next_cost < dist.get(next_state, inf):
+                dist[next_state] = next_cost
+                prev[next_state] = (state, edge)
+                heapq.heappush(heap, (next_cost, next_state))
 
-    if target_sid not in prev and target_sid != source_sid:
+    fallback_used = False
+    if found_state is None:
         if args.fallback_longest:
             original_target_name = target_name
-            steps = longest_chain(source_sid, edges, groups)
+            steps, fallback_state = longest_chain(
+                source_sid, target_sid, target_type, edges, groups
+            )
             if not steps:
                 print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
                 return 1
             print(f"FALLBACK\tNo chain found from {source_name} to {original_target_name}.\tFalling back to longest reachable chain.")
-            target_sid = steps[-1][1]["target"]
-            target_obj = by_sid.get(target_sid)
-            target_type = object_type(target_obj["_source"], target_obj)
-            target_name = command_target(target_obj, target_type)
+            fallback_used = True
+            found_state = fallback_state
         else:
             print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
             return 1
+
+    if fallback_used:
+        target_sid = steps[-1][1]["target"]
+        target_obj = by_sid.get(target_sid)
+        target_type = object_type(target_obj["_source"], target_obj)
+        target_name = command_target(target_obj, target_type)
     else:
         steps = []
-        current = target_sid
-        while current != source_sid:
+        current = found_state
+        while current != start_state:
             previous, edge = prev[current]
             steps.append((previous, edge))
             current = previous
@@ -281,8 +350,10 @@ def chain_output(source, target, objects, args):
 
     print(f"SOURCE\t{source_name}\t{source_domain}")
     print(f"TARGET\t{target_name}\t{target_type}")
-    for index, (previous, edge) in enumerate(steps, 1):
-        source_name_step = display_name(by_sid.get(previous, {}))
+    for index, (previous_state, edge) in enumerate(steps, 1):
+        principal_obj = by_sid.get(edge["principal"])
+        principal_type = object_type(principal_obj["_source"], principal_obj) if principal_obj else ""
+        source_name_step = display_name(principal_obj, principal_type) if principal_obj else edge["principal"]
         fields = [
             str(index),
             edge["right"],
@@ -294,7 +365,6 @@ def chain_output(source, target, objects, args):
         ]
         print("STEP\t" + "\t".join(str(x).replace("\t", " ") for x in fields))
     return 0
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -338,7 +408,7 @@ def main():
 
     source_sid = source.get("ObjectIdentifier", "")
     source_props = source.get("Properties", {})
-    source_name = display_name(source)
+    source_name = display_name(source, object_type(source["_source"], source))
     source_domain = value(source_props, "domain", "domainsid")
     print(f"SOURCE\t{source_name}\t{source_domain}")
 
@@ -360,7 +430,7 @@ def main():
             members = group.get("Members") or []
             if any(m.get("ObjectIdentifier") in source_sids for m in members):
                 source_sids.add(sid)
-                group_names[sid] = display_name(group)
+                group_names[sid] = display_name(group, "Group")
                 changed = True
 
     seen = set()

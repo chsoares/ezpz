@@ -323,7 +323,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             set -l step_fqdn $fields[8]
             ezpz_title "$step_index: $step_source — $edge -> $step_target"
             __ezpz_path_render_edge "$edge" "$step_target" "$step_type" "$step_fqdn" "$current_user" "$domain" "$current_secret" "$current_hash" "$dc" "ezpzr0cks!"
-            if test $step_index -lt $total_steps
+            if test $step_index -lt $total_steps; and test "$step_type" != Group
                 set -l next_secret ""
                 if test "$edge" = ForceChangePassword
                     set next_secret "ezpzr0cks!"
