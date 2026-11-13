@@ -425,6 +425,10 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         end
 
         set -gx __EZPZ_PATH_BATCH 1
+        if set -q _flag_chain; and set -q _flag_short; and test (count $selected_users) -gt 0
+            ezpz_header "Attack chains summary:"
+            set -g __EZPZ_PATH_SHORT_SUMMARY 1
+        end
         set -l batch_tmp (mktemp)
         set -l any_output 0
         for user in $selected_users
@@ -434,6 +438,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             end
         end
         rm -f "$batch_tmp"
+        set -e __EZPZ_PATH_SHORT_SUMMARY
         if test $any_output -eq 0
             if set -q _flag_chain
                 printf '%s\n' "No attack chains found in $source_user."
@@ -566,7 +571,10 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             ezpz_warn "$chain_fallback_warning $chain_fallback_info"
         end
         if set -q _flag_short
-            ezpz_header (string join ' -> ' $chain_path)
+            if not set -q __EZPZ_PATH_SHORT_SUMMARY
+                ezpz_header "Attack chains summary:"
+            end
+            printf '%s\n' (string join ' -> ' $chain_path)
             __ezpz_path_done
             return 0
         end
