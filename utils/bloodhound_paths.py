@@ -216,7 +216,7 @@ def longest_chain(start_sid, target_sid, target_type, edges, groups):
     best_state = None
     cache = {}
 
-    def visit(state, path, path_states):
+    def visit(state, path, path_states, path_nodes):
         nonlocal best_steps, best_state
         if len(path) > len(best_steps):
             best_steps = path[:]
@@ -226,20 +226,25 @@ def longest_chain(start_sid, target_sid, target_type, edges, groups):
         for edge in edges:
             if edge["principal"] not in current_sids:
                 continue
+            next_sid = edge["target"]
+            # A useful chain must advance through new objects; revisiting a
+            # principal/group only creates noisy loops.
+            if next_sid in path_nodes:
+                continue
             if edge["target_type"] == "Group":
-                if edge["target"] in current_sids:
+                if next_sid in current_sids:
                     continue
-                next_state = (user_sid, tuple(sorted(set(extra) | {edge["target"]})))
+                next_state = (user_sid, tuple(sorted(set(extra) | {next_sid})))
             else:
-                if edge["target"] == user_sid:
+                if next_sid == user_sid:
                     continue
-                next_state = (edge["target"], ())
+                next_state = (next_sid, ())
             if next_state in path_states:
                 continue
-            visit(next_state, path + [(state, edge)], path_states | {next_state})
+            visit(next_state, path + [(state, edge)], path_states | {next_state}, path_nodes | {next_sid})
 
     start_state = (start_sid, ())
-    visit(start_state, [], {start_state})
+    visit(start_state, [], {start_state}, {start_sid})
     return best_steps, best_state
 
 
