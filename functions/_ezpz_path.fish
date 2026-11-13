@@ -216,6 +216,25 @@ function __ezpz_path_users_from_file --argument-names file domain
     end < "$file" | sort -u
 end
 
+function __ezpz_path_is_contained --argument-names container candidate
+    set -l cparts (string split '|' -- $container)
+    set -l kparts (string split '|' -- $candidate)
+    test (count $cparts) -gt (count $kparts); or return 1
+    set -l last (math (count $cparts) - (count $kparts) + 1)
+    for i in (seq $last)
+        set -l matched 1
+        for j in (seq (count $kparts))
+            set -l index (math $i + $j - 1)
+            if test "$cparts[$index]" != "$kparts[$j]"
+                set matched 0
+                break
+            end
+        end
+        test $matched -eq 1; and return 0
+    end
+    return 1
+end
+
 function _ezpz_path
     source "$EZPZ_HOME/functions/_ezpz_colors.fish"
     if not set -q __EZPZ_PATH_BATCH
@@ -232,7 +251,7 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
   -u, --user      Principal or users file to analyze (required)
   -d, --domain    Domain used in generated commands (required)
   -f, --file      BloodHound zip (default: <domain>_bloodhound.zip)
-  --chain         Search a multihop attack chain
+  --chain         Search a multihop attack chain (at least two hops)
   --to            Chain target (default: domain object; longest chain fallback)
   -h, --help      Show this help message
 "
@@ -293,8 +312,85 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             set -a rest $token
         end
 
+        set -l batch_zip ""
+        if set -q _flag_file
+            set batch_zip $_flag_file
+        else
+            set batch_zip (find . -maxdepth 1 -iname "$domain"_bloodhound.zip -type f 2>/dev/null | sort | tail -1)
+        end
+        if test -z "$batch_zip"; or not test -f "$batch_zip"
+            ezpz_error "BloodHound zip not found for domain $domain. Use -f/--file or run enumdomain first."
+            return 1
+        end
+
+        set -l batch_helper "$EZPZ_HOME/utils/bloodhound_paths.py"
+        if not test -f "$batch_helper"
+            ezpz_error "BloodHound path helper not found: $batch_helper"
+            return 1
+        end
+        if not python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).close()' "$batch_zip" 2>/dev/null
+            ezpz_error "Invalid BloodHound zip: $batch_zip"
+            return 1
+        end
+        set -l selected_users $users
+
+        if set -q _flag_chain
+            set -l prep_args --zip "$batch_zip" --chain --batch
+            if set -q _flag_to
+                set -a prep_args --to "$_flag_to"
+            else
+                set -a prep_args --fallback-longest
+            end
+
+            set -l min_path_objects 3
+            if set -q _flag_to
+                # An explicit target may be reachable through a direct edge,
+                # which is still useful but is rendered as "Direct edge".
+                set min_path_objects 2
+            end
+
+            set -l chain_users
+            set -l chain_paths
+            for user in $users
+                set -l out (python3 "$batch_helper" $prep_args --from "$user" 2>/dev/null)
+                set -l path $user
+                for line in $out
+                    set -l fields (string split \t -- $line)
+                    if test "$fields[1]" = STEP
+                        set -a path $fields[5]
+                    end
+                end
+                # Require at least two hops for ordinary chains, but allow a
+                # direct edge when the user asked for an explicit --to target.
+                if test (count $path) -ge $min_path_objects
+                    set -a chain_users $user
+                    set -a chain_paths (string join '|' $path)
+                end
+            end
+
+            set selected_users
+            if not set -q _flag_to
+                # In fallback mode, a chain that is already contained in a
+                # longer chain adds no new attack path. With an explicit --to,
+                # each user's result is independent and must be kept.
+                for i in (seq (count $chain_paths))
+                    set -l contained 0
+                    for j in (seq (count $chain_paths))
+                        test $i -eq $j; and continue
+                        if __ezpz_path_is_contained "$chain_paths[$j]" "$chain_paths[$i]"
+                            set contained 1
+                            break
+                        end
+                    end
+                    test $contained -eq 0; and set -a selected_users $chain_users[$i]
+                end
+            else
+                set selected_users $chain_users
+            end
+        end
+
         set -gx __EZPZ_PATH_BATCH 1
-        for user in $users
+        for user in $selected_users
             _ezpz_path -u "$user" $rest
         end
         echo
@@ -335,6 +431,16 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     set -l records (python3 "$helper" $helper_args 2>&1)
     set -l rc $status
     if test $rc -ne 0
+        if set -q __EZPZ_PATH_BATCH
+            # Missing principals and targets are expected in batch lists;
+            # only surface fatal helper errors.
+            if string match -q '*Principal not found*' -- $records
+                return 0
+            end
+            if string match -q '*Target not found*' -- $records
+                return 0
+            end
+        end
         ezpz_error "$records"
         return 1
     end
@@ -398,11 +504,21 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
             set -l fields (string split \t -- $step_record)
             set -a chain_path $fields[5]
         end
-        if test -n "$chain_fallback_warning"
+        set -l total_steps (count $chain_steps)
+        if test $total_steps -eq 1; and not set -q _flag_to
+            printf '%s\n' "No chain longer than one hop found."
+            printf '%s\n' "Use ezpz path without --chain to list direct edges."
+            __ezpz_path_done
+            return 0
+        end
+        if test -n "$chain_fallback_warning"; and not test $total_steps -eq 1
             ezpz_warn "$chain_fallback_warning $chain_fallback_info"
         end
-        ezpz_header "Attack chain: "(string join ' -> ' $chain_path)
-        set -l total_steps (count $chain_steps)
+        if test $total_steps -eq 1
+            ezpz_header "Direct edge: "(string join ' -> ' $chain_path)
+        else
+            ezpz_header "Attack chain: "(string join ' -> ' $chain_path)
+        end
         set -l step_index 0
         for step_record in $chain_steps
             set -l fields (string split \t -- $step_record)
