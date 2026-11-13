@@ -178,15 +178,13 @@ def build_edges(objects):
     return by_sid, edges
 
 
-def longest_chain(start_sid, edges, groups, depth_limit):
+def longest_chain(start_sid, edges, groups):
     best = []
 
     def visit(sid, path, path_sids):
         nonlocal best
         if len(path) > len(best):
             best = path[:]
-        if len(path) >= depth_limit:
-            return
         current_sids = identity_sids(sid, groups, {})
         for edge in edges:
             if edge["principal"] not in current_sids:
@@ -236,10 +234,8 @@ def chain_output(source, target, objects, args):
     target_name = command_target(target_obj, target_type)
 
     import heapq
-    # Dijkstra over principal takeovers, bounded by depth.
     inf = 10**9
     dist = {source_sid: 0}
-    depth = {source_sid: 0}
     prev = {}
     heap = [(0, source_sid)]
     cache = {}
@@ -248,27 +244,25 @@ def chain_output(source, target, objects, args):
         cost, current = heapq.heappop(heap)
         if cost != dist.get(current):
             continue
-        if depth.get(current, 0) >= args.depth:
-            continue
         current_sids = identity_sids(current, groups, cache)
         for edge in edges:
             if edge["principal"] not in current_sids:
                 continue
             next_sid = edge["target"]
             next_cost = cost + edge["cost"]
-            next_depth = depth.get(current, 0) + 1
             if next_cost < dist.get(next_sid, inf):
                 dist[next_sid] = next_cost
-                depth[next_sid] = next_depth
                 prev[next_sid] = (current, edge)
                 heapq.heappush(heap, (next_cost, next_sid))
 
     if target_sid not in prev and target_sid != source_sid:
         if args.fallback_longest:
-            steps = longest_chain(source_sid, edges, groups, args.depth)
+            original_target_name = target_name
+            steps = longest_chain(source_sid, edges, groups)
             if not steps:
                 print(f"No chain found from {source_name} to {target_name}.", file=sys.stderr)
                 return 1
+            print(f"FALLBACK\tNo chain found from {source_name} to {original_target_name}.\tFalling back to longest reachable chain.")
             target_sid = steps[-1][1]["target"]
             target_obj = by_sid.get(target_sid)
             target_type = object_type(target_obj["_source"], target_obj)
@@ -308,7 +302,6 @@ def main():
     parser.add_argument("--from", dest="source", required=True)
     parser.add_argument("--chain", action="store_true")
     parser.add_argument("--to", default="")
-    parser.add_argument("--depth", type=int, default=6)
     parser.add_argument("--fallback-longest", action="store_true")
     args = parser.parse_args()
 

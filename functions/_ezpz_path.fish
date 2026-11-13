@@ -169,11 +169,10 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
   -t, --target    DC IP or hostname used in generated commands
   --chain         Search a multihop attack chain
   --to            Chain target (default: domain object; longest chain fallback)
-  --depth         Maximum chain depth (default: 6)
   -h, --help      Show this help message
 "
 
-    argparse 'u/user=' 'f/file=' 'd/domain=' 't/target=' 'p/password=' 'H/hash=' 'chain' 'to=' 'depth=' 'h/help' -- $argv
+    argparse 'u/user=' 'f/file=' 'd/domain=' 't/target=' 'p/password=' 'H/hash=' 'chain' 'to=' 'h/help' -- $argv
     or begin
         ezpz_error "Invalid arguments."
         echo $usage
@@ -237,9 +236,6 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         else
             set -a helper_args --fallback-longest
         end
-        if set -q _flag_depth
-            set -a helper_args --depth "$_flag_depth"
-        end
     end
     set -l records (python3 "$helper" $helper_args 2>&1)
     set -l rc $status
@@ -253,6 +249,8 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
     set -l chain_source ""
     set -l chain_target ""
     set -l chain_target_type ""
+    set -l chain_fallback_warning ""
+    set -l chain_fallback_info ""
     for record in $records
         set -l fields (string split \t -- $record)
         switch "$fields[1]"
@@ -263,6 +261,9 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
                 set chain_target_type $fields[3]
             case STEP
                 set -a chain_steps $record
+            case FALLBACK
+                set chain_fallback_warning $fields[2]
+                set chain_fallback_info $fields[3]
             case '*'
                 set -a paths $record
         end
@@ -305,6 +306,10 @@ Shows one-hop AD attack paths or a multihop chain from BloodHound data.
         for step_record in $chain_steps
             set -l fields (string split \t -- $step_record)
             set -a chain_path $fields[5]
+        end
+        if test -n "$chain_fallback_warning"
+            ezpz_warn "$chain_fallback_warning"
+            ezpz_info "$chain_fallback_info"
         end
         ezpz_header "Attack chain: "(string join ' -> ' $chain_path)
         set -l total_steps (count $chain_steps)
