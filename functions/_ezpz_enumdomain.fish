@@ -140,7 +140,7 @@ function __ezpz_acl_scan_target --argument-names label target_dn
 
     test -n "$hits"; or return
 
-    echo "  $label"
+    echo "$label"
     for hit in $hits
         set -l parts (string split '|' -- $hit)
         set -l right $parts[1]
