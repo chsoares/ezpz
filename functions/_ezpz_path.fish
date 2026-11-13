@@ -1,4 +1,4 @@
-function __ezpz_path_creds --argument-names user domain
+function __ezpz_path_domains --argument-names user
     set -l file creds.txt
     if set -q boxpwd; and test -f "$boxpwd/creds.txt"
         set file "$boxpwd/creds.txt"
@@ -12,7 +12,6 @@ function __ezpz_path_creds --argument-names user domain
         set -l parts (string split -m1 ':' -- $line)
         test (count $parts) -ge 2; or continue
         set -l identity $parts[1]
-        set -l secret $parts[2]
         set -l item_user $identity
         set -l item_domain ""
         if string match -q '*@*' -- $identity
@@ -23,12 +22,9 @@ function __ezpz_path_creds --argument-names user domain
             set item_user (string split -m1 '\\' -- $identity)[2]
         end
         test (string lower -- $item_user) = (string lower -- $user); or continue
-        if test -n "$domain"; and test -n "$item_domain"; and test (string lower -- $item_domain) != (string lower -- $domain)
-            continue
-        end
-        echo $secret
-        return
-    end < "$file"
+        test -n "$item_domain"; or continue
+        echo $item_domain
+    end < "$file" | sort -u
 end
 
 function __ezpz_path_getst --argument-names base domain user secret hash dc spn target_user
@@ -75,17 +71,17 @@ function _ezpz_path
     ezpz_banner path
 
     set -l usage "
-Usage: ezpz path -u <user> [-f <bloodhound.zip>] [-d <domain>] [-t <dc>] [-p <password> | -H <hash>]
+Usage: ezpz path -u <user> (-p <password> | -H <hash>) [-d <domain>] [-f <bloodhound.zip>] [-t <dc>]
 
 Shows one-hop AD attack paths for a user from BloodHound data.
 
   -u, --user      Principal to analyze (required, alias: --from)
-  -f, --file      BloodHound zip (default: newest *_bloodhound.zip)
+  -p, --password  Password used in generated commands (required unless -H)
+  -H, --hash      NTLM hash used in generated commands (required unless -p)
+  -d, --domain    Domain used in generated commands (default: creds.txt)
+  -f, --file      BloodHound zip (default: <domain>_bloodhound.zip)
   -z, --zip       Alias for --file
-  -d, --domain    Domain used in generated commands
   -t, --target    DC IP or hostname used in generated commands
-  -p, --password  Password used in generated commands
-  -H, --hash      NTLM hash used in generated commands
   -h, --help      Show this help message
 "
 
@@ -113,16 +109,48 @@ Shows one-hop AD attack paths for a user from BloodHound data.
         return 1
     end
 
+    set -l user_domain ""
+    if string match -q '*@*' -- $source_user
+        set user_domain (string split -m1 '@' -- $source_user)[2]
+        set source_user (string split -m1 '@' -- $source_user)[1]
+    else if string match -rq '\\\\' -- $source_user
+        set user_domain (string split -m1 '\\' -- $source_user)[1]
+        set source_user (string split -m1 '\\' -- $source_user)[2]
+    end
+
+    if not set -q _flag_password; and not set -q _flag_hash
+        ezpz_error "Missing authentication: use -p/--password or -H/--hash."
+        echo $usage
+        return 1
+    end
+
+    set -l domain ""
+    if set -q _flag_domain
+        set domain (string lower -- $_flag_domain)
+    else if test -n "$user_domain"
+        set domain (string lower -- $user_domain)
+    else
+        set -l domains (__ezpz_path_domains "$source_user" | sort -u)
+        if test (count $domains) -eq 0
+            ezpz_error "Could not infer the domain from creds.txt. Use -d/--domain."
+            return 1
+        else if test (count $domains) -gt 1
+            ezpz_error "Multiple domains found for $source_user: "(string join ', ' $domains)". Use -d/--domain."
+            return 1
+        end
+        set domain (string lower -- $domains[1])
+    end
+
     set -l zip_file ""
     if set -q _flag_file
         set zip_file $_flag_file
     else if set -q _flag_zip
         set zip_file $_flag_zip
     else
-        set zip_file (find . -maxdepth 1 -name "*_bloodhound.zip" -type f 2>/dev/null | sort | tail -1)
+        set zip_file (find . -maxdepth 1 -iname "$domain"_bloodhound.zip -type f 2>/dev/null | sort | tail -1)
     end
     if test -z "$zip_file"; or not test -f "$zip_file"
-        ezpz_error "BloodHound zip not found. Use -f/--file or run enumdomain first."
+        ezpz_error "BloodHound zip not found for domain $domain. Use -f/--file or run enumdomain first."
         return 1
     end
 
@@ -139,22 +167,12 @@ Shows one-hop AD attack paths for a user from BloodHound data.
         return 1
     end
 
-    set -l source_domain ""
     set -l paths
     for record in $records
         set -l fields (string split \t -- $record)
-        if test "$fields[1]" = SOURCE
-            set source_domain $fields[3]
-        else
+        if test "$fields[1]" != SOURCE
             set -a paths $record
         end
-    end
-
-    set -l domain ""
-    if set -q _flag_domain
-        set domain $_flag_domain
-    else
-        set domain (string lower -- $source_domain)
     end
 
     set -l dc ""
@@ -171,12 +189,6 @@ Shows one-hop AD attack paths for a user from BloodHound data.
         set hash $_flag_hash
     else if set -q _flag_password
         set secret $_flag_password
-    else
-        set secret (__ezpz_path_creds "$source_user" "$domain" | head -1)
-        if string match -qr '^[a-fA-F0-9]{32}$' -- "$secret"
-            set hash $secret
-            set secret ""
-        end
     end
     test -n "$secret"; or set secret "<PASS>"
     set -l base_secret $secret

@@ -99,6 +99,7 @@ function ezpz_show_menu
     echo "  testcreds    - Test credentials against targets"
     echo "  certspray    - Spray credentials against ADCS"
     echo "  path         - Show one-hop AD attack paths from BloodHound"
+    echo "  path         - Show one-hop AD attack paths from BloodHound"
     echo "  getloot      - Extract information from Windows hosts"
     echo "  secretsparse - Parse secretsdump.py output"
     echo "  getflag      - Read flags from compromised hosts"
